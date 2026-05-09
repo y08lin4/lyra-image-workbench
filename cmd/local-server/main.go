@@ -1,40 +1,22 @@
 package main
 
 import (
-	"encoding/json"
+	"errors"
 	"log"
 	"net/http"
-	"time"
+
+	"github.com/y08lin4/image-Workbench-Localhost-Version/internal/api"
+	"github.com/y08lin4/image-Workbench-Localhost-Version/internal/config"
+	"github.com/y08lin4/image-Workbench-Localhost-Version/internal/server"
 )
 
-type healthResponse struct {
-	OK      bool   `json:"ok"`
-	Message string `json:"message"`
-	Mode    string `json:"mode"`
-	Time    string `json:"time"`
-}
-
 func main() {
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /api/health", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, http.StatusOK, healthResponse{
-			OK:      true,
-			Message: "Local image workbench backend is ready",
-			Mode:    "localhost-go",
-			Time:    time.Now().Format(time.RFC3339),
-		})
-	})
+	cfg := config.Load()
+	router := api.NewRouter(api.Dependencies{Config: cfg})
+	httpServer := server.New(cfg, router)
 
-	addr := "127.0.0.1:8787"
-	log.Printf("本机生图工作台后端启动：http://%s", addr)
-	if err := http.ListenAndServe(addr, mux); err != nil {
+	log.Printf("本机生图工作台后端启动：http://%s", cfg.Addr)
+	if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		log.Fatal(err)
 	}
-}
-
-func writeJSON(w http.ResponseWriter, status int, data any) {
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.Header().Set("Cache-Control", "no-store")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(data)
 }

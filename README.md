@@ -24,4 +24,6 @@ npm run dev
 ## 设计文档
 
 - `docs/ROUTES.md`：参考项目路由与本地化调整。
-- `docs/STACK.md`：Go 后端与 React/Vite 前端选型。
+- docs/STACK.md：Go 后端与 React/Vite 前端选型。
+- docs/PROJECT_REQUIREMENTS.md：项目模块化和 10 分钟稳定性硬性要求。
+
