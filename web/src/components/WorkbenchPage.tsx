@@ -84,7 +84,7 @@ export function WorkbenchPage() {
   async function submit(event: FormEvent) {
     event.preventDefault()
     setError('')
-    if (!keyReady) { setError('请先保存当前空间的 NewAPI Key'); return }
+    if (!keyReady) { setError('请先保存当前空间的 Image-2 Key'); return }
     if (!prompt.trim()) { setError('请先输入提示词'); return }
     if (mode === 'image-to-image' && uploads.length === 0) { setError('图生图需要先上传参考图'); return }
     const payload: CreateTaskRequest = { mode, prompt, ratio, resolution, quality, count, concurrency, uploadIds: mode === 'image-to-image' ? uploads.map((item) => item.id) : [] }

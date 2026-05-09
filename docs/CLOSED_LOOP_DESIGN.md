@@ -19,9 +19,9 @@
 
 - 前端不直接请求 NewAPI。
 - 前端不保存 NewAPI Base URL。
-- 前端不把 API Key 带去 NewAPI。
+- 前端不把 Image-2 Key 带去 NewAPI。
 - Go 后端是唯一请求 NewAPI 的模块。
-- NewAPI 地址内置在 Go 后端配置里，用户只填 Key。
+- NewAPI 地址内置在 Go 后端配置里，用户只填 Image-2 Key。
 - 创建生图任务必须快速返回，不能让前端 HTTP 请求等待 10 分钟。
 - 前端刷新、断线、手机锁屏，只影响观察连接，不影响后端任务。
 - 生成成功后先保存本机磁盘，再考虑任何可选上传或复制。
@@ -32,7 +32,7 @@
 | --- | --- | --- |
 | 前端访问边界 | 容易误解成前端硬编码 localhost 或请求 NewAPI | 前端只使用同源相对路径 `/api/...`；生产由 Go 托管前端静态资源 |
 | NewAPI 地址 | “内置 URL”来源未明确 | 编译默认值 + 环境变量覆盖 + 本机配置文件覆盖；UI 默认不展示完整 URL，只显示“内置线路”状态 |
-| API Key 保存 | 浏览器保存 Key 不符合目标 | Key 只通过 `POST /api/config` 交给 Go；Go 本机保存，`GET /api/config` 只返回 `apiKeySet` 和掩码 |
+| Image-2 Key 保存 | 浏览器保存 Key 不符合目标 | Image-2 Key 只通过 `POST /api/config` 交给 Go；Go 本机保存，`GET /api/config` 只返回 `apiKeySet` 和掩码 |
 | 10 分钟任务 | 如果任务继承请求上下文，前端断开会取消 | job runner 使用独立后台 context；SSE/查询连接绝不能控制任务生命周期 |
 | 上游超时 | Go 默认 HTTP 没有清晰超时策略 | NewAPI 单次请求默认 600 秒超时，可在 `/admin` 设置；服务端 `WriteTimeout=0` 支持 SSE |
 | Cloudflare 524 | 本机假流式无法修复上游 524 | 本项目假设 Go 通过内网直连 NewAPI，不经过会 100 秒熔断的同步代理；若上游仍 524，需要 NewAPI 提供异步任务或非 CF 长任务入口 |
@@ -118,7 +118,7 @@ web/src/api/
 web/src/hooks/
   useTaskEvents.ts     # SSE 自动重连，断线后先拉快照
   useTaskList.ts       # 任务列表同步
-  useConfig.ts         # Key 设置状态
+  useConfig.ts         # Image-2 Key 设置状态
 
 web/src/components/
   SettingsPanel.tsx
@@ -352,7 +352,7 @@ POST {baseUrl}/images/edits
 
 - 不让前端拿远程图片 URL 直接展示。
 - 不把图床上传作为任务成功条件。
-- 不在日志输出 API Key、完整 Authorization、完整请求体。
+- 不在日志输出 Image-2 Key、完整 Authorization、完整请求体。
 
 ## 9. 持久化闭环
 
@@ -369,7 +369,7 @@ outputs/YYYY-MM-DD/
 
 - 任务状态更新后原子写 `jobs.json`。
 - 图片文件先写临时文件，再 rename 成正式文件。
-- 配置保存不返回明文 Key。
+- 配置保存不返回明文 Image-2 Key。
 
 启动恢复规则：
 
@@ -405,7 +405,7 @@ cancelled    -> 保持
 
 ## 11. 建议实现顺序
 
-1. 配置模块：内置 NewAPI URL、Key 保存、`GET/POST /api/config`。
+1. 配置模块：内置 NewAPI URL、Image-2 Key 保存、`GET/POST /api/config`。
 2. Store 抽象和 JSON Store：任务、配置、统计持久化。
 3. Output 模块：图片落盘与安全读取。
 4. Events Hub：SSE 订阅、心跳、snapshot。

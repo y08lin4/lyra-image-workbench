@@ -73,7 +73,7 @@ export function GenerationPanel({
 
       <section className="form-section key-summary">
         <div className="section-title">
-          <span>空间 Key</span>
+          <span>Image-2 Key</span>
           <small>{keyReady ? '已就绪' : '需要设置'}</small>
         </div>
         <div className="key-row">

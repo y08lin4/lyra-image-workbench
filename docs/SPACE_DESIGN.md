@@ -1,6 +1,6 @@
 ﻿# 个人空间与第一版用户设计
 
-本设计参考 `ai-image-generate-private` 的“空间密码”思路，但针对本机 Go 后端做调整：个人空间用于隔离任务、历史、上传参考图和统计；NewAPI Key 与管理配置仍由本机后端统一保存，不让前端直接请求 NewAPI。
+本设计参考 `ai-image-generate-private` 的“空间密码”思路，但针对本机 Go 后端做调整：个人空间用于隔离任务、历史、上传参考图和统计；Image-2 Key 与管理配置仍由本机后端统一保存，不让前端直接请求 NewAPI。
 
 ## 1. 目标
 
@@ -28,7 +28,7 @@
 差异点：
 
 - 本项目是本机程序，空间用于本机多用户/多项目隔离，不是云端账号。
-- NewAPI Key 不跟空间密码混在前端保存；Key 仍由后端管理配置保存。
+- Image-2 Key 不跟空间密码混在前端保存；Key 仍由后端按个人空间保存。
 - 后续任务、上传、历史、统计接口都要要求 `X-Space-Token`。
 
 ## 3. 当前接口
@@ -144,9 +144,9 @@ gpt-image-2
 
 接口返回 `modelLocked: true`，前端只展示模型，不提供编辑。后续再增加模型列表、模型测试和默认模型选择。
 
-## 7. 空间内 API Key
+## 7. 空间内 Image-2 Key
 
-用户进入个人空间后，通过同源接口保存自己的 NewAPI Key：
+用户进入个人空间后，通过同源接口保存自己的 Image-2 Key：
 
 ```text
 GET  /api/config
@@ -156,11 +156,11 @@ Header: X-Space-Token: ...
 
 设计规则：
 
-- API Key 按个人空间保存到 `data/spaces/{token}/config.json`。
-- 前端只提交 Key 给 Go 后端，不直接请求 NewAPI。
+- Image-2 Key 按个人空间保存到 `data/spaces/{token}/config.json`，首版接口字段仍兼容使用 `apiKey`。
+- 前端只提交 Image-2 Key 给 Go 后端，不直接请求 NewAPI。
 - `GET /api/config` 不返回明文 Key，只返回 `apiKeySet`、`apiKeyPreview` 和更新时间。
-- 后续创建文生图/图生图任务时，Go 后端从当前空间读取 Key，再请求内网 NewAPI。
-- 管理页 `/admin` 设置的是全局 NewAPI URL 和 600 秒超时；个人空间 `/api/config` 设置的是用户 Key。
+- 后续创建文生图/图生图任务时，Go 后端从当前空间读取 Image-2 Key，再请求内网 NewAPI。
+- 管理页 `/admin` 设置的是全局 NewAPI URL 和 600 秒超时；个人空间 `/api/config` 设置的是 Image-2 Key，后续 Gemini Banana 等模型会独立扩展。
 
 ## 8. 图生图第一版纳入范围
 

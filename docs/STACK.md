@@ -31,7 +31,7 @@ GET  /api/background-tasks/:id/events
 Go 后端负责：
 
 ```text
-读取本机配置里的 API Key
+读取当前空间里的 Image-2 Key
   -> 使用内置 NewAPI Base URL
   -> 创建独立后台任务
   -> 请求 NewAPI
@@ -75,7 +75,7 @@ Go 后端负责：
 ## 后端实现原则
 
 - Go 后端是唯一请求 NewAPI 的进程。
-- 内置 NewAPI Base URL，用户只填 API Key。
+- 内置 NewAPI Base URL，用户只填 Image-2 Key；后续 Gemini Banana 等模型再增加独立 Key 槽位。
 - 任务进入本地队列，worker 独立执行。
 - SSE 是假流式状态通道，不承载真实上游长请求。
 - 图片落盘到 `outputs/`，任务状态保存到 `data/`，后续可升级 SQLite。

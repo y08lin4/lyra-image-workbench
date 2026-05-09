@@ -21,7 +21,7 @@
 
 - 保留 `GET /api/health`：用于前端探活。
 - 新增 `POST /api/spaces/session` / `GET /api/spaces/session` / `DELETE /api/spaces/session`：创建、恢复、退出个人空间。
-- 新增 `GET /api/config` / `POST /api/config`：按个人空间保存用户 NewAPI Key，只返回掩码不返回明文。
+- 新增 `GET /api/config` / `POST /api/config`：按个人空间保存用户 Image-2 Key，只返回掩码不返回明文。
 - 新增 `POST /api/uploads/reference`：第一版图生图参考图上传到本机空间目录。
 - 保留 `POST /api/background-tasks`：创建本机后台生图任务，立即返回任务 ID。
 - 保留 `GET /api/background-tasks`：查看本机历史任务。
