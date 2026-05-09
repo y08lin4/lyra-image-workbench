@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/y08lin4/image-Workbench-Localhost-Version/internal/adminauth"
 	"github.com/y08lin4/image-Workbench-Localhost-Version/internal/config"
 	"github.com/y08lin4/image-Workbench-Localhost-Version/internal/events"
 	"github.com/y08lin4/image-Workbench-Localhost-Version/internal/jobs"
@@ -41,7 +42,8 @@ func TestConfigAPIDoesNotReturnRawAPIKey(t *testing.T) {
 
 func TestAdminConfigAPIUpdatesURLAndTimeout(t *testing.T) {
 	router := newTestRouter(t)
-	body := doJSON(t, router, http.MethodPost, "/api/admin/config", "", map[string]any{
+	adminToken := createAdminToken(t, router)
+	body := doAdminJSON(t, router, http.MethodPost, "/api/admin/config", adminToken, map[string]any{
 		"newApiBaseUrl": "http://127.0.0.1:3010/v1/images/edits",
 		"timeoutSec":    600,
 	})
@@ -50,6 +52,30 @@ func TestAdminConfigAPIUpdatesURLAndTimeout(t *testing.T) {
 	}
 	if !strings.Contains(body, `"timeoutSec":600`) || !strings.Contains(body, `"model":"gpt-image-2"`) {
 		t.Fatalf("admin response missing timeout/model: %s", body)
+	}
+}
+
+func TestAdminConfigRequiresPasswordSession(t *testing.T) {
+	router := newTestRouter(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/admin/config", nil)
+	res := httptest.NewRecorder()
+	router.ServeHTTP(res, req)
+	if res.Code != http.StatusForbidden {
+		t.Fatalf("before setup should require initial password, code=%d body=%s", res.Code, res.Body.String())
+	}
+
+	adminToken := createAdminToken(t, router)
+	body := doAdminJSON(t, router, http.MethodGet, "/api/admin/config", adminToken, nil)
+	if !strings.Contains(body, `"model":"gpt-image-2"`) {
+		t.Fatalf("admin config response missing model: %s", body)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/admin/config", nil)
+	res = httptest.NewRecorder()
+	router.ServeHTTP(res, req)
+	if res.Code != http.StatusUnauthorized {
+		t.Fatalf("after setup should require admin token, code=%d body=%s", res.Code, res.Body.String())
 	}
 }
 
@@ -92,6 +118,10 @@ func newTestRouter(t *testing.T) http.Handler {
 	if err != nil {
 		t.Fatalf("settings.NewFileStore() error = %v", err)
 	}
+	adminAuthStore, err := adminauth.NewStore(cfg.AdminAuthPath())
+	if err != nil {
+		t.Fatalf("adminauth.NewStore() error = %v", err)
+	}
 	spaceStore, err := spaces.NewFileStore(cfg.DataDir)
 	if err != nil {
 		t.Fatalf("spaces.NewFileStore() error = %v", err)
@@ -107,6 +137,7 @@ func newTestRouter(t *testing.T) http.Handler {
 
 	return NewRouter(Dependencies{
 		Config:      cfg,
+		AdminAuth:   adminAuthStore,
 		Settings:    settingsStore,
 		Spaces:      spaceStore,
 		SpaceConfig: spaceConfigStore,
@@ -114,6 +145,23 @@ func newTestRouter(t *testing.T) http.Handler {
 		Jobs:        jobManager,
 		Output:      outputStore,
 	})
+}
+
+func createAdminToken(t *testing.T, router http.Handler) string {
+	t.Helper()
+	body := doJSON(t, router, http.MethodPost, "/api/admin/auth/setup", "", map[string]string{"password": "R7!Orchid#Vault$2026"})
+	var payload struct {
+		Session struct {
+			Token string `json:"token"`
+		} `json:"session"`
+	}
+	if err := json.Unmarshal([]byte(body), &payload); err != nil {
+		t.Fatalf("decode admin setup response: %v body=%s", err, body)
+	}
+	if payload.Session.Token == "" {
+		t.Fatalf("admin token missing: %s", body)
+	}
+	return payload.Session.Token
 }
 
 func createTestSession(t *testing.T, router http.Handler) string {
@@ -147,6 +195,29 @@ func doJSON(t *testing.T, router http.Handler, method string, path string, token
 	}
 	if token != "" {
 		req.Header.Set("X-Space-Token", token)
+	}
+	res := httptest.NewRecorder()
+	router.ServeHTTP(res, req)
+	if res.Code < 200 || res.Code >= 300 {
+		t.Fatalf("%s %s failed: code=%d body=%s", method, path, res.Code, res.Body.String())
+	}
+	return res.Body.String()
+}
+
+func doAdminJSON(t *testing.T, router http.Handler, method string, path string, adminToken string, payload any) string {
+	t.Helper()
+	var body bytes.Buffer
+	if payload != nil {
+		if err := json.NewEncoder(&body).Encode(payload); err != nil {
+			t.Fatalf("encode payload: %v", err)
+		}
+	}
+	req := httptest.NewRequest(method, path, &body)
+	if payload != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	if adminToken != "" {
+		req.Header.Set("X-Admin-Token", adminToken)
 	}
 	res := httptest.NewRecorder()
 	router.ServeHTTP(res, req)

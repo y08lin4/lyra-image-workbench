@@ -52,6 +52,10 @@ func (c Config) RuntimeConfigPath() string {
 	return filepath.Join(c.DataDir, "config.local.json")
 }
 
+func (c Config) AdminAuthPath() string {
+	return filepath.Join(c.DataDir, "admin.auth.json")
+}
+
 func getenv(key string, fallback string) string {
 	value := os.Getenv(key)
 	if value == "" {

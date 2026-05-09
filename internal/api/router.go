@@ -3,6 +3,7 @@ package api
 import (
 	"net/http"
 
+	"github.com/y08lin4/image-Workbench-Localhost-Version/internal/adminauth"
 	"github.com/y08lin4/image-Workbench-Localhost-Version/internal/config"
 	"github.com/y08lin4/image-Workbench-Localhost-Version/internal/jobs"
 	"github.com/y08lin4/image-Workbench-Localhost-Version/internal/output"
@@ -14,6 +15,7 @@ import (
 
 type Dependencies struct {
 	Config      config.Config
+	AdminAuth   *adminauth.Store
 	Settings    *settings.FileStore
 	Spaces      *spaces.FileStore
 	SpaceConfig *spaceconfig.Store
@@ -25,7 +27,8 @@ type Dependencies struct {
 func NewRouter(deps Dependencies) http.Handler {
 	mux := http.NewServeMux()
 	health := NewHealthHandler(deps.Config)
-	adminConfig := NewAdminConfigHandler(deps.Settings)
+	adminAuth := NewAdminAuthHandler(deps.AdminAuth)
+	adminConfig := NewAdminConfigHandler(deps.Settings, deps.AdminAuth)
 	userConfig := NewUserConfigHandler(deps.SpaceConfig)
 	statusMetadata := NewStatusMetadataHandler()
 	spaceHandler := NewSpaceHandler(deps.Spaces)
@@ -35,6 +38,10 @@ func NewRouter(deps Dependencies) http.Handler {
 	staticHandler := NewStaticHandler(deps.Config.WebDir)
 
 	mux.HandleFunc("GET /api/health", health.ServeHTTP)
+	mux.HandleFunc("GET /api/admin/auth", adminAuth.Status)
+	mux.HandleFunc("POST /api/admin/auth/setup", adminAuth.Setup)
+	mux.HandleFunc("POST /api/admin/auth/session", adminAuth.Login)
+	mux.HandleFunc("DELETE /api/admin/auth/session", adminAuth.Logout)
 	mux.HandleFunc("GET /api/admin/config", adminConfig.Get)
 	mux.HandleFunc("POST /api/admin/config", adminConfig.Update)
 	mux.HandleFunc("GET /api/config", userConfig.Get)

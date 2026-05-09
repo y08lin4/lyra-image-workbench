@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 
+	"github.com/y08lin4/image-Workbench-Localhost-Version/internal/adminauth"
 	"github.com/y08lin4/image-Workbench-Localhost-Version/internal/api"
 	"github.com/y08lin4/image-Workbench-Localhost-Version/internal/config"
 	"github.com/y08lin4/image-Workbench-Localhost-Version/internal/events"
@@ -23,6 +24,10 @@ func main() {
 	settingsStore, err := settings.NewFileStore(cfg.RuntimeConfigPath(), settings.DefaultsFromConfig(cfg))
 	if err != nil {
 		log.Fatalf("加载本机配置失败：%v", err)
+	}
+	adminAuthStore, err := adminauth.NewStore(cfg.AdminAuthPath())
+	if err != nil {
+		log.Fatalf("加载 Admin 鉴权配置失败：%v", err)
 	}
 	spaceStore, err := spaces.NewFileStore(cfg.DataDir)
 	if err != nil {
@@ -43,6 +48,7 @@ func main() {
 
 	router := api.NewRouter(api.Dependencies{
 		Config:      cfg,
+		AdminAuth:   adminAuthStore,
 		Settings:    settingsStore,
 		Spaces:      spaceStore,
 		SpaceConfig: spaceConfigStore,
