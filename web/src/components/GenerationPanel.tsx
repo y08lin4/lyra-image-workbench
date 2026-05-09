@@ -1,6 +1,7 @@
 import { type FormEvent } from 'react'
 import type { Mode, ReferenceUpload } from '../types'
 import { getImageSize, normalizeRatioForResolution } from '../lib/ratios'
+import { QualityPicker } from './QualityPicker'
 import { RatioPicker } from './RatioPicker'
 import { ResolutionPicker } from './ResolutionPicker'
 import { UploadPanel } from './UploadPanel'
@@ -10,6 +11,7 @@ type Props = {
   prompt: string
   ratio: string
   resolution: string
+  quality: string
   count: number
   concurrency: number
   uploads: ReferenceUpload[]
@@ -21,6 +23,7 @@ type Props = {
   onPromptChange: (value: string) => void
   onRatioChange: (value: string) => void
   onResolutionChange: (value: string) => void
+  onQualityChange: (value: string) => void
   onCountChange: (value: number) => void
   onConcurrencyChange: (value: number) => void
   onOpenSettings: () => void
@@ -34,6 +37,7 @@ export function GenerationPanel({
   prompt,
   ratio,
   resolution,
+  quality,
   count,
   concurrency,
   uploads,
@@ -45,6 +49,7 @@ export function GenerationPanel({
   onPromptChange,
   onRatioChange,
   onResolutionChange,
+  onQualityChange,
   onCountChange,
   onConcurrencyChange,
   onOpenSettings,
@@ -108,6 +113,10 @@ export function GenerationPanel({
           <div className="field">
             <span>清晰度</span>
             <ResolutionPicker value={resolution} onChange={changeResolution} />
+          </div>
+          <div className="field">
+            <span>质量</span>
+            <QualityPicker value={quality} onChange={onQualityChange} />
           </div>
           <div className="grid-2">
             <label className="field">

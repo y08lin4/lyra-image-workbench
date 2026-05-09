@@ -25,6 +25,7 @@ export function WorkbenchPage() {
   const [prompt, setPrompt] = useState('')
   const [ratio, setRatio] = useState('1:1')
   const [resolution, setResolution] = useState('standard')
+  const [quality, setQuality] = useState('auto')
   const [count, setCount] = useState(1)
   const [concurrency, setConcurrency] = useState(1)
   const [message, setMessage] = useState('')
@@ -86,7 +87,7 @@ export function WorkbenchPage() {
     if (!keyReady) { setError('请先保存当前空间的 NewAPI Key'); return }
     if (!prompt.trim()) { setError('请先输入提示词'); return }
     if (mode === 'image-to-image' && uploads.length === 0) { setError('图生图需要先上传参考图'); return }
-    const payload: CreateTaskRequest = { mode, prompt, ratio, resolution, count, concurrency, uploadIds: mode === 'image-to-image' ? uploads.map((item) => item.id) : [] }
+    const payload: CreateTaskRequest = { mode, prompt, ratio, resolution, quality, count, concurrency, uploadIds: mode === 'image-to-image' ? uploads.map((item) => item.id) : [] }
     try {
       const job = await createTask(payload)
       upsertTask(job)
@@ -134,6 +135,7 @@ export function WorkbenchPage() {
           prompt={prompt}
           ratio={ratio}
           resolution={resolution}
+          quality={quality}
           count={count}
           concurrency={concurrency}
           uploads={uploads}
@@ -145,6 +147,7 @@ export function WorkbenchPage() {
           onPromptChange={setPrompt}
           onRatioChange={setRatio}
           onResolutionChange={setResolution}
+          onQualityChange={setQuality}
           onCountChange={setCount}
           onConcurrencyChange={setConcurrency}
           onOpenSettings={() => setSettingsOpen(true)}

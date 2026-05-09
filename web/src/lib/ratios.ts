@@ -1,16 +1,25 @@
 export const RATIOS = ['auto', '1:1', '2:3', '3:2', '3:4', '4:3', '9:16', '16:9'] as const
 export const FIXED_RATIOS = ['1:1', '2:3', '3:2', '3:4', '4:3', '9:16', '16:9'] as const
 export const RESOLUTION_TIERS = ['auto', 'standard', '2k', '4k'] as const
+export const QUALITY_LEVELS = ['auto', 'low', 'medium', 'high'] as const
 
 export type AspectRatio = typeof RATIOS[number]
 export type FixedRatio = typeof FIXED_RATIOS[number]
 export type ResolutionTier = typeof RESOLUTION_TIERS[number]
+export type QualityLevel = typeof QUALITY_LEVELS[number]
 
 export const RESOLUTION_LABEL: Record<ResolutionTier, string> = {
   auto: '自动',
   standard: '标准',
   '2k': '2K',
   '4k': '4K',
+}
+
+export const QUALITY_LABEL: Record<QualityLevel, string> = {
+  auto: '自动',
+  low: '低',
+  medium: '中',
+  high: '高',
 }
 
 export const SIZE_MAP: Record<Exclude<ResolutionTier, 'auto'>, Record<FixedRatio, string>> = {
@@ -57,6 +66,10 @@ export function isFixedRatio(value: string): value is FixedRatio {
 
 export function getResolutionLabel(resolution: string) {
   return isResolutionTier(resolution) ? RESOLUTION_LABEL[resolution] : resolution
+}
+
+export function getQualityLabel(quality: string) {
+  return QUALITY_LEVELS.includes(quality as QualityLevel) ? QUALITY_LABEL[quality as QualityLevel] : quality
 }
 
 export function getAvailableRatios(resolution: string): readonly AspectRatio[] {

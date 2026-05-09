@@ -1,4 +1,4 @@
-﻿package jobs
+package jobs
 
 import (
 	"fmt"
@@ -49,6 +49,7 @@ type Job struct {
 	Prompt      string    `json:"prompt"`
 	Ratio       string    `json:"ratio"`
 	Resolution  string    `json:"resolution"`
+	Quality     string    `json:"quality"`
 	Size        string    `json:"size"`
 	Count       int       `json:"count"`
 	Concurrency int       `json:"concurrency"`
@@ -86,6 +87,7 @@ type CreateRequest struct {
 	Prompt      string   `json:"prompt"`
 	Ratio       string   `json:"ratio"`
 	Resolution  string   `json:"resolution"`
+	Quality     string   `json:"quality"`
 	Count       int      `json:"count"`
 	Concurrency int      `json:"concurrency"`
 	UploadIDs   []string `json:"uploadIds"`

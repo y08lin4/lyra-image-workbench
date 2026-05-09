@@ -27,7 +27,7 @@ func TestGenerateParsesB64JSON(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			t.Fatalf("decode request body: %v", err)
 		}
-		if body["model"] != "gpt-image-2" || body["prompt"] != "cat" || body["n"].(float64) != 1 {
+		if body["model"] != "gpt-image-2" || body["prompt"] != "cat" || body["n"].(float64) != 1 || body["quality"] != "high" {
 			t.Fatalf("unexpected request body: %+v", body)
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{"data": []map[string]string{{"b64_json": base64.StdEncoding.EncodeToString(want)}}})
@@ -43,6 +43,7 @@ func TestGenerateParsesB64JSON(t *testing.T) {
 		Model:      "gpt-image-2",
 		Prompt:     "cat",
 		Size:       "1024x1024",
+		Quality:    "high",
 		TimeoutSec: 60,
 	})
 	if err != nil {
@@ -109,7 +110,7 @@ func TestEditImageSendsMultipartImages(t *testing.T) {
 		if err := r.ParseMultipartForm(4 << 20); err != nil {
 			t.Fatalf("ParseMultipartForm() error = %v", err)
 		}
-		if r.FormValue("model") != "gpt-image-2" || r.FormValue("prompt") != "edit prompt" || r.FormValue("response_format") != "b64_json" {
+		if r.FormValue("model") != "gpt-image-2" || r.FormValue("prompt") != "edit prompt" || r.FormValue("response_format") != "b64_json" || r.FormValue("quality") != "medium" {
 			t.Fatalf("unexpected form values: %+v", r.MultipartForm.Value)
 		}
 		files := r.MultipartForm.File["image[]"]
@@ -140,6 +141,7 @@ func TestEditImageSendsMultipartImages(t *testing.T) {
 		APIKey:     "sk",
 		Model:      "gpt-image-2",
 		Prompt:     "edit prompt",
+		Quality:    "medium",
 		TimeoutSec: 60,
 		InputImages: []InputImage{{
 			Name: "input.png",

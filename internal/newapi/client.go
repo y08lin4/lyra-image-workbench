@@ -34,6 +34,7 @@ type Request struct {
 	Model       string
 	Prompt      string
 	Size        string
+	Quality     string
 	TimeoutSec  int
 	InputImages []InputImage
 }
@@ -83,6 +84,9 @@ func (c *Client) generateText(ctx context.Context, req Request) (Image, error) {
 	if req.Size != "" && req.Size != "自动" && req.Size != "auto" {
 		body["size"] = req.Size
 	}
+	if req.Quality != "" {
+		body["quality"] = normalizeQuality(req.Quality)
+	}
 	payload, err := json.Marshal(body)
 	if err != nil {
 		return Image{}, err
@@ -109,6 +113,9 @@ func (c *Client) editImage(ctx context.Context, req Request) (Image, error) {
 	_ = writer.WriteField("response_format", "b64_json")
 	if req.Size != "" && req.Size != "自动" && req.Size != "auto" {
 		_ = writer.WriteField("size", req.Size)
+	}
+	if req.Quality != "" {
+		_ = writer.WriteField("quality", normalizeQuality(req.Quality))
 	}
 	for idx, input := range req.InputImages {
 		if err := addImagePart(writer, input, idx); err != nil {
@@ -259,4 +266,13 @@ func readErrorMessage(res *http.Response) string {
 
 func statusCodeOK(status int) bool {
 	return status >= 200 && status < 300
+}
+
+func normalizeQuality(value string) string {
+	switch strings.TrimSpace(value) {
+	case "low", "medium", "high":
+		return strings.TrimSpace(value)
+	default:
+		return "auto"
+	}
 }

@@ -63,6 +63,7 @@ export interface Task {
   prompt: string
   ratio: string
   resolution: string
+  quality: string
   size: string
   count: number
   concurrency: number
@@ -95,6 +96,7 @@ export interface CreateTaskRequest {
   prompt: string
   ratio: string
   resolution: string
+  quality: string
   count: number
   concurrency: number
   uploadIds: string[]
