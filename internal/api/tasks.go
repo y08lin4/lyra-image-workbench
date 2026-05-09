@@ -78,6 +78,23 @@ func (h TaskHandler) Cancel(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "job": job})
 }
 
+func (h TaskHandler) Favorite(w http.ResponseWriter, r *http.Request) {
+	defer r.Body.Close()
+	var payload struct {
+		Favorite bool `json:"favorite"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		writeError(w, http.StatusBadRequest, "BAD_JSON", "请求体不是有效 JSON")
+		return
+	}
+	job, err := h.manager.SetFavorite(r.Header.Get("X-Space-Token"), r.PathValue("id"), payload.Favorite)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "TASK_FAVORITE_FAILED", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "job": job})
+}
+
 func (h TaskHandler) UploadPixhost(w http.ResponseWriter, r *http.Request) {
 	idx, err := strconv.Atoi(r.PathValue("index"))
 	if err != nil || idx < 0 {

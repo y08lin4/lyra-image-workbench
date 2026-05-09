@@ -29,6 +29,14 @@ export async function retryTask(id: string) {
   return data.job
 }
 
+export async function setTaskFavorite(id: string, favorite: boolean) {
+  const data = await requestJson<{ ok: boolean; job: Task }>(`/api/background-tasks/${encodeURIComponent(id)}/favorite`, {
+    method: 'POST',
+    body: JSON.stringify({ favorite }),
+  })
+  return data.job
+}
+
 export async function uploadTaskImageToPixhost(id: string, index: number) {
   const data = await requestJson<{ ok: boolean; job: Task; result: Task['results'][number] }>(`/api/background-tasks/${encodeURIComponent(id)}/images/${index}/pixhost`, { method: 'POST' })
   return data

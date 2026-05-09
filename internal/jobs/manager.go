@@ -144,6 +144,20 @@ func (m *Manager) Get(spaceToken string, id string) (Job, bool, error) {
 
 func (m *Manager) Stats(spaceToken string) (Stats, error) { return m.store.Stats(spaceToken) }
 
+func (m *Manager) SetFavorite(spaceToken string, id string, favorite bool) (Job, error) {
+	job, ok, err := m.store.Update(spaceToken, id, func(j *Job) {
+		j.Favorite = favorite
+	})
+	if err != nil {
+		return Job{}, err
+	}
+	if !ok {
+		return Job{}, errors.New("任务不存在")
+	}
+	m.publish(id, "progress", eventPayload(job))
+	return job, nil
+}
+
 func (m *Manager) UploadResultToPixhost(ctx context.Context, spaceToken string, id string, index int) (Job, Result, error) {
 	job, ok, err := m.store.Get(spaceToken, id)
 	if err != nil {

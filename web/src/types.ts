@@ -81,6 +81,7 @@ export interface Task {
   stageCode: string
   progress: number
   results: TaskResult[]
+  favorite?: boolean
   error?: string
   createdAt: string
   updatedAt: string

@@ -62,6 +62,7 @@ type Job struct {
 	StageCode   string    `json:"stageCode"`
 	Progress    int       `json:"progress"`
 	Results     []Result  `json:"results"`
+	Favorite    bool      `json:"favorite,omitempty"`
 	Error       string    `json:"error,omitempty"`
 	CreatedAt   time.Time `json:"createdAt"`
 	UpdatedAt   time.Time `json:"updatedAt"`

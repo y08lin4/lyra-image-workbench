@@ -59,6 +59,7 @@ func NewRouter(deps Dependencies) http.Handler {
 	mux.HandleFunc("GET /api/background-tasks/{id}/events", taskHandler.Events)
 	mux.HandleFunc("POST /api/background-tasks/{id}/retry", taskHandler.Retry)
 	mux.HandleFunc("POST /api/background-tasks/{id}/cancel", taskHandler.Cancel)
+	mux.HandleFunc("POST /api/background-tasks/{id}/favorite", taskHandler.Favorite)
 	mux.HandleFunc("POST /api/background-tasks/{id}/images/{index}/pixhost", taskHandler.UploadPixhost)
 	mux.HandleFunc("GET /api/background-tasks/{id}/images/{index}", taskHandler.Image)
 	mux.HandleFunc("GET /api/stats", taskHandler.Stats)

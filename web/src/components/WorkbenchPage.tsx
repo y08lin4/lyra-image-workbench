@@ -1,5 +1,5 @@
 ﻿import { type FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
-import { cancelTask, createTask, listTasks, retryTask, uploadTaskImageToPixhost } from '../api/tasks'
+import { cancelTask, createTask, listTasks, retryTask, setTaskFavorite, uploadTaskImageToPixhost } from '../api/tasks'
 import { clearSpaceToken, getSpaceToken } from '../api/client'
 import { getCurrentSpace, leaveSpace } from '../api/spaces'
 import { deleteReferenceUpload, listReferenceUploads, uploadReferenceImages } from '../api/uploads'
@@ -15,8 +15,6 @@ import { useTaskEvents } from '../hooks/useTaskEvents'
 type NumericInputValue = number | ''
 type TaskFilter = TaskStatus | 'all'
 
-const FAVORITES_STORAGE_KEY = 'image-workbench.favorite-task-ids'
-
 export function WorkbenchPage() {
   const [session, setSession] = useState<SpaceSession | null>(null)
   const [spaceReady, setSpaceReady] = useState(false)
@@ -29,7 +27,6 @@ export function WorkbenchPage() {
   const [searchQuery, setSearchQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState<TaskFilter>('all')
   const [favoriteOnly, setFavoriteOnly] = useState(false)
-  const [favoriteIds, setFavoriteIds] = useState<Set<string>>(() => readFavoriteIds())
   const [uploads, setUploads] = useState<ReferenceUpload[]>([])
   const [mode, setMode] = useState<Mode>('text-to-image')
   const [prompt, setPrompt] = useState('')
@@ -42,6 +39,7 @@ export function WorkbenchPage() {
   const [error, setError] = useState('')
 
   const detailTask = useMemo(() => tasks.find((task) => task.id === detailId), [tasks, detailId])
+  const favoriteIds = useMemo(() => new Set(tasks.filter((task) => task.favorite).map((task) => task.id)), [tasks])
   const upsertTask = useCallback((task: Task) => {
     setTasks((prev) => {
       const index = prev.findIndex((item) => item.id === task.id)
@@ -173,14 +171,11 @@ export function WorkbenchPage() {
     }, 0)
   }
 
-  function toggleFavorite(id: string) {
-    setFavoriteIds((prev) => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      saveFavoriteIds(next)
-      return next
-    })
+  async function toggleFavorite(id: string) {
+    const current = tasks.find((task) => task.id === id)
+    const job = await setTaskFavorite(id, !(current?.favorite ?? false))
+    upsertTask(job)
+    setMessage(job.favorite ? '已收藏任务' : '已取消收藏任务')
   }
 
   async function handleRetry(id: string) {
@@ -232,7 +227,7 @@ export function WorkbenchPage() {
           onRetry={(id) => void handleRetry(id)}
           onCancel={(id) => void handleCancel(id)}
           onReuse={handleReuseTask}
-          onToggleFavorite={toggleFavorite}
+          onToggleFavorite={(id) => void toggleFavorite(id)}
         />
       </main>
       <div className="composer-dock" data-generation-composer>
@@ -270,7 +265,7 @@ export function WorkbenchPage() {
           onRetry={(id) => void handleRetry(id)}
           onCancel={(id) => void handleCancel(id)}
           onReuse={handleReuseTask}
-          onToggleFavorite={toggleFavorite}
+          onToggleFavorite={(id) => void toggleFavorite(id)}
           onUseAsReference={handleUseResultAsReference}
           onUploadPixhost={handleUploadPixhost}
         />
@@ -293,22 +288,4 @@ function numericOrDefault(value: NumericInputValue, fallback: number) {
 
 function isFinal(task: Task) {
   return ['succeeded', 'partial_failed', 'failed', 'cancelled', 'interrupted'].includes(task.status)
-}
-
-function readFavoriteIds() {
-  try {
-    const raw = window.localStorage.getItem(FAVORITES_STORAGE_KEY)
-    const parsed = raw ? JSON.parse(raw) : []
-    return new Set(Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string') : [])
-  } catch {
-    return new Set<string>()
-  }
-}
-
-function saveFavoriteIds(ids: Set<string>) {
-  try {
-    window.localStorage.setItem(FAVORITES_STORAGE_KEY, JSON.stringify(Array.from(ids)))
-  } catch {
-    // localStorage 不可用时只保留当前会话内的收藏状态。
-  }
 }

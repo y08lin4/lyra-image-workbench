@@ -170,6 +170,38 @@ func TestManagerRecoverRequeuesQueuedAndInterruptsRunning(t *testing.T) {
 	}
 }
 
+func TestManagerSetFavoritePersists(t *testing.T) {
+	env := newManagerTestEnvWithoutManager(t, "http://127.0.0.1:1")
+	env.manager = NewManager(env.store, events.NewHub(), env.settings, env.spaceConfig, env.uploads, env.output, newapi.NewClient())
+	job := newPersistedJob(env.token, "img_favorite", StatusSucceeded, StageSucceeded)
+	if err := env.store.Save(job); err != nil {
+		t.Fatalf("Save(job) error = %v", err)
+	}
+
+	favorited, err := env.manager.SetFavorite(env.token, job.ID, true)
+	if err != nil {
+		t.Fatalf("SetFavorite(true) error = %v", err)
+	}
+	if !favorited.Favorite {
+		t.Fatalf("favorite flag was not set: %+v", favorited)
+	}
+	persisted, ok, err := env.store.Get(env.token, job.ID)
+	if err != nil || !ok {
+		t.Fatalf("Get(favorited) ok=%v err=%v", ok, err)
+	}
+	if !persisted.Favorite {
+		t.Fatalf("favorite flag was not persisted: %+v", persisted)
+	}
+
+	unfavorited, err := env.manager.SetFavorite(env.token, job.ID, false)
+	if err != nil {
+		t.Fatalf("SetFavorite(false) error = %v", err)
+	}
+	if unfavorited.Favorite {
+		t.Fatalf("favorite flag was not cleared: %+v", unfavorited)
+	}
+}
+
 func TestImageSizeKeepsAutoRatioAsAuto(t *testing.T) {
 	if got := imageSize("auto", "4k"); got != "自动" {
 		t.Fatalf("imageSize(auto, 4k) = %q", got)
