@@ -1,6 +1,8 @@
 import { type FormEvent } from 'react'
 import type { Mode, ReferenceUpload } from '../types'
-import { SettingsPanel } from './SettingsPanel'
+import { getImageSize, normalizeRatioForResolution } from '../lib/ratios'
+import { RatioPicker } from './RatioPicker'
+import { ResolutionPicker } from './ResolutionPicker'
 import { UploadPanel } from './UploadPanel'
 
 type Props = {
@@ -11,6 +13,8 @@ type Props = {
   count: number
   concurrency: number
   uploads: ReferenceUpload[]
+  keyReady: boolean
+  keyPreview: string
   message: string
   error: string
   onModeChange: (mode: Mode) => void
@@ -19,7 +23,7 @@ type Props = {
   onResolutionChange: (value: string) => void
   onCountChange: (value: number) => void
   onConcurrencyChange: (value: number) => void
-  onKeyReady: (ready: boolean) => void
+  onOpenSettings: () => void
   onUpload: (files: File[]) => void
   onDeleteUpload: (id: string) => void
   onSubmit: (event: FormEvent) => void
@@ -33,6 +37,8 @@ export function GenerationPanel({
   count,
   concurrency,
   uploads,
+  keyReady,
+  keyPreview,
   message,
   error,
   onModeChange,
@@ -41,11 +47,17 @@ export function GenerationPanel({
   onResolutionChange,
   onCountChange,
   onConcurrencyChange,
-  onKeyReady,
+  onOpenSettings,
   onUpload,
   onDeleteUpload,
   onSubmit,
 }: Props) {
+  function changeResolution(next: string) {
+    onResolutionChange(next)
+    const normalizedRatio = normalizeRatioForResolution(ratio, next)
+    if (normalizedRatio !== ratio) onRatioChange(normalizedRatio)
+  }
+
   return (
     <aside className="generation-panel">
       <div className="section-head">
@@ -54,7 +66,16 @@ export function GenerationPanel({
         <p className="muted">配置从上到下完成后提交；后端会在本机持续执行任务。</p>
       </div>
 
-      <SettingsPanel onReady={onKeyReady} />
+      <section className="form-section key-summary">
+        <div className="section-title">
+          <span>空间 Key</span>
+          <small>{keyReady ? '已就绪' : '需要设置'}</small>
+        </div>
+        <div className="key-row">
+          <div className="status-line">当前：{keyReady ? `已设置 ${keyPreview}` : '未设置'}</div>
+          <button type="button" onClick={onOpenSettings}>设置</button>
+        </div>
+      </section>
 
       <form onSubmit={onSubmit} className="generation-form">
         <section className="form-section">
@@ -78,31 +99,15 @@ export function GenerationPanel({
         <section className="form-section">
           <div className="section-title">
             <span>图片规格</span>
-            <small>比例和清晰度</small>
+            <small>{getImageSize(normalizeRatioForResolution(ratio, resolution), resolution)}</small>
           </div>
-          <div className="grid-2">
-            <label className="field">
-              <span>比例</span>
-              <select value={ratio} onChange={(event) => onRatioChange(event.target.value)}>
-                <option value="1:1">1:1</option>
-                <option value="16:9">16:9</option>
-                <option value="9:16">9:16</option>
-                <option value="3:4">3:4</option>
-                <option value="4:3">4:3</option>
-                <option value="3:2">3:2</option>
-                <option value="2:3">2:3</option>
-                <option value="auto">auto</option>
-              </select>
-            </label>
-            <label className="field">
-              <span>清晰度</span>
-              <select value={resolution} onChange={(event) => onResolutionChange(event.target.value)}>
-                <option value="standard">标准</option>
-                <option value="2k">2K</option>
-                <option value="4k">4K</option>
-                <option value="auto">自动</option>
-              </select>
-            </label>
+          <div className="field">
+            <span>比例</span>
+            <RatioPicker value={ratio} resolution={resolution} onChange={onRatioChange} />
+          </div>
+          <div className="field">
+            <span>清晰度</span>
+            <ResolutionPicker value={resolution} onChange={changeResolution} />
           </div>
           <div className="grid-2">
             <label className="field">

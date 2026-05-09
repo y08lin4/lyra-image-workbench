@@ -3,17 +3,21 @@ import { cancelTask, createTask, listTasks, retryTask } from '../api/tasks'
 import { clearSpaceToken, getSpaceToken } from '../api/client'
 import { getCurrentSpace, leaveSpace } from '../api/spaces'
 import { deleteReferenceUpload, listReferenceUploads, uploadReferenceImages } from '../api/uploads'
-import type { CreateTaskRequest, Mode, ReferenceUpload, SpaceSession, Task, TaskEvent } from '../types'
+import { getUserConfig } from '../api/config'
+import type { CreateTaskRequest, Mode, ReferenceUpload, SpaceSession, Task, TaskEvent, UserConfig } from '../types'
 import { SpaceLogin } from './SpaceLogin'
 import { GenerationPanel } from './GenerationPanel'
 import { ResultCanvas } from './ResultCanvas'
 import { TaskTimeline } from './TaskTimeline'
+import { SettingsWindow } from './SettingsWindow'
 import { useTaskEvents } from '../hooks/useTaskEvents'
 
 export function WorkbenchPage() {
   const [session, setSession] = useState<SpaceSession | null>(null)
   const [spaceReady, setSpaceReady] = useState(false)
   const [keyReady, setKeyReady] = useState(false)
+  const [keyPreview, setKeyPreview] = useState('')
+  const [settingsOpen, setSettingsOpen] = useState(false)
   const [tasks, setTasks] = useState<Task[]>([])
   const [activeId, setActiveId] = useState<string | null>(null)
   const [uploads, setUploads] = useState<ReferenceUpload[]>([])
@@ -53,6 +57,7 @@ export function WorkbenchPage() {
     if (!spaceReady) return
     void refreshTasks()
     void refreshUploads()
+    void refreshUserConfig()
   }, [spaceReady])
 
   async function refreshTasks() {
@@ -64,6 +69,16 @@ export function WorkbenchPage() {
   async function refreshUploads() {
     setUploads(await listReferenceUploads())
   }
+
+  async function refreshUserConfig() {
+    const cfg = await getUserConfig()
+    applyUserConfig(cfg)
+  }
+
+  const applyUserConfig = useCallback((cfg: UserConfig) => {
+    setKeyReady(cfg.apiKeySet)
+    setKeyPreview(cfg.apiKeyPreview)
+  }, [])
 
   async function submit(event: FormEvent) {
     event.preventDefault()
@@ -111,7 +126,7 @@ export function WorkbenchPage() {
             <p>{session.space.displayName} · {session.tokenPreview}</p>
           </div>
         </div>
-        <nav className="top-actions"><a className="ghost-link" href="/admin">Admin</a><button onClick={logout}>退出空间</button></nav>
+        <nav className="top-actions"><button type="button" onClick={() => setSettingsOpen(true)}>设置</button><a className="ghost-link" href="/admin">Admin</a><button onClick={logout}>退出空间</button></nav>
       </header>
       <main className="workspace">
         <GenerationPanel
@@ -122,6 +137,8 @@ export function WorkbenchPage() {
           count={count}
           concurrency={concurrency}
           uploads={uploads}
+          keyReady={keyReady}
+          keyPreview={keyPreview}
           message={message}
           error={error}
           onModeChange={setMode}
@@ -130,7 +147,7 @@ export function WorkbenchPage() {
           onResolutionChange={setResolution}
           onCountChange={setCount}
           onConcurrencyChange={setConcurrency}
-          onKeyReady={setKeyReady}
+          onOpenSettings={() => setSettingsOpen(true)}
           onUpload={handleUpload}
           onDeleteUpload={handleDeleteUpload}
           onSubmit={submit}
@@ -138,6 +155,7 @@ export function WorkbenchPage() {
         <ResultCanvas task={activeTask} />
         <TaskTimeline tasks={tasks} activeId={activeId || undefined} onSelect={setActiveId} onRetry={(id) => void retryTask(id).then(upsertTask)} onCancel={(id) => void cancelTask(id).then(upsertTask)} />
       </main>
+      {settingsOpen ? <SettingsWindow onClose={() => setSettingsOpen(false)} onConfig={applyUserConfig} /> : null}
     </div>
   )
 }
