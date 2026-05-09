@@ -22,13 +22,30 @@ export function ResultCanvas({ task, onUseAsReference, onUploadPixhost }: { task
           <span>提交任务后，生成结果会出现在这里。后端继续执行，刷新页面也可以恢复。</span>
         </div>
       ) : (
-        <div className="result-grid">
-          {Array.from({ length: task.count }, (_, index) => {
-            const result = task.results.find((item) => item.index === index)
-            return <ResultCard key={index} task={task} index={index} result={result} onUseAsReference={onUseAsReference} onUploadPixhost={onUploadPixhost} />
-          })}
-        </div>
+        <>
+          <ResultContext task={task} />
+          <div className="result-grid">
+            {Array.from({ length: task.count }, (_, index) => {
+              const result = task.results.find((item) => item.index === index)
+              return <ResultCard key={index} task={task} index={index} result={result} onUseAsReference={onUseAsReference} onUploadPixhost={onUploadPixhost} />
+            })}
+          </div>
+        </>
       )}
+    </section>
+  )
+}
+
+function ResultContext({ task }: { task: Task }) {
+  return (
+    <section className="result-context" aria-label="生成请求信息">
+      <div className="result-prompt">
+        <span>提示词</span>
+        <p>{task.prompt || '（无提示词）'}</p>
+      </div>
+      <div className="param-chips" aria-label="生成参数">
+        {taskParameters(task).map((item) => <span key={item}>{item}</span>)}
+      </div>
     </section>
   )
 }
@@ -91,6 +108,8 @@ function ResultCard({ task, index, result, onUseAsReference, onUploadPixhost }: 
           requestedSize={task.size}
           ratio={task.ratio}
           bytes={result.bytes}
+          prompt={task.prompt}
+          parameters={taskParameters(task)}
           onCopyImage={() => copyImage(imageUrl, setNotice)}
           onCopyUrl={() => copyURL(copyableURL, setNotice)}
           onDownload={() => downloadImage(imageUrl, index)}
@@ -164,6 +183,30 @@ function extensionFromMime(mime: string) {
   if (mime.includes('webp')) return 'webp'
   if (mime.includes('gif')) return 'gif'
   return 'png'
+}
+
+function taskParameters(task: Task) {
+  return [
+    task.mode === 'image-to-image' ? '图生图' : '文生图',
+    !task.ratio || task.ratio === 'auto' ? '自动比例' : `比例 ${task.ratio}`,
+    `清晰度 ${resolutionLabel(task.resolution)}`,
+    `质量 ${qualityLabel(task.quality)}`,
+    task.size && task.size !== '自动' ? `尺寸 ${task.size}` : '自动尺寸',
+    `数量 ${task.count || 1}`,
+    `并发 ${task.concurrency || 1}`,
+  ]
+}
+
+function resolutionLabel(value?: string) {
+  const labels: Record<string, string> = { auto: '自动', standard: '标准', '2k': '2K', '4k': '4K' }
+  if (!value) return '自动'
+  return labels[value] || value
+}
+
+function qualityLabel(value?: string) {
+  const labels: Record<string, string> = { auto: '自动', low: '低', medium: '中', high: '高' }
+  if (!value) return '自动'
+  return labels[value] || value
 }
 
 function flash(setNotice: (value: string) => void, value: string) {
