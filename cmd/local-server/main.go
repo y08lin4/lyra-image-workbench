@@ -9,6 +9,7 @@ import (
 	"github.com/y08lin4/image-Workbench-Localhost-Version/internal/config"
 	"github.com/y08lin4/image-Workbench-Localhost-Version/internal/server"
 	"github.com/y08lin4/image-Workbench-Localhost-Version/internal/settings"
+	"github.com/y08lin4/image-Workbench-Localhost-Version/internal/spaces"
 )
 
 func main() {
@@ -17,8 +18,12 @@ func main() {
 	if err != nil {
 		log.Fatalf("加载本机配置失败：%v", err)
 	}
+	spaceStore, err := spaces.NewFileStore(cfg.DataDir)
+	if err != nil {
+		log.Fatalf("加载个人空间存储失败：%v", err)
+	}
 
-	router := api.NewRouter(api.Dependencies{Config: cfg, Settings: settingsStore})
+	router := api.NewRouter(api.Dependencies{Config: cfg, Settings: settingsStore, Spaces: spaceStore})
 	httpServer := server.New(cfg, router)
 
 	log.Printf("本机生图工作台后端启动：http://%s", cfg.Addr)

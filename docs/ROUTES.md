@@ -17,9 +17,9 @@
 
 ## 本地版保留与调整
 
-本地版不再依赖 Cloudflare Worker、D1、Workflow，也不需要空间密码。Go 后端同时托管前端页面和 API，前端只使用同源相对路径；API Key 保存在本机 `data/config.local.json` 中。
+本地版不再依赖 Cloudflare Worker、D1、Workflow，但保留“空间密码/个人空间”体验。Go 后端同时托管前端页面和 API，前端只使用同源相对路径；管理配置保存在本机 `data/config.local.json` 中。
 
-- 保留 `GET /api/health`：用于前端探活。
+- 保留 `GET /api/health`：用于前端探活。`n- 新增 `POST /api/spaces/session` / `GET /api/spaces/session` / `DELETE /api/spaces/session`：创建、恢复、退出个人空间。`n- 新增 `POST /api/uploads/reference`：第一版图生图参考图上传到本机空间目录。
 - 保留 `POST /api/background-tasks`：创建本机后台生图任务，立即返回任务 ID。
 - 保留 `GET /api/background-tasks`：查看本机历史任务。
 - 保留 `GET /api/background-tasks/:id`：查看单个任务状态。
@@ -38,3 +38,4 @@
 - SSE 只是同源状态观察通道，定时发送 heartbeat，避免 UI 误判断流。
 - 图片结果统一保存到本地 `outputs/YYYY-MM-DD/`，前端展示同源图片 URL。
 - Key 不出现在日志和提交记录里。
+

@@ -38,7 +38,7 @@ func Load() Config {
 		Addr:                 fmt.Sprintf("%s:%d", host, port),
 		DataDir:              filepath.Clean(getenv("LOCAL_IMAGE_DATA_DIR", "data")),
 		BuiltinNewAPIBaseURL: getenv("NEWAPI_BASE_URL", DefaultNewAPIBaseURL),
-		DefaultModel:         getenv("NEWAPI_IMAGE_MODEL", DefaultModel),
+		DefaultModel:         DefaultModel,
 		DefaultTimeoutSec:    getenvBoundedInt("NEWAPI_TIMEOUT_SEC", DefaultTimeoutSec, MinTimeoutSec, MaxTimeoutSec),
 		ReadTimeout:          30 * time.Second,
 		WriteTimeout:         0, // SSE 和长连接响应不能被固定写超时切断。

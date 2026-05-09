@@ -25,6 +25,7 @@ type PublicRuntimeConfig struct {
 	NewAPIBaseURL string `json:"newApiBaseUrl"`
 	TimeoutSec    int    `json:"timeoutSec"`
 	Model         string `json:"model"`
+	ModelLocked   bool   `json:"modelLocked"`
 	TimeoutCode   string `json:"timeoutCode"`
 	UpdatedAt     string `json:"updatedAt"`
 	Limits        Limits `json:"limits"`
@@ -38,7 +39,6 @@ type Limits struct {
 type Update struct {
 	NewAPIBaseURL *string `json:"newApiBaseUrl"`
 	TimeoutSec    *int    `json:"timeoutSec"`
-	Model         *string `json:"model"`
 }
 
 type FileStore struct {
@@ -75,7 +75,7 @@ func DefaultsFromConfig(cfg config.Config) RuntimeConfig {
 	return normalize(RuntimeConfig{
 		NewAPIBaseURL: cfg.BuiltinNewAPIBaseURL,
 		TimeoutSec:    cfg.DefaultTimeoutSec,
-		Model:         cfg.DefaultModel,
+		Model:         config.DefaultModel,
 		UpdatedAt:     time.Now().Format(time.RFC3339),
 	})
 }
@@ -100,9 +100,6 @@ func (s *FileStore) Update(update Update) (RuntimeConfig, error) {
 	}
 	if update.TimeoutSec != nil {
 		next.TimeoutSec = *update.TimeoutSec
-	}
-	if update.Model != nil {
-		next.Model = strings.TrimSpace(*update.Model)
 	}
 
 	normalized, err := validate(next)
@@ -139,25 +136,22 @@ func merge(base RuntimeConfig, loaded RuntimeConfig) RuntimeConfig {
 	if loaded.TimeoutSec != 0 {
 		base.TimeoutSec = loaded.TimeoutSec
 	}
-	if strings.TrimSpace(loaded.Model) != "" {
-		base.Model = loaded.Model
-	}
 	if strings.TrimSpace(loaded.UpdatedAt) != "" {
 		base.UpdatedAt = loaded.UpdatedAt
 	}
+	base.Model = config.DefaultModel
 	return base
 }
 
 func normalize(value RuntimeConfig) RuntimeConfig {
 	normalized, err := validate(value)
 	if err != nil {
-		fallback := RuntimeConfig{
+		return RuntimeConfig{
 			NewAPIBaseURL: config.DefaultNewAPIBaseURL,
 			TimeoutSec:    config.DefaultTimeoutSec,
 			Model:         config.DefaultModel,
 			UpdatedAt:     time.Now().Format(time.RFC3339),
 		}
-		return fallback
 	}
 	if strings.TrimSpace(normalized.UpdatedAt) == "" {
 		normalized.UpdatedAt = time.Now().Format(time.RFC3339)
@@ -173,14 +167,10 @@ func validate(value RuntimeConfig) (RuntimeConfig, error) {
 	if value.TimeoutSec < config.MinTimeoutSec || value.TimeoutSec > config.MaxTimeoutSec {
 		return RuntimeConfig{}, fmt.Errorf("超时时间必须在 %d 到 %d 秒之间", config.MinTimeoutSec, config.MaxTimeoutSec)
 	}
-	model := strings.TrimSpace(value.Model)
-	if model == "" {
-		model = config.DefaultModel
-	}
 	return RuntimeConfig{
 		NewAPIBaseURL: baseURL,
 		TimeoutSec:    value.TimeoutSec,
-		Model:         model,
+		Model:         config.DefaultModel,
 		UpdatedAt:     strings.TrimSpace(value.UpdatedAt),
 	}, nil
 }
@@ -207,7 +197,8 @@ func toPublic(value RuntimeConfig) PublicRuntimeConfig {
 	return PublicRuntimeConfig{
 		NewAPIBaseURL: value.NewAPIBaseURL,
 		TimeoutSec:    value.TimeoutSec,
-		Model:         value.Model,
+		Model:         config.DefaultModel,
+		ModelLocked:   true,
 		TimeoutCode:   fmt.Sprintf("TIMEOUT_%dS", value.TimeoutSec),
 		UpdatedAt:     value.UpdatedAt,
 		Limits: Limits{

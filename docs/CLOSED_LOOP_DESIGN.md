@@ -34,7 +34,7 @@
 | NewAPI 地址 | “内置 URL”来源未明确 | 编译默认值 + 环境变量覆盖 + 本机配置文件覆盖；UI 默认不展示完整 URL，只显示“内置线路”状态 |
 | API Key 保存 | 浏览器保存 Key 不符合目标 | Key 只通过 `POST /api/config` 交给 Go；Go 本机保存，`GET /api/config` 只返回 `apiKeySet` 和掩码 |
 | 10 分钟任务 | 如果任务继承请求上下文，前端断开会取消 | job runner 使用独立后台 context；SSE/查询连接绝不能控制任务生命周期 |
-| 上游超时 | Go 默认 HTTP 没有清晰超时策略 | NewAPI 单次请求默认 15 分钟超时，可配置；服务端 `WriteTimeout=0` 支持 SSE |
+| 上游超时 | Go 默认 HTTP 没有清晰超时策略 | NewAPI 单次请求默认 600 秒超时，可在 `/admin` 设置；服务端 `WriteTimeout=0` 支持 SSE |
 | Cloudflare 524 | 本机假流式无法修复上游 524 | 本项目假设 Go 通过内网直连 NewAPI，不经过会 100 秒熔断的同步代理；若上游仍 524，需要 NewAPI 提供异步任务或非 CF 长任务入口 |
 | 任务状态 | 状态字段未统一 | 使用 `queued/running/succeeded/partial_failed/failed/cancelled/interrupted`，另有 `stage` 表示细分阶段 |
 | 假流式进度 | 没有明确算法 | SSE 推 `snapshot/progress/result/heartbeat/done/error`；等待上游期间按时间缓慢推进到 90%，真实结果覆盖进度 |
@@ -154,7 +154,7 @@ POST /api/config
     "apiKeyPreview": "sk-...abcd",
     "baseUrlMode": "builtin",
     "model": "gpt-image-2",
-    "defaultTimeoutSec": 900,
+    "defaultTimeoutSec": 600,
     "maxCount": 12,
     "maxConcurrency": 4
   }
@@ -166,7 +166,7 @@ POST /api/config
 ```json
 {
   "apiKey": "...",
-  "model": "可选，不填用默认"
+  第一版模型固定为 `gpt-image-2`，暂不允许请求体覆盖模型
 }
 ```
 
@@ -340,7 +340,7 @@ POST {baseUrl}/images/edits
 请求策略：
 
 - 后端按 `count` 拆成多次单图请求，`n=1`。
-- 每个单图请求有独立超时，默认 900 秒。
+- 每个单图请求有独立超时，默认 600 秒。
 - 全局并发和单任务并发都有限制。
 - 上游返回支持三种解析：
   - `Content-Type: image/*`
@@ -424,4 +424,5 @@ cancelled    -> 保持
 2. 是否需要 LAN 模式给手机浏览器访问电脑服务。
 3. 手机 App 是“访问本机/局域网 Go 服务”，还是“自包含 App”。
 4. 是否需要多模型选择，还是固定一个默认模型。
-5. 图生图是否首版必须支持，还是先做文生图闭环。
+5. 图生图第一版就做；参考图上传到本机空间目录，不走第三方图床。
+

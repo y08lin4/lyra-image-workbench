@@ -27,4 +27,5 @@ npm run dev
 - `docs/STACK.md`：Go 后端与 React/Vite 前端选型。
 - `docs/PROJECT_REQUIREMENTS.md`：项目模块化和 10 分钟稳定性硬性要求。
 - `docs/REFERENCE_PROJECT_ANALYSIS.md`：参考项目路由、后台任务和稳定性缺口分析。
-- `docs/CLOSED_LOOP_DESIGN.md`：当前未闭环点、最终闭环设计和实现顺序。
+- `docs/CLOSED_LOOP_DESIGN.md`：当前未闭环点、最终闭环设计和实现顺序。`n- `docs/SPACE_DESIGN.md`：个人空间、空间密码、固定模型和图生图第一版设计。
+
