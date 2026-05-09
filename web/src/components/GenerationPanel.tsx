@@ -1,9 +1,7 @@
 import { type FormEvent } from 'react'
 import type { Mode, ReferenceUpload } from '../types'
-import { getImageSize, normalizeRatioForResolution } from '../lib/ratios'
 import { QualityPicker } from './QualityPicker'
-import { RatioPicker } from './RatioPicker'
-import { ResolutionPicker } from './ResolutionPicker'
+import { ImageSpecPicker } from './ImageSpecPicker'
 import { UploadPanel } from './UploadPanel'
 
 type NumericInputValue = number | ''
@@ -59,12 +57,6 @@ export function GenerationPanel({
   onDeleteUpload,
   onSubmit,
 }: Props) {
-  function changeResolution(next: string) {
-    onResolutionChange(next)
-    const normalizedRatio = normalizeRatioForResolution(ratio, next)
-    if (normalizedRatio !== ratio) onRatioChange(normalizedRatio)
-  }
-
   return (
     <aside className="generation-panel">
       <section className="form-section key-summary">
@@ -100,15 +92,10 @@ export function GenerationPanel({
         <section className="form-section">
           <div className="section-title">
             <span>图片规格</span>
-            <small>{getImageSize(normalizeRatioForResolution(ratio, resolution), resolution)}</small>
+            <small>{ratio === 'auto' ? '自动' : `${resolution} · ${ratio}`}</small>
           </div>
           <div className="field">
-            <span>比例</span>
-            <RatioPicker value={ratio} resolution={resolution} onChange={onRatioChange} />
-          </div>
-          <div className="field">
-            <span>清晰度</span>
-            <ResolutionPicker value={resolution} onChange={changeResolution} />
+            <ImageSpecPicker ratio={ratio} resolution={resolution} onRatioChange={onRatioChange} onResolutionChange={onResolutionChange} />
           </div>
           <div className="field">
             <span>质量</span>
