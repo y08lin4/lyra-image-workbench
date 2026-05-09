@@ -113,3 +113,50 @@ export interface CreateTaskRequest {
   concurrency: number
   uploadIds: string[]
 }
+
+export type PromptToolMode = 'text-to-prompt' | 'image-to-prompt'
+
+export interface PromptRecord {
+  id: string
+  mode: PromptToolMode
+  input?: string
+  style?: string
+  ratio?: string
+  language?: string
+  target?: string
+  source?: {
+    type: string
+    uploadId?: string
+    taskId?: string
+    index?: number
+  }
+  sourceImageUrl?: string
+  flatPrompt: string
+  negativePrompt?: string
+  mustKeep?: string[]
+  avoid?: string[]
+  jsonDescription?: Record<string, unknown>
+  raw?: string
+  model: string
+  elapsedMs: number
+  createdAt: string
+}
+
+export interface TextToPromptRequest {
+  input: string
+  style: string
+  ratio: string
+  language: string
+  target: string
+}
+
+export interface ImageToPromptRequest {
+  source: {
+    type: 'upload' | 'result'
+    uploadId?: string
+    taskId?: string
+    index?: number
+  }
+  language: string
+  target: string
+}

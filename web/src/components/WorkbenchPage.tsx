@@ -10,6 +10,7 @@ import { GenerationPanel } from './GenerationPanel'
 import { SettingsWindow } from './SettingsWindow'
 import { TaskDetailModal } from './TaskDetailModal'
 import { TaskGallery } from './TaskGallery'
+import { PromptAssistantModal } from './PromptAssistantModal'
 import { useTaskEvents } from '../hooks/useTaskEvents'
 
 type NumericInputValue = number | ''
@@ -21,6 +22,7 @@ export function WorkbenchPage() {
   const [keyReady, setKeyReady] = useState(false)
   const [keyPreview, setKeyPreview] = useState('')
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [promptAssistantOpen, setPromptAssistantOpen] = useState(false)
   const [tasks, setTasks] = useState<Task[]>([])
   const [activeId, setActiveId] = useState<string | null>(null)
   const [detailId, setDetailId] = useState<string | null>(null)
@@ -162,6 +164,15 @@ export function WorkbenchPage() {
     const data = await uploadTaskImageToPixhost(taskId, index)
     upsertTask(data.job)
     setMessage(data.result.remoteUrl ? 'PiXhost 图床上传成功' : 'PiXhost 图床上传完成')
+  }
+
+  function handleUseAssistantPrompt(nextPrompt: string) {
+    setPrompt(nextPrompt)
+    setPromptAssistantOpen(false)
+    setMessage('提示词助手已填入主输入框')
+    window.setTimeout(() => {
+      document.querySelector('[data-generation-composer] textarea')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }, 0)
   }
 
   function handleSelectTask(task: Task) {
@@ -367,6 +378,7 @@ export function WorkbenchPage() {
             onCountChange={setCount}
             onConcurrencyChange={setConcurrency}
             onOpenSettings={() => setSettingsOpen(true)}
+            onOpenPromptAssistant={() => setPromptAssistantOpen(true)}
             onUpload={handleUpload}
             onDeleteUpload={handleDeleteUpload}
             onSubmit={submit}
@@ -387,6 +399,15 @@ export function WorkbenchPage() {
         />
       ) : null}
       {settingsOpen ? <SettingsWindow onClose={() => setSettingsOpen(false)} onConfig={applyUserConfig} /> : null}
+      {promptAssistantOpen ? (
+        <PromptAssistantModal
+          tasks={tasks}
+          uploads={uploads}
+          onClose={() => setPromptAssistantOpen(false)}
+          onUsePrompt={handleUseAssistantPrompt}
+          onRefreshUploads={refreshUploads}
+        />
+      ) : null}
     </div>
   )
 }

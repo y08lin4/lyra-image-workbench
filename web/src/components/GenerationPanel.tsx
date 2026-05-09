@@ -30,6 +30,7 @@ type Props = {
   onCountChange: (value: NumericInputValue) => void
   onConcurrencyChange: (value: NumericInputValue) => void
   onOpenSettings: () => void
+  onOpenPromptAssistant: () => void
   onUpload: (files: File[]) => void
   onDeleteUpload: (id: string) => void
   onSubmit: (event: FormEvent) => void
@@ -58,6 +59,7 @@ export function GenerationPanel({
   onCountChange,
   onConcurrencyChange,
   onOpenSettings,
+  onOpenPromptAssistant,
   onUpload,
   onDeleteUpload,
   onSubmit,
@@ -91,6 +93,7 @@ export function GenerationPanel({
             <ImageSpecPicker ratio={ratio} resolution={resolution} onRatioChange={onRatioChange} onResolutionChange={onResolutionChange} />
             <QualityPicker value={quality} onChange={onQualityChange} />
             <OutputFormatPicker value={outputFormat} onChange={onOutputFormatChange} />
+            <button type="button" className="prompt-assistant-trigger" onClick={onOpenPromptAssistant}>提示词助手</button>
             <label className="composer-mini-field">
               <span>数量</span>
               <input type="number" min={1} max={12} value={count} onChange={(event) => onCountChange(readNumberInput(event.target.value))} />
