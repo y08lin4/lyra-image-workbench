@@ -36,6 +36,25 @@ func NewFileStore(root string) (*FileStore, error) {
 	return &FileStore{root: spacesRoot}, nil
 }
 
+func (s *FileStore) ListTokens() ([]string, error) {
+	entries, err := os.ReadDir(s.root)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return []string{}, nil
+		}
+		return nil, err
+	}
+	tokens := make([]string, 0)
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		if token, err := NormalizeToken(entry.Name()); err == nil {
+			tokens = append(tokens, token)
+		}
+	}
+	return tokens, nil
+}
 func (s *FileStore) CreateOrOpenByPassword(password string) (Session, error) {
 	token, err := DeriveToken(password)
 	if err != nil {

@@ -41,6 +41,22 @@ func (h UploadHandler) SaveReferenceImages(w http.ResponseWriter, r *http.Reques
 	})
 }
 
+func (h UploadHandler) ListReferenceImages(w http.ResponseWriter, r *http.Request) {
+	items, err := h.store.ListReferenceImages(r.Header.Get("X-Space-Token"))
+	if err != nil {
+		writeUploadError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "uploads": items})
+}
+
+func (h UploadHandler) DeleteReferenceImage(w http.ResponseWriter, r *http.Request) {
+	if err := h.store.DeleteReferenceImage(r.Header.Get("X-Space-Token"), r.PathValue("id")); err != nil {
+		writeUploadError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
 func writeUploadError(w http.ResponseWriter, err error) {
 	status := http.StatusBadRequest
 	code := "REFERENCE_UPLOAD_ERROR"
