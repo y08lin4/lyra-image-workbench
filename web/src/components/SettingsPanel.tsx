@@ -16,8 +16,11 @@ export function SettingsPanel({ onReady }: { onReady: (ready: boolean) => void }
     onReady(cfg.apiKeySet)
   }
   return (
-    <section className="panel">
-      <h2>空间 Key</h2>
+    <section className="form-section key-section">
+      <div className="section-title">
+        <span>空间 Key</span>
+        <small>后端保存</small>
+      </div>
       <p className="muted">Key 只保存到 Go 后端当前个人空间，前端不请求 NewAPI。</p>
       <div className="status-line">当前：{config?.apiKeySet ? `已设置 ${config.apiKeyPreview}` : '未设置'}</div>
       <form onSubmit={submit} className="inline-form">
