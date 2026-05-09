@@ -9,9 +9,16 @@ type Props = {
   statusFilter: TaskFilter
   favoriteOnly: boolean
   favoriteIds: Set<string>
+  selectedIds: Set<string>
   onQueryChange: (value: string) => void
   onStatusFilterChange: (value: TaskFilter) => void
   onFavoriteOnlyChange: (value: boolean) => void
+  onToggleSelect: (id: string) => void
+  onSelectVisible: (ids: string[]) => void
+  onClearSelection: () => void
+  onBatchFavorite: (favorite: boolean) => void
+  onBatchDelete: () => void
+  onBatchDownload: () => void
   onSelect: (task: Task) => void
   onRetry: (id: string) => void
   onCancel: (id: string) => void
@@ -38,9 +45,16 @@ export function TaskGallery({
   statusFilter,
   favoriteOnly,
   favoriteIds,
+  selectedIds,
   onQueryChange,
   onStatusFilterChange,
   onFavoriteOnlyChange,
+  onToggleSelect,
+  onSelectVisible,
+  onClearSelection,
+  onBatchFavorite,
+  onBatchDelete,
+  onBatchDownload,
   onSelect,
   onRetry,
   onCancel,
@@ -77,6 +91,18 @@ export function TaskGallery({
         <span>{runningCount ? `${runningCount} 个任务仍在后台执行` : '后台空闲，结果会保存在本机空间'}</span>
       </div>
 
+      {selectedIds.size ? (
+        <div className="batch-bar">
+          <strong>已选择 {selectedIds.size} 个任务</strong>
+          <button type="button" onClick={() => onSelectVisible(filteredTasks.map((task) => task.id))}>选择当前结果</button>
+          <button type="button" onClick={() => onBatchFavorite(true)}>批量收藏</button>
+          <button type="button" onClick={() => onBatchFavorite(false)}>取消收藏</button>
+          <button type="button" onClick={onBatchDownload}>下载图片</button>
+          <button type="button" className="danger-text" onClick={onBatchDelete}>批量删除</button>
+          <button type="button" onClick={onClearSelection}>取消选择</button>
+        </div>
+      ) : null}
+
       {!filteredTasks.length ? (
         <div className="gallery-empty">
           <strong>{tasks.length ? '没有找到匹配的任务' : '还没有生成记录'}</strong>
@@ -90,7 +116,9 @@ export function TaskGallery({
               task={task}
               active={task.id === activeId}
               favorite={favoriteIds.has(task.id)}
+              selected={selectedIds.has(task.id)}
               onSelect={() => onSelect(task)}
+              onToggleSelect={() => onToggleSelect(task.id)}
               onRetry={() => onRetry(task.id)}
               onCancel={() => onCancel(task.id)}
               onDelete={() => onDelete(task.id)}
@@ -104,11 +132,13 @@ export function TaskGallery({
   )
 }
 
-function TaskGalleryCard({ task, active, favorite, onSelect, onRetry, onCancel, onDelete, onReuse, onToggleFavorite }: {
+function TaskGalleryCard({ task, active, favorite, selected, onSelect, onToggleSelect, onRetry, onCancel, onDelete, onReuse, onToggleFavorite }: {
   task: Task
   active: boolean
   favorite: boolean
+  selected: boolean
   onSelect: () => void
+  onToggleSelect: () => void
   onRetry: () => void
   onCancel: () => void
   onDelete: () => void
@@ -120,9 +150,13 @@ function TaskGalleryCard({ task, active, favorite, onSelect, onRetry, onCancel, 
   const hasError = task.results.some((result) => !result.ok)
 
   return (
-    <article className={`gallery-card ${active ? 'active' : ''} ${!cover ? 'no-cover' : ''}`} onClick={onSelect}>
+    <article className={`gallery-card ${active ? 'active' : ''} ${selected ? 'selected' : ''} ${!cover ? 'no-cover' : ''}`} onClick={onSelect}>
       <div className="gallery-cover">
         {cover ? <img src={cover.remoteThumbUrl || cover.imageUrl} alt={`任务 ${task.id} 的结果缩略图`} /> : <LoadingCover task={task} />}
+        <label className="select-task" onClick={(event) => event.stopPropagation()}>
+          <input type="checkbox" checked={selected} onChange={onToggleSelect} />
+          <span>选择</span>
+        </label>
         <div className="cover-badges">
           <span>{task.ratio === 'auto' ? '自动比例' : task.ratio}</span>
           <span>{task.size && task.size !== '自动' ? task.size : '自动尺寸'}</span>

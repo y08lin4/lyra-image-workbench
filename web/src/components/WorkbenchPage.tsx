@@ -27,6 +27,7 @@ export function WorkbenchPage() {
   const [searchQuery, setSearchQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState<TaskFilter>('all')
   const [favoriteOnly, setFavoriteOnly] = useState(false)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set())
   const [uploads, setUploads] = useState<ReferenceUpload[]>([])
   const [mode, setMode] = useState<Mode>('text-to-image')
   const [prompt, setPrompt] = useState('')
@@ -76,6 +77,14 @@ export function WorkbenchPage() {
     }, 5000)
     return () => window.clearInterval(timer)
   }, [spaceReady, tasks])
+
+  useEffect(() => {
+    const liveIds = new Set(tasks.map((task) => task.id))
+    setSelectedIds((prev) => {
+      const next = new Set(Array.from(prev).filter((id) => liveIds.has(id)))
+      return next.size === prev.size ? prev : next
+    })
+  }, [tasks])
 
   async function refreshTasks() {
     const items = await listTasks()
@@ -192,11 +201,29 @@ export function WorkbenchPage() {
     setMessage('已取消任务')
   }
 
+  function toggleSelectTask(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  function selectVisibleTasks(ids: string[]) {
+    setSelectedIds((prev) => new Set([...Array.from(prev), ...ids]))
+  }
+
   async function handleDelete(id: string) {
     const task = tasks.find((item) => item.id === id)
     if (!window.confirm(`确认删除这条生成记录？${task?.results?.some((result) => result.ok) ? '本地图片文件会先保留。' : ''}`)) return
     await deleteTask(id)
     setTasks((prev) => prev.filter((item) => item.id !== id))
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      next.delete(id)
+      return next
+    })
     setDetailId((current) => (current === id ? null : current))
     setActiveId((current) => {
       if (current !== id) return current
@@ -204,6 +231,66 @@ export function WorkbenchPage() {
       return next?.id || null
     })
     setMessage('已删除任务记录')
+  }
+
+  async function handleBatchFavorite(favorite: boolean) {
+    const ids = Array.from(selectedIds)
+    if (!ids.length) return
+    let ok = 0
+    let failed = 0
+    for (const id of ids) {
+      try {
+        upsertTask(await setTaskFavorite(id, favorite))
+        ok += 1
+      } catch {
+        failed += 1
+      }
+    }
+    setMessage(`${favorite ? '批量收藏' : '取消收藏'}完成：成功 ${ok}，失败 ${failed}`)
+  }
+
+  async function handleBatchDelete() {
+    const ids = Array.from(selectedIds)
+    if (!ids.length) return
+    if (!window.confirm(`确认删除选中的 ${ids.length} 条任务记录？本地图片文件会先保留。`)) return
+    const deleted = new Set<string>()
+    let failed = 0
+    for (const id of ids) {
+      try {
+        await deleteTask(id)
+        deleted.add(id)
+      } catch {
+        failed += 1
+      }
+    }
+    setTasks((prev) => prev.filter((task) => !deleted.has(task.id)))
+    setSelectedIds((prev) => new Set(Array.from(prev).filter((id) => !deleted.has(id))))
+    setDetailId((current) => (current && deleted.has(current) ? null : current))
+    setActiveId((current) => {
+      if (!current || !deleted.has(current)) return current
+      return tasks.find((task) => !deleted.has(task.id))?.id || null
+    })
+    setMessage(`批量删除完成：成功 ${deleted.size}，失败 ${failed}`)
+  }
+
+  function handleBatchDownload() {
+    const selected = selectedIds
+    const items = tasks
+      .filter((task) => selected.has(task.id))
+      .flatMap((task) => task.results
+        .filter((result) => result.ok && result.imageUrl)
+        .map((result) => ({
+          url: result.imageUrl!,
+          name: `${task.id}-${result.index + 1}.${extensionFromMime(result.mime || 'image/png')}`,
+        })))
+    if (!items.length) {
+      setMessage('选中的任务没有可下载图片')
+      return
+    }
+    items.forEach((item, index) => {
+      window.setTimeout(() => downloadURL(item.url, item.name), index * 120)
+    })
+    setMessage(`已触发 ${items.length} 张图片下载`)
   }
 
   async function logout() {
@@ -234,9 +321,16 @@ export function WorkbenchPage() {
           statusFilter={statusFilter}
           favoriteOnly={favoriteOnly}
           favoriteIds={favoriteIds}
+          selectedIds={selectedIds}
           onQueryChange={setSearchQuery}
           onStatusFilterChange={setStatusFilter}
           onFavoriteOnlyChange={setFavoriteOnly}
+          onToggleSelect={toggleSelectTask}
+          onSelectVisible={selectVisibleTasks}
+          onClearSelection={() => setSelectedIds(new Set())}
+          onBatchFavorite={(favorite) => void handleBatchFavorite(favorite)}
+          onBatchDelete={() => void handleBatchDelete()}
+          onBatchDownload={handleBatchDownload}
           onSelect={handleSelectTask}
           onRetry={(id) => void handleRetry(id)}
           onCancel={(id) => void handleCancel(id)}
@@ -296,6 +390,16 @@ function extensionFromMime(mime: string) {
   if (mime.includes('webp')) return 'webp'
   if (mime.includes('gif')) return 'gif'
   return 'png'
+}
+
+function downloadURL(url: string, filename: string) {
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = filename
+  anchor.rel = 'noopener'
+  document.body.appendChild(anchor)
+  anchor.click()
+  anchor.remove()
 }
 
 function numericOrDefault(value: NumericInputValue, fallback: number) {

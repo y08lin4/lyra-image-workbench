@@ -686,6 +686,25 @@ button:not(.primary) { background: var(--surface-soft); color: #1e3a8a; border: 
   color: var(--muted);
 }
 .gallery-summary strong { color: var(--text); }
+.batch-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: rgba(124, 92, 255, .08);
+}
+.batch-bar strong {
+  color: var(--text);
+  margin-right: auto;
+}
+.batch-bar button {
+  min-height: 36px;
+  padding: 8px 12px;
+  border-radius: 10px;
+}
 .task-gallery-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(330px, 1fr));
@@ -707,6 +726,10 @@ button:not(.primary) { background: var(--surface-soft); color: #1e3a8a; border: 
   border-color: var(--primary-2);
   background: #1b1d24;
 }
+.gallery-card.selected {
+  border-color: #8b5cf6;
+  background: rgba(124, 92, 255, .12);
+}
 .gallery-card:active { transform: scale(.995); }
 .gallery-cover {
   position: relative;
@@ -719,6 +742,24 @@ button:not(.primary) { background: var(--surface-soft); color: #1e3a8a; border: 
   display: block;
   object-fit: cover;
 }
+.select-task {
+  position: absolute;
+  z-index: 2;
+  right: 10px;
+  bottom: 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border: 1px solid rgba(255, 255, 255, .18);
+  border-radius: 999px;
+  background: rgba(15, 23, 42, .76);
+  color: #f8fafc;
+  font-size: 12px;
+  font-weight: 900;
+  cursor: pointer;
+}
+.select-task input { width: 14px; height: 14px; }
 .cover-badges {
   position: absolute;
   top: 10px;
