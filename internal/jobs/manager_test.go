@@ -1,0 +1,278 @@
+package jobs
+
+import (
+	"context"
+	"encoding/base64"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"path/filepath"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	"github.com/y08lin4/image-Workbench-Localhost-Version/internal/config"
+	"github.com/y08lin4/image-Workbench-Localhost-Version/internal/events"
+	"github.com/y08lin4/image-Workbench-Localhost-Version/internal/newapi"
+	"github.com/y08lin4/image-Workbench-Localhost-Version/internal/output"
+	"github.com/y08lin4/image-Workbench-Localhost-Version/internal/settings"
+	"github.com/y08lin4/image-Workbench-Localhost-Version/internal/spaceconfig"
+	"github.com/y08lin4/image-Workbench-Localhost-Version/internal/spaces"
+	"github.com/y08lin4/image-Workbench-Localhost-Version/internal/uploads"
+)
+
+func TestManagerCreateReturnsQueuedAndCompletesInBackground(t *testing.T) {
+	var requests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		if r.URL.Path != "/v1/images/generations" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		var payload map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatalf("decode body: %v", err)
+		}
+		if payload["n"].(float64) != 1 {
+			t.Fatalf("count should be split into n=1 calls, got body %+v", payload)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": []map[string]string{{"b64_json": base64.StdEncoding.EncodeToString([]byte("image"))}}})
+	}))
+	defer server.Close()
+	env := newManagerTestEnv(t, server.URL+"/v1")
+
+	created, err := env.manager.Create(env.token, CreateRequest{
+		Mode:        ModeTextToImage,
+		Prompt:      "cat",
+		Ratio:       "1:1",
+		Resolution:  "standard",
+		Count:       2,
+		Concurrency: 1,
+	})
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	if created.Status != StatusQueued || created.Progress != 0 {
+		t.Fatalf("Create() should return queued snapshot, got %+v", created)
+	}
+
+	final := waitForJobStatus(t, env.store, env.token, created.ID, StatusSucceeded, 3*time.Second)
+	if len(final.Results) != 2 {
+		t.Fatalf("expected two results, got %+v", final.Results)
+	}
+	for _, result := range final.Results {
+		if !result.OK || result.ImageURL == "" {
+			t.Fatalf("unexpected result: %+v", result)
+		}
+	}
+	if requests.Load() != 2 {
+		t.Fatalf("expected two upstream calls, got %d", requests.Load())
+	}
+}
+
+func TestManagerAllowsPartialFailed(t *testing.T) {
+	var requests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if requests.Add(1) == 2 {
+			http.Error(w, `{"error":{"message":"boom"}}`, http.StatusBadGateway)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": []map[string]string{{"b64_json": base64.StdEncoding.EncodeToString([]byte("ok"))}}})
+	}))
+	defer server.Close()
+	env := newManagerTestEnv(t, server.URL)
+
+	created, err := env.manager.Create(env.token, CreateRequest{
+		Mode:        ModeTextToImage,
+		Prompt:      "cat",
+		Ratio:       "1:1",
+		Resolution:  "standard",
+		Count:       2,
+		Concurrency: 1,
+	})
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	final := waitForJobStatus(t, env.store, env.token, created.ID, StatusPartialFailed, 3*time.Second)
+	okCount := 0
+	for _, result := range final.Results {
+		if result.OK {
+			okCount++
+		}
+	}
+	if okCount != 1 {
+		t.Fatalf("expected exactly one success, got %+v", final.Results)
+	}
+}
+
+func TestManagerCancelDoesNotWaitForUpstreamCompletion(t *testing.T) {
+	started := make(chan struct{})
+	release := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		closeOnce(started)
+		select {
+		case <-r.Context().Done():
+			return
+		case <-release:
+			_ = json.NewEncoder(w).Encode(map[string]any{"data": []map[string]string{{"b64_json": base64.StdEncoding.EncodeToString([]byte("late"))}}})
+		}
+	}))
+	defer server.Close()
+	defer close(release)
+	env := newManagerTestEnv(t, server.URL)
+
+	created, err := env.manager.Create(env.token, CreateRequest{Mode: ModeTextToImage, Prompt: "slow", Ratio: "1:1", Resolution: "standard", Count: 1, Concurrency: 1})
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("upstream request did not start")
+	}
+	cancelled, err := env.manager.Cancel(env.token, created.ID)
+	if err != nil {
+		t.Fatalf("Cancel() error = %v", err)
+	}
+	if cancelled.Status != StatusCancelled {
+		t.Fatalf("Cancel() status = %s", cancelled.Status)
+	}
+	final := waitForJobStatus(t, env.store, env.token, created.ID, StatusCancelled, 2*time.Second)
+	if final.Status != StatusCancelled {
+		t.Fatalf("final status = %s", final.Status)
+	}
+}
+
+func TestManagerRecoverRequeuesQueuedAndInterruptsRunning(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": []map[string]string{{"b64_json": base64.StdEncoding.EncodeToString([]byte("recovered"))}}})
+	}))
+	defer server.Close()
+	env := newManagerTestEnvWithoutManager(t, server.URL)
+
+	queued := newPersistedJob(env.token, "img_queued", StatusQueued, StageQueued)
+	if err := env.store.Save(queued); err != nil {
+		t.Fatalf("Save(queued) error = %v", err)
+	}
+	running := newPersistedJob(env.token, "img_running", StatusRunning, StageWaitingUpstream)
+	if err := env.store.Save(running); err != nil {
+		t.Fatalf("Save(running) error = %v", err)
+	}
+
+	env.manager = NewManager(env.store, events.NewHub(), env.settings, env.spaceConfig, env.uploads, env.output, newapi.NewClient())
+	if err := env.manager.Recover(); err != nil {
+		t.Fatalf("Recover() error = %v", err)
+	}
+
+	waitForJobStatus(t, env.store, env.token, "img_queued", StatusSucceeded, 3*time.Second)
+	interrupted := waitForJobStatus(t, env.store, env.token, "img_running", StatusInterrupted, 2*time.Second)
+	if interrupted.Stage != StageInterrupted || interrupted.Progress != 100 {
+		t.Fatalf("running job was not interrupted cleanly: %+v", interrupted)
+	}
+}
+
+type managerTestEnv struct {
+	token       string
+	store       *Store
+	settings    *settings.FileStore
+	spaceConfig *spaceconfig.Store
+	uploads     *uploads.Store
+	output      *output.Store
+	manager     *Manager
+}
+
+func newManagerTestEnv(t *testing.T, baseURL string) managerTestEnv {
+	t.Helper()
+	env := newManagerTestEnvWithoutManager(t, baseURL)
+	env.manager = NewManager(env.store, events.NewHub(), env.settings, env.spaceConfig, env.uploads, env.output, newapi.NewClient())
+	return env
+}
+
+func newManagerTestEnvWithoutManager(t *testing.T, baseURL string) managerTestEnv {
+	t.Helper()
+	root := t.TempDir()
+	spaceStore, err := spaces.NewFileStore(filepath.Join(root, "data"))
+	if err != nil {
+		t.Fatalf("NewFileStore() error = %v", err)
+	}
+	session, err := spaceStore.CreateOrOpenByPassword("R7!Blue#Vault$2026")
+	if err != nil {
+		t.Fatalf("CreateOrOpenByPassword() error = %v", err)
+	}
+	settingsStore, err := settings.NewFileStore(filepath.Join(root, "data", "config.local.json"), settings.RuntimeConfig{
+		NewAPIBaseURL: baseURL,
+		TimeoutSec:    config.DefaultTimeoutSec,
+		Model:         config.DefaultModel,
+	})
+	if err != nil {
+		t.Fatalf("settings.NewFileStore() error = %v", err)
+	}
+	spaceConfigStore := spaceconfig.NewStore(spaceStore)
+	key := "sk-test"
+	if _, err := spaceConfigStore.Update(session.Token, spaceconfig.Update{APIKey: &key}); err != nil {
+		t.Fatalf("space config Update() error = %v", err)
+	}
+	outputStore, err := output.NewStore(filepath.Join(root, "outputs"))
+	if err != nil {
+		t.Fatalf("output.NewStore() error = %v", err)
+	}
+	return managerTestEnv{
+		token:       session.Token,
+		store:       NewStore(spaceStore),
+		settings:    settingsStore,
+		spaceConfig: spaceConfigStore,
+		uploads:     uploads.NewStore(spaceStore),
+		output:      outputStore,
+	}
+}
+
+func waitForJobStatus(t *testing.T, store *Store, token string, id string, status Status, timeout time.Duration) Job {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	ticker := time.NewTicker(20 * time.Millisecond)
+	defer ticker.Stop()
+	var last Job
+	for {
+		job, ok, err := store.Get(token, id)
+		if err != nil {
+			t.Fatalf("store.Get() error = %v", err)
+		}
+		if ok {
+			last = job
+			if job.Status == status {
+				return job
+			}
+		}
+		select {
+		case <-ctx.Done():
+			t.Fatalf("timed out waiting for %s; last job = %+v", status, last)
+		case <-ticker.C:
+		}
+	}
+}
+
+func newPersistedJob(token string, id string, status Status, stage Stage) Job {
+	now := time.Now()
+	job := Job{
+		ID:          id,
+		SpaceToken:  token,
+		Mode:        ModeTextToImage,
+		Prompt:      "recover",
+		Ratio:       "1:1",
+		Resolution:  "standard",
+		Size:        "1024x1024",
+		Count:       1,
+		Concurrency: 1,
+		Results:     []Result{},
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}
+	ApplyStatus(&job, status)
+	ApplyStage(&job, stage)
+	return job
+}
+
+func closeOnce(ch chan struct{}) {
+	defer func() { _ = recover() }()
+	close(ch)
+}
