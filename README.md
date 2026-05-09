@@ -17,9 +17,21 @@ go run ./cmd/local-server
 cd web
 npm install
 npm run dev
+
+# 前端生产构建
+cd web
+npm run build
 ```
 
 生产/打包形态下由 Go 后端直接托管 `web/dist`，前端访问 `/api/...` 即可，不需要知道后端监听地址。
+
+## 使用闭环
+
+1. 运行 `go run ./cmd/local-server` 启动本机后端，默认监听 `127.0.0.1:8787`。
+2. 打开工作台，输入空间密码创建/进入个人空间。
+3. 在空间 Key 面板填写 NewAPI Key；后端只向前端返回掩码。
+4. 打开 `/admin` 配置 NewAPI URL 和请求超时时间，默认超时为 `600s`，模型固定为 `gpt-image-2`。
+5. 回到 `/` 提交文生图或图生图任务。前端只请求同源 `/api`，后端后台任务继续执行，刷新页面后可从本机 JSON 状态和 `outputs/` 结果恢复。
 
 ## 设计文档
 
@@ -27,5 +39,6 @@ npm run dev
 - `docs/STACK.md`：Go 后端与 React/Vite 前端选型。
 - `docs/PROJECT_REQUIREMENTS.md`：项目模块化和 10 分钟稳定性硬性要求。
 - `docs/REFERENCE_PROJECT_ANALYSIS.md`：参考项目路由、后台任务和稳定性缺口分析。
-- `docs/CLOSED_LOOP_DESIGN.md`：当前未闭环点、最终闭环设计和实现顺序。`n- `docs/SPACE_DESIGN.md`：个人空间、空间密码、固定模型和图生图第一版设计。
+- `docs/CLOSED_LOOP_DESIGN.md`：当前未闭环点、最终闭环设计和实现顺序。
+- `docs/SPACE_DESIGN.md`：个人空间、空间密码、固定模型和图生图第一版设计。
 

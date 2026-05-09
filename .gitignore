@@ -6,6 +6,8 @@ outputs/
 
 # 构建产物
 dist/
+web/dist/
+*.tsbuildinfo
 .cache/
 
 # 本地参考仓库/临时目录
