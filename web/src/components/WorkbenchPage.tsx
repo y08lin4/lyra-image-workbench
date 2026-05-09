@@ -12,6 +12,8 @@ import { TaskTimeline } from './TaskTimeline'
 import { SettingsWindow } from './SettingsWindow'
 import { useTaskEvents } from '../hooks/useTaskEvents'
 
+type NumericInputValue = number | ''
+
 export function WorkbenchPage() {
   const [session, setSession] = useState<SpaceSession | null>(null)
   const [spaceReady, setSpaceReady] = useState(false)
@@ -26,8 +28,8 @@ export function WorkbenchPage() {
   const [ratio, setRatio] = useState('1:1')
   const [resolution, setResolution] = useState('standard')
   const [quality, setQuality] = useState('auto')
-  const [count, setCount] = useState(1)
-  const [concurrency, setConcurrency] = useState(1)
+  const [count, setCount] = useState<NumericInputValue>(1)
+  const [concurrency, setConcurrency] = useState<NumericInputValue>(1)
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
 
@@ -88,7 +90,16 @@ export function WorkbenchPage() {
     if (!keyReady) { setError('请先保存当前空间的 Image-2 Key'); return }
     if (!prompt.trim()) { setError('请先输入提示词'); return }
     if (mode === 'image-to-image' && uploads.length === 0) { setError('图生图需要先上传参考图'); return }
-    const payload: CreateTaskRequest = { mode, prompt, ratio, resolution, quality, count, concurrency, uploadIds: mode === 'image-to-image' ? uploads.map((item) => item.id) : [] }
+    const payload: CreateTaskRequest = {
+      mode,
+      prompt,
+      ratio,
+      resolution,
+      quality,
+      count: numericOrDefault(count, 1),
+      concurrency: numericOrDefault(concurrency, 1),
+      uploadIds: mode === 'image-to-image' ? uploads.map((item) => item.id) : [],
+    }
     try {
       const job = await createTask(payload)
       upsertTask(job)
@@ -186,4 +197,8 @@ function extensionFromMime(mime: string) {
   if (mime.includes('webp')) return 'webp'
   if (mime.includes('gif')) return 'gif'
   return 'png'
+}
+
+function numericOrDefault(value: NumericInputValue, fallback: number) {
+  return value === '' ? fallback : value
 }

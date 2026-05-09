@@ -2,10 +2,12 @@
 import { getUserConfig, saveUserConfig } from '../api/config'
 import type { UserConfig } from '../types'
 
+type NumericInputValue = number | ''
+
 export function SettingsPanel({ onReady, onConfig }: { onReady?: (ready: boolean) => void; onConfig?: (config: UserConfig) => void }) {
   const [config, setConfig] = useState<UserConfig | null>(null)
   const [apiKey, setApiKey] = useState('')
-  const [defaultConcurrency, setDefaultConcurrency] = useState(1)
+  const [defaultConcurrency, setDefaultConcurrency] = useState<NumericInputValue>(1)
   const [autoUploadPixhost, setAutoUploadPixhost] = useState(false)
   const [message, setMessage] = useState('')
   useEffect(() => {
@@ -19,7 +21,10 @@ export function SettingsPanel({ onReady, onConfig }: { onReady?: (ready: boolean
   }, [onReady, onConfig])
   async function submit(event: FormEvent) {
     event.preventDefault()
-    const payload: { apiKey?: string; defaultConcurrency: number; autoUploadPixhost: boolean } = { defaultConcurrency, autoUploadPixhost }
+    const payload: { apiKey?: string; defaultConcurrency: number; autoUploadPixhost: boolean } = {
+      defaultConcurrency: numericOrDefault(defaultConcurrency, 1),
+      autoUploadPixhost,
+    }
     if (apiKey.trim()) payload.apiKey = apiKey
     const cfg = await saveUserConfig(payload)
     setConfig(cfg)
@@ -42,7 +47,7 @@ export function SettingsPanel({ onReady, onConfig }: { onReady?: (ready: boolean
         <input value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="填写 Image-2 Key" />
         <label className="field">
           <span>默认并发</span>
-          <input type="number" min={1} value={defaultConcurrency} onChange={(e) => setDefaultConcurrency(Number(e.target.value))} />
+          <input type="number" min={1} value={defaultConcurrency} onChange={(e) => setDefaultConcurrency(readNumberInput(e.target.value))} />
         </label>
         <label className="check-row">
           <input type="checkbox" checked={autoUploadPixhost} onChange={(e) => setAutoUploadPixhost(e.target.checked)} />
@@ -54,4 +59,12 @@ export function SettingsPanel({ onReady, onConfig }: { onReady?: (ready: boolean
       {message ? <small className="ok">{message}</small> : null}
     </section>
   )
+}
+
+function readNumberInput(value: string): NumericInputValue {
+  return value === '' ? '' : Number(value)
+}
+
+function numericOrDefault(value: NumericInputValue, fallback: number) {
+  return value === '' ? fallback : value
 }

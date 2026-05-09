@@ -12,13 +12,14 @@ import {
 import type { AdminAuthStatus, AdminConfig } from '../types'
 
 type AdminMode = 'loading' | 'setup' | 'login' | 'config'
+type NumericInputValue = number | ''
 
 export function AdminPage() {
   const [mode, setMode] = useState<AdminMode>('loading')
   const [auth, setAuth] = useState<AdminAuthStatus | null>(null)
   const [config, setConfig] = useState<AdminConfig | null>(null)
   const [url, setUrl] = useState('')
-  const [timeout, setTimeoutSec] = useState(600)
+  const [timeout, setTimeoutSec] = useState<NumericInputValue>(600)
   const [password, setPassword] = useState('')
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
@@ -86,7 +87,7 @@ export function AdminPage() {
     event.preventDefault()
     setError('')
     try {
-      const cfg = await saveAdminConfig(url, timeout)
+      const cfg = await saveAdminConfig(url, numericOrDefault(timeout, config?.timeoutSec || 600))
       setConfig(cfg)
       setMessage('管理配置已保存')
     } catch (err) {
@@ -146,7 +147,7 @@ export function AdminPage() {
         <AdminBrand title="后台管理" />
         <div className="status-line">Admin 已登录 · 密码状态：{auth?.passwordSet ? '已设置' : '未设置'}</div>
         <label>NewAPI 请求 URL<input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="http://127.0.0.1:3000/v1" /></label>
-        <label>超时时间（秒）<input type="number" min={config?.limits.minTimeoutSec || 60} max={config?.limits.maxTimeoutSec || 3600} value={timeout} onChange={(e) => setTimeoutSec(Number(e.target.value))} /></label>
+        <label>超时时间（秒）<input type="number" min={config?.limits.minTimeoutSec || 60} max={config?.limits.maxTimeoutSec || 3600} value={timeout} onChange={(e) => setTimeoutSec(readNumberInput(e.target.value))} /></label>
         <div className="status-line">模型：{config?.model || 'gpt-image-2'} {config?.modelLocked ? '（首版固定）' : ''}</div>
         <button className="primary" type="submit">保存管理配置</button>
         <div className="admin-actions"><a href="/">返回工作台</a><button type="button" onClick={handleLogout}>退出 Admin</button></div>
@@ -167,4 +168,12 @@ function AdminBrand({ title }: { title: string }) {
       </div>
     </div>
   )
+}
+
+function readNumberInput(value: string): NumericInputValue {
+  return value === '' ? '' : Number(value)
+}
+
+function numericOrDefault(value: NumericInputValue, fallback: number) {
+  return value === '' ? fallback : value
 }

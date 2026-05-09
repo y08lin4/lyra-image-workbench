@@ -6,14 +6,16 @@ import { RatioPicker } from './RatioPicker'
 import { ResolutionPicker } from './ResolutionPicker'
 import { UploadPanel } from './UploadPanel'
 
+type NumericInputValue = number | ''
+
 type Props = {
   mode: Mode
   prompt: string
   ratio: string
   resolution: string
   quality: string
-  count: number
-  concurrency: number
+  count: NumericInputValue
+  concurrency: NumericInputValue
   uploads: ReferenceUpload[]
   keyReady: boolean
   keyPreview: string
@@ -24,8 +26,8 @@ type Props = {
   onRatioChange: (value: string) => void
   onResolutionChange: (value: string) => void
   onQualityChange: (value: string) => void
-  onCountChange: (value: number) => void
-  onConcurrencyChange: (value: number) => void
+  onCountChange: (value: NumericInputValue) => void
+  onConcurrencyChange: (value: NumericInputValue) => void
   onOpenSettings: () => void
   onUpload: (files: File[]) => void
   onDeleteUpload: (id: string) => void
@@ -122,11 +124,11 @@ export function GenerationPanel({
           <div className="grid-2">
             <label className="field">
               <span>数量</span>
-              <input type="number" min={1} max={12} value={count} onChange={(event) => onCountChange(Number(event.target.value))} />
+              <input type="number" min={1} max={12} value={count} onChange={(event) => onCountChange(readNumberInput(event.target.value))} />
             </label>
             <label className="field">
               <span>并发</span>
-              <input type="number" min={1} value={concurrency} onChange={(event) => onConcurrencyChange(Number(event.target.value))} />
+              <input type="number" min={1} value={concurrency} onChange={(event) => onConcurrencyChange(readNumberInput(event.target.value))} />
             </label>
           </div>
         </section>
@@ -140,4 +142,8 @@ export function GenerationPanel({
       {error ? <div className="error">{error}</div> : null}
     </aside>
   )
+}
+
+function readNumberInput(value: string): NumericInputValue {
+  return value === '' ? '' : Number(value)
 }
