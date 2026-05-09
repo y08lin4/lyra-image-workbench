@@ -4,15 +4,18 @@ import { clearSpaceToken, getSpaceToken } from '../api/client'
 import { getCurrentSpace, leaveSpace } from '../api/spaces'
 import { deleteReferenceUpload, listReferenceUploads, uploadReferenceImages } from '../api/uploads'
 import { getUserConfig } from '../api/config'
-import type { CreateTaskRequest, Mode, ReferenceUpload, SpaceSession, Task, TaskEvent, UserConfig } from '../types'
+import type { CreateTaskRequest, Mode, ReferenceUpload, SpaceSession, Task, TaskEvent, TaskStatus, UserConfig } from '../types'
 import { SpaceLogin } from './SpaceLogin'
 import { GenerationPanel } from './GenerationPanel'
-import { ResultCanvas } from './ResultCanvas'
-import { TaskTimeline } from './TaskTimeline'
 import { SettingsWindow } from './SettingsWindow'
+import { TaskDetailModal } from './TaskDetailModal'
+import { TaskGallery } from './TaskGallery'
 import { useTaskEvents } from '../hooks/useTaskEvents'
 
 type NumericInputValue = number | ''
+type TaskFilter = TaskStatus | 'all'
+
+const FAVORITES_STORAGE_KEY = 'image-workbench.favorite-task-ids'
 
 export function WorkbenchPage() {
   const [session, setSession] = useState<SpaceSession | null>(null)
@@ -22,6 +25,11 @@ export function WorkbenchPage() {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [tasks, setTasks] = useState<Task[]>([])
   const [activeId, setActiveId] = useState<string | null>(null)
+  const [detailId, setDetailId] = useState<string | null>(null)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [statusFilter, setStatusFilter] = useState<TaskFilter>('all')
+  const [favoriteOnly, setFavoriteOnly] = useState(false)
+  const [favoriteIds, setFavoriteIds] = useState<Set<string>>(() => readFavoriteIds())
   const [uploads, setUploads] = useState<ReferenceUpload[]>([])
   const [mode, setMode] = useState<Mode>('text-to-image')
   const [prompt, setPrompt] = useState('')
@@ -33,7 +41,7 @@ export function WorkbenchPage() {
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
 
-  const activeTask = useMemo(() => tasks.find((task) => task.id === activeId), [tasks, activeId])
+  const detailTask = useMemo(() => tasks.find((task) => task.id === detailId), [tasks, detailId])
   const upsertTask = useCallback((task: Task) => {
     setTasks((prev) => {
       const index = prev.findIndex((item) => item.id === task.id)
@@ -45,7 +53,7 @@ export function WorkbenchPage() {
   }, [])
 
   const handleTaskEvent = useCallback((event: TaskEvent) => {
-    if (event.event !== 'heartbeat') setMessage(`${event.chinese} / ${event.english} / ${event.code}`)
+    if (event.event !== 'heartbeat') setMessage(`${event.chinese} / ${event.code}`)
   }, [])
 
   useTaskEvents(activeId, upsertTask, handleTaskEvent)
@@ -63,10 +71,18 @@ export function WorkbenchPage() {
     void refreshUserConfig()
   }, [spaceReady])
 
+  useEffect(() => {
+    if (!spaceReady || !tasks.some((task) => !isFinal(task))) return
+    const timer = window.setInterval(() => {
+      void refreshTasks()
+    }, 5000)
+    return () => window.clearInterval(timer)
+  }, [spaceReady, tasks])
+
   async function refreshTasks() {
     const items = await listTasks()
     setTasks(items)
-    if (!activeId && items[0]) setActiveId(items[0].id)
+    setActiveId((current) => current || items[0]?.id || null)
   }
 
   async function refreshUploads() {
@@ -104,7 +120,7 @@ export function WorkbenchPage() {
       const job = await createTask(payload)
       upsertTask(job)
       setActiveId(job.id)
-      setMessage('任务已提交，后端会继续执行')
+      setMessage('任务已提交，后端会继续执行，前端可刷新或断开')
     } catch (err) {
       setError(err instanceof Error ? err.message : '提交失败')
     }
@@ -138,6 +154,49 @@ export function WorkbenchPage() {
     setMessage(data.result.remoteUrl ? 'PiXhost 图床上传成功' : 'PiXhost 图床上传完成')
   }
 
+  function handleSelectTask(task: Task) {
+    setActiveId(task.id)
+    setDetailId(task.id)
+  }
+
+  function handleReuseTask(task: Task) {
+    setMode(task.mode)
+    setPrompt(task.prompt)
+    setRatio(task.ratio || '1:1')
+    setResolution(task.resolution || 'standard')
+    setQuality(task.quality || 'auto')
+    setCount(task.count || 1)
+    setConcurrency(task.concurrency || 1)
+    setMessage('已复用该任务的提示词和参数')
+    window.setTimeout(() => {
+      document.querySelector('[data-generation-composer] textarea')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }, 0)
+  }
+
+  function toggleFavorite(id: string) {
+    setFavoriteIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      saveFavoriteIds(next)
+      return next
+    })
+  }
+
+  async function handleRetry(id: string) {
+    const job = await retryTask(id)
+    upsertTask(job)
+    setActiveId(job.id)
+    setDetailId(job.id)
+    setMessage('已重新提交任务')
+  }
+
+  async function handleCancel(id: string) {
+    const job = await cancelTask(id)
+    upsertTask(job)
+    setMessage('已取消任务')
+  }
+
   async function logout() {
     await leaveSpace()
     setSession(null)
@@ -147,7 +206,7 @@ export function WorkbenchPage() {
   if (!session) return <SpaceLogin onSession={(next) => { setSession(next); setSpaceReady(true) }} />
 
   return (
-    <div className="app-shell">
+    <div className="app-shell gallery-shell">
       <header className="topbar">
         <div className="brand">
           <div className="brand-mark">AI</div>
@@ -158,35 +217,64 @@ export function WorkbenchPage() {
         </div>
         <nav className="top-actions"><button type="button" onClick={() => setSettingsOpen(true)}>设置</button><a className="ghost-link" href="/admin">Admin</a><button onClick={logout}>退出空间</button></nav>
       </header>
-      <main className="workspace">
-        <GenerationPanel
-          mode={mode}
-          prompt={prompt}
-          ratio={ratio}
-          resolution={resolution}
-          quality={quality}
-          count={count}
-          concurrency={concurrency}
-          uploads={uploads}
-          keyReady={keyReady}
-          keyPreview={keyPreview}
-          message={message}
-          error={error}
-          onModeChange={setMode}
-          onPromptChange={setPrompt}
-          onRatioChange={setRatio}
-          onResolutionChange={setResolution}
-          onQualityChange={setQuality}
-          onCountChange={setCount}
-          onConcurrencyChange={setConcurrency}
-          onOpenSettings={() => setSettingsOpen(true)}
-          onUpload={handleUpload}
-          onDeleteUpload={handleDeleteUpload}
-          onSubmit={submit}
+      <main className="gallery-workspace">
+        <TaskGallery
+          tasks={tasks}
+          activeId={activeId || undefined}
+          query={searchQuery}
+          statusFilter={statusFilter}
+          favoriteOnly={favoriteOnly}
+          favoriteIds={favoriteIds}
+          onQueryChange={setSearchQuery}
+          onStatusFilterChange={setStatusFilter}
+          onFavoriteOnlyChange={setFavoriteOnly}
+          onSelect={handleSelectTask}
+          onRetry={(id) => void handleRetry(id)}
+          onCancel={(id) => void handleCancel(id)}
+          onReuse={handleReuseTask}
+          onToggleFavorite={toggleFavorite}
         />
-        <ResultCanvas task={activeTask} onUseAsReference={handleUseResultAsReference} onUploadPixhost={handleUploadPixhost} />
-        <TaskTimeline tasks={tasks} activeId={activeId || undefined} onSelect={setActiveId} onRetry={(id) => void retryTask(id).then(upsertTask)} onCancel={(id) => void cancelTask(id).then(upsertTask)} />
       </main>
+      <div className="composer-dock" data-generation-composer>
+        <GenerationPanel
+            mode={mode}
+            prompt={prompt}
+            ratio={ratio}
+            resolution={resolution}
+            quality={quality}
+            count={count}
+            concurrency={concurrency}
+            uploads={uploads}
+            keyReady={keyReady}
+            keyPreview={keyPreview}
+            message={message}
+            error={error}
+            onModeChange={setMode}
+            onPromptChange={setPrompt}
+            onRatioChange={setRatio}
+            onResolutionChange={setResolution}
+            onQualityChange={setQuality}
+            onCountChange={setCount}
+            onConcurrencyChange={setConcurrency}
+            onOpenSettings={() => setSettingsOpen(true)}
+            onUpload={handleUpload}
+            onDeleteUpload={handleDeleteUpload}
+            onSubmit={submit}
+          />
+      </div>
+      {detailTask ? (
+        <TaskDetailModal
+          task={detailTask}
+          favorite={favoriteIds.has(detailTask.id)}
+          onClose={() => setDetailId(null)}
+          onRetry={(id) => void handleRetry(id)}
+          onCancel={(id) => void handleCancel(id)}
+          onReuse={handleReuseTask}
+          onToggleFavorite={toggleFavorite}
+          onUseAsReference={handleUseResultAsReference}
+          onUploadPixhost={handleUploadPixhost}
+        />
+      ) : null}
       {settingsOpen ? <SettingsWindow onClose={() => setSettingsOpen(false)} onConfig={applyUserConfig} /> : null}
     </div>
   )
@@ -201,4 +289,26 @@ function extensionFromMime(mime: string) {
 
 function numericOrDefault(value: NumericInputValue, fallback: number) {
   return value === '' ? fallback : value
+}
+
+function isFinal(task: Task) {
+  return ['succeeded', 'partial_failed', 'failed', 'cancelled', 'interrupted'].includes(task.status)
+}
+
+function readFavoriteIds() {
+  try {
+    const raw = window.localStorage.getItem(FAVORITES_STORAGE_KEY)
+    const parsed = raw ? JSON.parse(raw) : []
+    return new Set(Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string') : [])
+  } catch {
+    return new Set<string>()
+  }
+}
+
+function saveFavoriteIds(ids: Set<string>) {
+  try {
+    window.localStorage.setItem(FAVORITES_STORAGE_KEY, JSON.stringify(Array.from(ids)))
+  } catch {
+    // localStorage 不可用时只保留当前会话内的收藏状态。
+  }
 }
