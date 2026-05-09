@@ -129,6 +129,7 @@ export function WorkbenchPage() {
       const job = await createTask(payload)
       upsertTask(job)
       setActiveId(job.id)
+      setPrompt('')
       setMessage('任务已提交，后端会继续执行，前端可刷新或断开')
     } catch (err) {
       setError(err instanceof Error ? err.message : '提交失败')
