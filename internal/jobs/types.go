@@ -82,6 +82,10 @@ type Result struct {
 	UploadError    string `json:"uploadError,omitempty"`
 	Mime           string `json:"mime,omitempty"`
 	Bytes          int64  `json:"bytes,omitempty"`
+	RevisedPrompt  string `json:"revisedPrompt,omitempty"`
+	ActualSize     string `json:"actualSize,omitempty"`
+	ActualQuality  string `json:"actualQuality,omitempty"`
+	OutputFormat   string `json:"outputFormat,omitempty"`
 	Error          string `json:"error,omitempty"`
 	ElapsedMs      int64  `json:"elapsedMs,omitempty"`
 }

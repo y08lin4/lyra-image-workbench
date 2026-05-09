@@ -35,7 +35,13 @@ func TestManagerCreateReturnsQueuedAndCompletesInBackground(t *testing.T) {
 		if payload["n"].(float64) != 1 {
 			t.Fatalf("count should be split into n=1 calls, got body %+v", payload)
 		}
-		_ = json.NewEncoder(w).Encode(map[string]any{"data": []map[string]string{{"b64_json": base64.StdEncoding.EncodeToString([]byte("image"))}}})
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": []map[string]string{{
+			"b64_json":       base64.StdEncoding.EncodeToString([]byte("image")),
+			"revised_prompt": "revised cat",
+			"size":           "1024x1024",
+			"quality":        "high",
+			"output_format":  "png",
+		}}})
 	}))
 	defer server.Close()
 	env := newManagerTestEnv(t, server.URL+"/v1")
@@ -62,6 +68,9 @@ func TestManagerCreateReturnsQueuedAndCompletesInBackground(t *testing.T) {
 	for _, result := range final.Results {
 		if !result.OK || result.ImageURL == "" {
 			t.Fatalf("unexpected result: %+v", result)
+		}
+		if result.RevisedPrompt != "revised cat" || result.ActualSize != "1024x1024" || result.ActualQuality != "high" || result.OutputFormat != "png" {
+			t.Fatalf("unexpected result metadata: %+v", result)
 		}
 	}
 	if requests.Load() != 2 {

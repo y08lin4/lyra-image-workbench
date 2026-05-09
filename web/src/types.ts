@@ -58,6 +58,10 @@ export interface TaskResult {
   uploadError?: string
   mime?: string
   bytes?: number
+  revisedPrompt?: string
+  actualSize?: string
+  actualQuality?: string
+  outputFormat?: string
   error?: string
   elapsedMs?: number
 }

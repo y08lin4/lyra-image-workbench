@@ -30,7 +30,13 @@ func TestGenerateParsesB64JSON(t *testing.T) {
 		if body["model"] != "gpt-image-2" || body["prompt"] != "cat" || body["n"].(float64) != 1 || body["quality"] != "high" {
 			t.Fatalf("unexpected request body: %+v", body)
 		}
-		_ = json.NewEncoder(w).Encode(map[string]any{"data": []map[string]string{{"b64_json": base64.StdEncoding.EncodeToString(want)}}})
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": []map[string]string{{
+			"b64_json":       base64.StdEncoding.EncodeToString(want),
+			"revised_prompt": "a revised cat",
+			"size":           "1024x1024",
+			"quality":        "high",
+			"output_format":  "png",
+		}}})
 	}))
 	defer server.Close()
 
@@ -51,6 +57,9 @@ func TestGenerateParsesB64JSON(t *testing.T) {
 	}
 	if string(image.Bytes) != string(want) || image.Mime != "image/png" {
 		t.Fatalf("Generate() image = %+v", image)
+	}
+	if image.RevisedPrompt != "a revised cat" || image.ActualSize != "1024x1024" || image.ActualQuality != "high" || image.OutputFormat != "png" {
+		t.Fatalf("Generate() metadata = %+v", image)
 	}
 }
 

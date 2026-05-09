@@ -329,6 +329,35 @@ textarea { resize: vertical; line-height: 1.55; }
 .result-card:hover .card-toolbar { opacity: 1; transform: translateY(0); }
 .card-toolbar button { flex: 1; border: 0; border-radius: 10px; background: rgba(15,23,42,.82); color: white; padding: 8px 6px; font-size: 12px; }
 .card-meta { display: block; padding: 8px 10px; color: var(--muted); font-size: 12px; }
+.actual-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0 10px 8px;
+}
+.actual-chips span {
+  border-radius: 999px;
+  background: var(--surface-soft);
+  color: var(--muted);
+  padding: 4px 8px;
+  font-size: 11px;
+  font-weight: 800;
+}
+.revised-prompt {
+  margin: 0 10px 10px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.revised-prompt summary {
+  cursor: pointer;
+  font-weight: 900;
+}
+.revised-prompt p {
+  margin: 6px 0 0;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
 .card-notice {
   position: absolute;
   left: 10px;

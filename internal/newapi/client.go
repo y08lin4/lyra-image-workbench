@@ -40,8 +40,12 @@ type Request struct {
 }
 
 type Image struct {
-	Bytes []byte
-	Mime  string
+	Bytes         []byte
+	Mime          string
+	RevisedPrompt string
+	ActualSize    string
+	ActualQuality string
+	OutputFormat  string
 }
 
 type UpstreamError struct {
@@ -179,12 +183,20 @@ func (c *Client) doAndParse(ctx context.Context, req *http.Request) (Image, erro
 		if err != nil {
 			return Image{}, err
 		}
-		return Image{Bytes: data, Mime: contentType}, nil
+		return Image{Bytes: data, Mime: contentType, OutputFormat: outputFormatFromMime(contentType)}, nil
 	}
 	var payload struct {
-		Data []struct {
-			B64JSON string `json:"b64_json"`
-			URL     string `json:"url"`
+		RevisedPrompt string `json:"revised_prompt"`
+		Size          string `json:"size"`
+		Quality       string `json:"quality"`
+		OutputFormat  string `json:"output_format"`
+		Data          []struct {
+			B64JSON       string `json:"b64_json"`
+			URL           string `json:"url"`
+			RevisedPrompt string `json:"revised_prompt"`
+			Size          string `json:"size"`
+			Quality       string `json:"quality"`
+			OutputFormat  string `json:"output_format"`
 		} `json:"data"`
 	}
 	if err := json.NewDecoder(res.Body).Decode(&payload); err != nil {
@@ -196,10 +208,25 @@ func (c *Client) doAndParse(ctx context.Context, req *http.Request) (Image, erro
 			if err != nil {
 				return Image{}, err
 			}
-			return Image{Bytes: data, Mime: "image/png"}, nil
+			return Image{
+				Bytes:         data,
+				Mime:          "image/png",
+				RevisedPrompt: firstNonEmpty(item.RevisedPrompt, payload.RevisedPrompt),
+				ActualSize:    firstNonEmpty(item.Size, payload.Size),
+				ActualQuality: firstNonEmpty(item.Quality, payload.Quality),
+				OutputFormat:  firstNonEmpty(item.OutputFormat, payload.OutputFormat, "png"),
+			}, nil
 		}
 		if strings.HasPrefix(item.URL, "http://") || strings.HasPrefix(item.URL, "https://") {
-			return c.fetchImageURL(ctx, item.URL)
+			image, err := c.fetchImageURL(ctx, item.URL)
+			if err != nil {
+				return Image{}, err
+			}
+			image.RevisedPrompt = firstNonEmpty(item.RevisedPrompt, payload.RevisedPrompt)
+			image.ActualSize = firstNonEmpty(item.Size, payload.Size)
+			image.ActualQuality = firstNonEmpty(item.Quality, payload.Quality)
+			image.OutputFormat = firstNonEmpty(item.OutputFormat, payload.OutputFormat, image.OutputFormat)
+			return image, nil
 		}
 	}
 	return Image{}, errors.New("上游没有返回可用图片")
@@ -227,7 +254,7 @@ func (c *Client) fetchImageURL(ctx context.Context, url string) (Image, error) {
 	if err != nil {
 		return Image{}, err
 	}
-	return Image{Bytes: data, Mime: mime}, nil
+	return Image{Bytes: data, Mime: mime, OutputFormat: outputFormatFromMime(mime)}, nil
 }
 
 func decodeBase64Image(value string) ([]byte, error) {
@@ -274,5 +301,31 @@ func normalizeQuality(value string) string {
 		return strings.TrimSpace(value)
 	default:
 		return "auto"
+	}
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
+}
+
+func outputFormatFromMime(mime string) string {
+	switch strings.ToLower(strings.TrimSpace(strings.Split(mime, ";")[0])) {
+	case "image/jpeg", "image/jpg":
+		return "jpeg"
+	case "image/webp":
+		return "webp"
+	case "image/gif":
+		return "gif"
+	case "image/avif":
+		return "avif"
+	case "image/png":
+		return "png"
+	default:
+		return ""
 	}
 }

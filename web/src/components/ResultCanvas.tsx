@@ -91,6 +91,17 @@ function ResultCard({ task, index, result, onUseAsReference, onUploadPixhost }: 
               <button type="button" onClick={() => void useAsReference(imageUrl, index, onUseAsReference, setNotice)}>作为参考图</button>
             </div>
             <small className="card-meta">#{index + 1} · {result.elapsedMs ? `${(result.elapsedMs / 1000).toFixed(1)}s` : '完成'} · {formatBytes(result.bytes)}{result.remoteUrl ? ' · 已上传图床' : result.uploadError ? ` · 图床失败：${result.uploadError}` : ''}</small>
+            {resultParameters(result).length ? (
+              <div className="actual-chips" aria-label="上游实际参数">
+                {resultParameters(result).map((item) => <span key={item}>{item}</span>)}
+              </div>
+            ) : null}
+            {result.revisedPrompt ? (
+              <details className="revised-prompt">
+                <summary>上游改写提示词</summary>
+                <p>{result.revisedPrompt}</p>
+              </details>
+            ) : null}
           </>
         ) : (
           <div className="error-card">
@@ -109,7 +120,7 @@ function ResultCard({ task, index, result, onUseAsReference, onUploadPixhost }: 
           ratio={task.ratio}
           bytes={result.bytes}
           prompt={task.prompt}
-          parameters={taskParameters(task)}
+          parameters={[...taskParameters(task), ...resultParameters(result)]}
           onCopyImage={() => copyImage(imageUrl, setNotice)}
           onCopyUrl={() => copyURL(copyableURL, setNotice)}
           onDownload={() => downloadImage(imageUrl, index)}
@@ -195,6 +206,16 @@ function taskParameters(task: Task) {
     `数量 ${task.count || 1}`,
     `并发 ${task.concurrency || 1}`,
   ]
+}
+
+function resultParameters(result?: TaskResult) {
+  if (!result) return []
+  return [
+    result.actualSize ? `实际尺寸 ${result.actualSize}` : '',
+    result.actualQuality ? `实际质量 ${qualityLabel(result.actualQuality)}` : '',
+    result.outputFormat ? `输出格式 ${result.outputFormat}` : '',
+    result.revisedPrompt ? '有上游改写提示词' : '',
+  ].filter(Boolean)
 }
 
 function resolutionLabel(value?: string) {

@@ -427,6 +427,10 @@ func (m *Manager) generateOne(ctx context.Context, spaceToken string, jobID stri
 	result.ImageURL = saved.URL
 	result.Mime = saved.Mime
 	result.Bytes = saved.Bytes
+	result.RevisedPrompt = image.RevisedPrompt
+	result.ActualSize = image.ActualSize
+	result.ActualQuality = image.ActualQuality
+	result.OutputFormat = image.OutputFormat
 	if spaceCfg.AutoUploadPixhost {
 		if uploaded, err := m.pixhost.UploadFile(ctx, saved.Path, saved.Mime, saved.FileName); err == nil {
 			result.RemoteURL = uploaded.ShowURL
