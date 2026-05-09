@@ -150,7 +150,10 @@ gpt-image-2
 
 ```text
 前端上传参考图
-  -> POST /api/uploads/reference，带 X-Space-Token`n     Content-Type: multipart/form-data`n     字段名支持 image 或 image[]；单张最大 12MB，总请求最大 50MB，最多 8 张`n  -> Go 保存到 data/spaces/{token}/uploads/
+  -> POST /api/uploads/reference，带 X-Space-Token
+     Content-Type: multipart/form-data
+     字段名支持 image 或 image[]；单张最大 12MB，总请求最大 50MB，最多 8 张
+  -> Go 保存到 data/spaces/{token}/uploads/
   -> 创建任务时传 uploadIds
   -> Go 读取本地参考图
   -> multipart 请求 {NewAPI}/images/edits
@@ -176,5 +179,4 @@ GET  /api/stats
 ```
 
 `/api/admin/config` 是否要求空间令牌后续再定。如果只监听 `127.0.0.1` 可以先不强制；如果开放 LAN，admin 必须加管理密码或配对 token。
-
 
