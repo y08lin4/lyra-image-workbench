@@ -1,0 +1,17 @@
+﻿# 本地运行产物
+node_modules/
+data/
+outputs/
+*.log
+
+# 构建产物
+dist/
+.cache/
+
+# 本地参考仓库/临时目录
+_reference_*/
+_project_remote/
+
+# 系统文件
+.DS_Store
+Thumbs.db
