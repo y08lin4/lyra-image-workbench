@@ -327,7 +327,7 @@ export function PromptAssistantModal({ tasks, uploads, provider, bananaModel, on
           <button type="button" className={tab === 'history' ? 'active' : ''} onClick={() => setTab('history')}>历史/会话</button>
         </div>
 
-        <div className="prompt-assistant-body">
+        <div className={`prompt-assistant-body ${tab === 'inspiration' ? 'is-inspiration' : ''}`}>
           {tab === 'text' ? (
             <section className="prompt-tool-panel">
               <label>
@@ -418,6 +418,12 @@ export function PromptAssistantModal({ tasks, uploads, provider, bananaModel, on
                 <textarea value={inspirationSeed} onChange={(event) => setInspirationSeed(event.target.value)} placeholder="例如：想做手机壁纸，干净一点，有孤独感" rows={3} />
               </label>
               <button type="button" className="primary" disabled={loading} onClick={makeIdeas}>{loading ? '生成中...' : '生成 6 个灵感'}</button>
+              {ideas.length ? (
+                <div className="prompt-idea-head">
+                  <strong>已生成 {ideas.length} 个灵感</strong>
+                  <span>点击「扩写成提示词」后，右侧会生成可直接应用的完整提示词。</span>
+                </div>
+              ) : null}
               <div className="prompt-idea-grid">
                 {ideas.map((item) => (
                   <article key={item.id || item.title} className="prompt-idea-item">
@@ -545,8 +551,14 @@ function PromptResult({
   return (
     <aside className="prompt-result">
       <div className="prompt-result-title">
-        <strong>{title}</strong>
-        <span>{promptModel} · {elapsedMs ? `${(elapsedMs / 1000).toFixed(1)}s` : '会话'}</span>
+        <div className="prompt-result-title-main">
+          <strong>{title}</strong>
+          <span>{promptModel} · {elapsedMs ? `${(elapsedMs / 1000).toFixed(1)}s` : '会话'}</span>
+        </div>
+        <div className="prompt-result-title-actions">
+          <button type="button" onClick={() => onCopy(prompt)}>复制</button>
+          <button type="button" className="primary" onClick={() => onUse(prompt, { provider, model })}>应用此提示词</button>
+        </div>
       </div>
 
       {session?.versions.length ? (
