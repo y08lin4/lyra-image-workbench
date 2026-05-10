@@ -15,10 +15,16 @@ import { ResultCanvas } from './ResultCanvas'
 import { ThemeToggle, type ThemeMode } from './ThemeToggle'
 import { useTaskEvents } from '../hooks/useTaskEvents'
 import { BANANA_PROVIDER, DEFAULT_BANANA_MODEL, DEFAULT_IMAGE2_MODEL, getBananaModelOption } from '../lib/models'
+import { formatBytes } from '../lib/format'
 
 type NumericInputValue = number | ''
 type WorkbenchTab = 'generate' | 'result' | 'queue' | 'settings'
 type WorkbenchTabItem = { id: WorkbenchTab; label: string; hint: string; badge?: string; tone?: 'normal' | 'danger' | 'active' }
+
+const MAX_REFERENCE_IMAGES = 8
+const MAX_REFERENCE_IMAGE_BYTES = 12 * 1024 * 1024
+const MAX_REFERENCE_UPLOAD_BYTES = 50 * 1024 * 1024
+const ALLOWED_REFERENCE_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp'])
 
 const workflowTabs: WorkbenchTabItem[] = [
   { id: 'generate', label: '生成', hint: '请求' },
@@ -54,6 +60,7 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
   const [concurrency, setConcurrency] = useState<NumericInputValue>(1)
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
+  const [toast, setToast] = useState('')
 
   const detailTask = useMemo(() => tasks.find((task) => task.id === detailId), [tasks, detailId])
   const activeTask = useMemo(() => tasks.find((task) => task.id === activeId), [tasks, activeId])
@@ -125,6 +132,12 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
     }
   }, [uploads, primaryUploadId])
 
+  useEffect(() => {
+    if (!toast) return
+    const timer = window.setTimeout(() => setToast(''), 3600)
+    return () => window.clearTimeout(timer)
+  }, [toast])
+
   async function refreshTasks() {
     const items = await listTasks()
     setTasks(items)
@@ -145,6 +158,7 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
     setKeyPreview(cfg.apiKeyPreview)
     setBananaKeyReady(Boolean(cfg.bananaApiKeySet))
     setBananaKeyPreview(cfg.bananaApiKeyPreview || '')
+    setCount(cfg.defaultCount || 1)
     setConcurrency(cfg.defaultConcurrency || 1)
   }, [])
 
@@ -186,9 +200,19 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
 
   async function handleUpload(files: File[]) {
     if (!files.length) return
-    const created = await uploadReferenceImages(files)
-    await refreshUploads()
-    if (!primaryUploadId && created[0]) setPrimaryUploadId(created[0].id)
+    const validation = validateReferenceFiles(files, uploads.length)
+    if (validation) {
+      setToast(validation)
+      return
+    }
+    try {
+      const created = await uploadReferenceImages(files)
+      await refreshUploads()
+      if (!primaryUploadId && created[0]) setPrimaryUploadId(created[0].id)
+      setToast(`已上传 ${created.length} 张参考图`)
+    } catch (err) {
+      setToast(formatReferenceUploadError(err))
+    }
   }
 
   async function handleDeleteUpload(id: string) {
@@ -385,9 +409,9 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
     <div className="app-shell gallery-shell tabbed-workbench">
       <header className="topbar workbench-topbar">
         <div className="brand">
-          <div className="brand-mark">AI</div>
+          <div className="brand-mark">Ly</div>
           <div>
-            <h1>本机生图工作台</h1>
+            <h1>LyAI生图工作台</h1>
             <p>{session.space.displayName} · {session.tokenPreview}</p>
           </div>
         </div>
@@ -398,10 +422,14 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
         </div>
         <nav className="top-actions">
           <ThemeToggle theme={theme} onToggle={onToggleTheme} />
-          <a className="ghost-link" href="/admin">Admin</a>
           <button onClick={logout}>退出空间</button>
         </nav>
       </header>
+
+      <a className="api-service-banner" href="https://ai-cf.ailinyu.de" target="_blank" rel="noreferrer">
+        <strong>API 服务</strong>
+        <span>访问 https://ai-cf.ailinyu.de</span>
+      </a>
 
       <WorkbenchTabs tabs={tabItems} activeTab={activeTab} onChange={setActiveTab} className="workflow-tabs desktop-tabs" />
 
@@ -510,20 +538,17 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
 
         {activeTab === 'settings' ? (
           <section className="workflow-page settings-page-inline">
-            <PageHeader eyebrow="Settings" title="设置" description="当前空间的 codex-key、Banana 分组 API Key、默认并发和图床设置。Admin 仍在独立页面。" />
-            <div className="settings-inline-grid">
+            <PageHeader eyebrow="Settings" title="设置" description="当前空间的 codex-key、Banana 分组 API Key、默认数量、默认并发和图床设置。" />
+            <div className="settings-inline-grid settings-only-grid">
               <SettingsPanel onConfig={applyUserConfig} />
-              <aside className="admin-entry-panel">
-                <strong>Admin 管理</strong>
-                <span>上游 URL、超时时间和管理密码仍放在独立 Admin 页面，避免普通生成流程误改。</span>
-                <a className="ghost-link" href="/admin">打开 Admin</a>
-              </aside>
             </div>
           </section>
         ) : null}
       </main>
 
       <WorkbenchTabs tabs={tabItems} activeTab={activeTab} onChange={setActiveTab} className="workflow-tabs mobile-tabs" />
+
+      {toast ? <div className="workbench-toast" role="status">{toast}</div> : null}
 
       {detailTask ? (
         <TaskDetailModal
@@ -585,6 +610,34 @@ function downloadURL(url: string, filename: string) {
 
 function numericOrDefault(value: NumericInputValue, fallback: number) {
   return value === '' ? fallback : value
+}
+
+function validateReferenceFiles(files: File[], existingCount: number) {
+  if (existingCount + files.length > MAX_REFERENCE_IMAGES) {
+    return `参考图最多 ${MAX_REFERENCE_IMAGES} 张，请先删除旧图`
+  }
+  const totalBytes = files.reduce((sum, file) => sum + file.size, 0)
+  if (totalBytes > MAX_REFERENCE_UPLOAD_BYTES) {
+    return `图片过大：一次上传总大小不能超过 ${formatBytes(MAX_REFERENCE_UPLOAD_BYTES)}`
+  }
+  const oversized = files.find((file) => file.size > MAX_REFERENCE_IMAGE_BYTES)
+  if (oversized) {
+    return `图片过大：${oversized.name || '参考图'} 超过 ${formatBytes(MAX_REFERENCE_IMAGE_BYTES)}`
+  }
+  const unsupported = files.find((file) => !ALLOWED_REFERENCE_TYPES.has(file.type))
+  if (unsupported) {
+    return `格式错误：${unsupported.name || '参考图'} 仅支持 PNG、JPG、WEBP`
+  }
+  return ''
+}
+
+function formatReferenceUploadError(err: unknown) {
+  const message = err instanceof Error ? err.message : '参考图上传失败'
+  if (message.includes('REFERENCE_IMAGE_TOO_LARGE') || message.includes('12MB')) return '图片过大：单张参考图不能超过 12MB'
+  if (message.includes('REFERENCE_UPLOAD_INVALID') || message.includes('50MB')) return '图片过大：一次上传总大小不能超过 50MB'
+  if (message.includes('REFERENCE_IMAGE_TYPE_UNSUPPORTED')) return '格式错误：参考图仅支持 PNG、JPG、WEBP'
+  if (message.includes('REFERENCE_IMAGE_TOO_MANY')) return `参考图最多 ${MAX_REFERENCE_IMAGES} 张，请先删除旧图`
+  return message
 }
 
 function orderedUploads(uploads: ReferenceUpload[], primaryUploadId: string) {

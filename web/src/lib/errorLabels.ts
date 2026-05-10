@@ -84,9 +84,10 @@ function httpErrorReason(status: string, raw: string) {
     case '500':
       return { chinese: '上游服务内部错误', code: 'E_UPSTREAM_SERVER', english: 'upstream_server_error' }
     case '502':
+      return { chinese: '上游请求失败，可能触发敏感词或上游服务暂不可用', code: 'E_UPSTREAM_GATEWAY', english: 'upstream_gateway_error' }
     case '503':
     case '504':
-      return { chinese: '上游网关或服务暂不可用', code: 'E_UPSTREAM_GATEWAY', english: 'upstream_gateway_error' }
+      return { chinese: '上游服务暂不可用或等待超时', code: 'E_UPSTREAM_GATEWAY', english: 'upstream_gateway_error' }
     case '524':
       return { chinese: '上游网关等待超时', code: 'E_UPSTREAM_GATEWAY_TIMEOUT', english: 'upstream_gateway_timeout' }
     default:

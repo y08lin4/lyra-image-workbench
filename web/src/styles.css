@@ -570,6 +570,80 @@ textarea { resize: vertical; line-height: 1.55; }
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.image-spec-modal {
+  width: min(720px, calc(100vw - 28px));
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.image-ratio-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  overflow: auto;
+}
+.image-ratio-grid-auto {
+  grid-template-columns: 1fr;
+}
+.image-ratio-card {
+  min-width: 0;
+  min-height: 78px;
+  border: 1px solid #dbeafe;
+  border-radius: 14px;
+  background: #ffffff;
+  color: var(--text);
+  padding: 10px;
+  text-align: left;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.image-ratio-card.active {
+  background: #0f172a;
+  border-color: #0f172a;
+  color: #ffffff;
+}
+.image-ratio-preview {
+  width: 44px;
+  max-width: 44px;
+  min-width: 22px;
+  max-height: 48px;
+  border: 2px solid currentColor;
+  border-radius: 7px;
+  opacity: .9;
+  display: grid;
+  place-items: center;
+  flex: none;
+}
+.image-ratio-preview.auto-preview {
+  width: 52px;
+  max-width: 52px;
+  aspect-ratio: 1 / 1;
+}
+.image-ratio-preview i {
+  font-style: normal;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: .02em;
+}
+.image-ratio-text {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+.image-ratio-text strong {
+  font-size: 14px;
+  line-height: 1.1;
+}
+.image-ratio-text span,
+.image-ratio-text small {
+  color: inherit;
+  opacity: .78;
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .result-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 14px; }
 .result-card {
   position: relative;
@@ -1481,6 +1555,12 @@ button:not(.primary) { background: var(--surface-soft); color: #1e3a8a; border: 
   .banana-model-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+  .image-spec-modal {
+    width: min(560px, calc(100vw - 22px));
+  }
+  .image-ratio-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
   .gallery-shell .composer-control-row {
     display: grid;
     gap: 10px;
@@ -1980,7 +2060,13 @@ button:not(.primary) { background: var(--surface-soft); color: #1e3a8a; border: 
   .banana-model-grid {
     grid-template-columns: 1fr;
   }
+  .image-ratio-grid {
+    grid-template-columns: 1fr;
+  }
   .banana-model-grid button {
+    min-height: 70px;
+  }
+  .image-ratio-card {
     min-height: 70px;
   }
 }
@@ -2800,7 +2886,7 @@ button:not(.primary) { background: var(--surface-soft); color: #1e3a8a; border: 
 .tabbed-workbench {
   min-height: 100vh;
   display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr);
+  grid-template-rows: auto auto auto minmax(0, 1fr);
   gap: 12px;
   padding: 14px 16px 18px;
   background: #f7f8fb;
@@ -2811,12 +2897,52 @@ button:not(.primary) { background: var(--surface-soft); color: #1e3a8a; border: 
 }
 .workflow-tabs {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 8px;
   padding: 6px;
   border: 1px solid var(--border);
   border-radius: 16px;
   background: #ffffff;
+}
+.api-service-banner {
+  max-width: 1180px;
+  width: 100%;
+  min-height: 38px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  border: 1px solid #bfdbfe;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #eff6ff, #f8fbff);
+  color: #1d4ed8;
+  padding: 8px 12px;
+  font-size: 13px;
+  box-shadow: none;
+}
+.api-service-banner strong {
+  color: #0f172a;
+}
+.api-service-banner span {
+  color: #1d4ed8;
+}
+.workbench-toast {
+  position: fixed;
+  left: 50%;
+  top: 18px;
+  z-index: 1200;
+  transform: translateX(-50%);
+  max-width: min(520px, calc(100vw - 32px));
+  border: 1px solid #bfdbfe;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, .94);
+  color: #fff;
+  padding: 10px 16px;
+  box-shadow: 0 12px 30px rgba(15, 23, 42, .18);
+  font-size: 13px;
+  font-weight: 850;
+  text-align: center;
 }
 .workflow-tabs button {
   min-height: 46px;
@@ -3033,6 +3159,9 @@ button:not(.primary) { background: var(--surface-soft); color: #1e3a8a; border: 
   gap: 14px;
   align-items: start;
 }
+.settings-inline-grid.settings-only-grid {
+  grid-template-columns: minmax(0, 1fr);
+}
 .settings-inline-grid .key-section {
   border: 1px solid var(--border);
   border-radius: 16px;
@@ -3073,7 +3202,7 @@ button:not(.primary) { background: var(--surface-soft); color: #1e3a8a; border: 
 
 @media (max-width: 980px) {
   .tabbed-workbench {
-    grid-template-rows: auto minmax(0, 1fr) auto;
+    grid-template-rows: auto auto minmax(0, 1fr) auto;
     padding: 10px 10px 74px;
   }
   .desktop-tabs { display: none; }
@@ -3084,7 +3213,7 @@ button:not(.primary) { background: var(--surface-soft); color: #1e3a8a; border: 
     bottom: 10px;
     z-index: 50;
     display: grid;
-    grid-template-columns: repeat(5, 1fr);
+    grid-template-columns: repeat(4, 1fr);
     gap: 4px;
     padding: 5px;
     border-radius: 18px;
@@ -3134,6 +3263,10 @@ button:not(.primary) { background: var(--surface-soft); color: #1e3a8a; border: 
   }
   .settings-inline-grid {
     grid-template-columns: 1fr;
+  }
+  .api-service-banner {
+    justify-content: flex-start;
+    border-radius: 12px;
   }
 }
 
@@ -3535,6 +3668,20 @@ button:not(.primary) { background: var(--surface-soft); color: #1e3a8a; border: 
   font-size: 13px;
   max-height: 180px;
   overflow: auto;
+}
+.result-page .result-revised-prompts {
+  display: grid;
+  gap: 8px;
+}
+.result-page .result-revised-prompt {
+  border-top: 1px dashed var(--border);
+  padding-top: 8px;
+}
+.result-page .result-revised-prompt summary span {
+  color: #1d4ed8;
+}
+.result-page .result-revised-prompt p {
+  background: #eff6ff;
 }
 .result-page .param-chips {
   margin-top: 10px;
@@ -4445,4 +4592,41 @@ button:not(.primary) { background: var(--surface-soft); color: #1e3a8a; border: 
   .generate-assistant-panel .prompt-assistant-body.is-inspiration .prompt-idea-grid {
     padding-bottom: 8px;
   }
+}
+
+/* 工作台提示与新增品牌横幅兜底 */
+@media (max-width: 560px) {
+  .workbench-toast {
+    top: auto;
+    bottom: calc(74px + env(safe-area-inset-bottom));
+    border-radius: 14px;
+  }
+}
+
+:root[data-theme='dark'] .api-service-banner {
+  background: rgba(30, 64, 175, .2);
+  border-color: rgba(96, 165, 250, .45);
+  color: #bfdbfe;
+}
+:root[data-theme='dark'] .api-service-banner strong,
+:root[data-theme='dark'] .api-service-banner span {
+  color: #bfdbfe;
+}
+:root[data-theme='dark'] .workbench-toast {
+  background: #eff6ff;
+  color: #0f172a;
+  border-color: #bfdbfe;
+}
+:root[data-theme='dark'] .image-ratio-card {
+  background: #0b1220;
+  border-color: #2a3a52;
+  color: var(--text);
+}
+:root[data-theme='dark'] .image-ratio-card.active {
+  background: #2563eb;
+  border-color: #2563eb;
+  color: #ffffff;
+}
+:root[data-theme='dark'] .result-page .result-revised-prompt p {
+  background: #0b1220 !important;
 }

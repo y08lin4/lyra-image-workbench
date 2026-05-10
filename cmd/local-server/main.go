@@ -63,7 +63,7 @@ func main() {
 	})
 	httpServer := server.New(cfg, router)
 
-	log.Printf("本机生图工作台后端启动：http://%s", cfg.Addr)
+	log.Printf("LyAI生图工作台后端启动：http://%s", cfg.Addr)
 	if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		log.Fatal(err)
 	}

@@ -44,7 +44,7 @@ export function ImageSpecPicker({ ratio, resolution, onRatioChange, onResolution
   const previewSize = mode === 'auto' ? 'auto' : getImageSize(draftRatio, draftResolution)
   const modal = open ? (
     <div className="size-modal-mask" onMouseDown={(event) => event.target === event.currentTarget && setOpen(false)}>
-      <section className="size-modal" role="dialog" aria-modal="true" aria-label="设置图像尺寸">
+      <section className="size-modal image-spec-modal" role="dialog" aria-modal="true" aria-label="设置图像尺寸">
         <header>
           <div>
             <h3>设置图像尺寸</h3>
@@ -59,9 +59,17 @@ export function ImageSpecPicker({ ratio, resolution, onRatioChange, onResolution
         </div>
 
         {mode === 'auto' ? (
-          <div className="size-auto-state">
-            <strong>自动尺寸</strong>
-            <span>不向上游传递具体尺寸，由模型自行决定。</span>
+          <div className="image-ratio-grid image-ratio-grid-auto">
+            <button type="button" className="image-ratio-card active">
+              <span className="image-ratio-preview auto-preview">
+                <i>AUTO</i>
+              </span>
+              <span className="image-ratio-text">
+                <strong>自动尺寸</strong>
+                <span>不传具体 size</span>
+                <small>由模型或上游自动决定</small>
+              </span>
+            </button>
           </div>
         ) : (
           <div className="size-option-groups">
@@ -77,10 +85,15 @@ export function ImageSpecPicker({ ratio, resolution, onRatioChange, onResolution
             </section>
             <section>
               <span>图像比例</span>
-              <div className="size-choice-grid four">
+              <div className="image-ratio-grid">
                 {FIXED_RATIOS.map((item) => (
-                  <button key={item} type="button" className={draftRatio === item ? 'active' : ''} onClick={() => setDraftRatio(item)}>
-                    {item}
+                  <button key={item} type="button" className={`image-ratio-card ${draftRatio === item ? 'active' : ''}`} onClick={() => setDraftRatio(item)}>
+                    <span className="image-ratio-preview" style={ratioPreviewStyle(item)} />
+                    <span className="image-ratio-text">
+                      <strong>{item}</strong>
+                      <span>{ratioHint(item)}</span>
+                      <small>{getImageSize(item, draftResolution)}</small>
+                    </span>
                   </button>
                 ))}
               </div>
@@ -118,4 +131,22 @@ export function ImageSpecPicker({ ratio, resolution, onRatioChange, onResolution
 function resolutionTitle(value: string) {
   if (value === 'standard') return '标准 / 1K'
   return getResolutionLabel(value)
+}
+
+function ratioPreviewStyle(ratio: string) {
+  const [w, h] = ratio.split(':').map(Number)
+  return { aspectRatio: `${w} / ${h}` }
+}
+
+function ratioHint(ratio: string) {
+  const labels: Record<string, string> = {
+    '1:1': '方图',
+    '2:3': '竖版海报',
+    '3:2': '横版照片',
+    '3:4': '竖版构图',
+    '4:3': '横版构图',
+    '9:16': '手机竖屏',
+    '16:9': '宽屏横图',
+  }
+  return labels[ratio] || '固定比例'
 }

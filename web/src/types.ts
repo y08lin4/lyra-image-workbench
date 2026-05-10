@@ -14,6 +14,7 @@ export interface UserConfig {
   apiKeyPreview: string
   bananaApiKeySet: boolean
   bananaApiKeyPreview: string
+  defaultCount: number
   defaultConcurrency: number
   autoUploadPixhost: boolean
   updatedAt: string

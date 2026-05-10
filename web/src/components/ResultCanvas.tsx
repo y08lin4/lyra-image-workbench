@@ -65,6 +65,7 @@ export function ResultCanvas({ task, onUseAsReference, onUploadPixhost, onOpenGe
 }
 
 function ResultContext({ task }: { task: Task }) {
+  const revisedPrompts = uniqueRevisedPrompts(task)
   return (
     <section className="result-context" aria-label="生成请求信息">
       <details className="result-prompt" open={(task.prompt || '').length <= 120}>
@@ -74,6 +75,19 @@ function ResultContext({ task }: { task: Task }) {
         </summary>
         <p>{task.prompt || '（无提示词）'}</p>
       </details>
+      {revisedPrompts.length ? (
+        <div className="result-revised-prompts" aria-label="上游改写提示词">
+          {revisedPrompts.map((nextPrompt, index) => (
+            <details key={`${index}-${nextPrompt}`} className="result-prompt result-revised-prompt" open={revisedPrompts.length === 1}>
+              <summary>
+                <span>{revisedPrompts.length > 1 ? `上游改写 ${index + 1}` : '上游改写提示词'}</span>
+                <strong>{compactPrompt(nextPrompt)}</strong>
+              </summary>
+              <p>{nextPrompt}</p>
+            </details>
+          ))}
+        </div>
+      ) : null}
       <div className="param-chips" aria-label="生成参数">
         {taskParameters(task).map((item) => <span key={item}>{item}</span>)}
       </div>
@@ -156,12 +170,6 @@ function ResultCard({ task, index, result, onUseAsReference, onUploadPixhost }: 
               <div className="actual-chips" aria-label="上游实际参数">
                 {resultParameters(result).map((item) => <span key={item}>{item}</span>)}
               </div>
-            ) : null}
-            {result.revisedPrompt ? (
-              <details className="revised-prompt">
-                <summary>上游改写提示词</summary>
-                <p>{result.revisedPrompt}</p>
-              </details>
             ) : null}
           </>
         ) : (
@@ -305,6 +313,17 @@ function compactPrompt(prompt: string) {
   return text.length > 96 ? `${text.slice(0, 96)}...` : text
 }
 
+function uniqueRevisedPrompts(task: Task) {
+  const seen = new Set<string>()
+  return task.results
+    .map((result) => (result.revisedPrompt || '').trim())
+    .filter((prompt) => {
+      if (!prompt || seen.has(prompt)) return false
+      seen.add(prompt)
+      return true
+    })
+}
+
 function taskParameters(task: Task) {
   const provider = task.provider || 'image-2'
   if (provider === BANANA_PROVIDER) {
@@ -339,7 +358,6 @@ function resultParameters(result?: TaskResult) {
     result.actualSize ? `实际尺寸 ${result.actualSize}` : '',
     result.actualQuality ? `实际质量 ${qualityLabel(result.actualQuality)}` : '',
     result.outputFormat ? `输出格式 ${result.outputFormat}` : '',
-    result.revisedPrompt ? '有上游改写提示词' : '',
   ].filter(Boolean)
 }
 

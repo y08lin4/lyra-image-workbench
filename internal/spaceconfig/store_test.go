@@ -118,3 +118,41 @@ func TestStorePersistsDefaultConcurrency(t *testing.T) {
 		t.Fatalf("DefaultConcurrency should keep values above 4, got %d", public.DefaultConcurrency)
 	}
 }
+
+func TestStorePersistsDefaultCount(t *testing.T) {
+	spaceStore, err := spaces.NewFileStore(t.TempDir())
+	if err != nil {
+		t.Fatalf("NewFileStore() error = %v", err)
+	}
+	session, err := spaceStore.CreateOrOpenByPassword("R7!Count#Vault$2026")
+	if err != nil {
+		t.Fatalf("CreateOrOpenByPassword() error = %v", err)
+	}
+	store := NewStore(spaceStore)
+
+	defaultPublic, err := store.Public(session.Token)
+	if err != nil {
+		t.Fatalf("Public() error = %v", err)
+	}
+	if defaultPublic.DefaultCount != 1 {
+		t.Fatalf("default count = %d", defaultPublic.DefaultCount)
+	}
+
+	value := 4
+	public, err := store.Update(session.Token, Update{DefaultCount: &value})
+	if err != nil {
+		t.Fatalf("Update() error = %v", err)
+	}
+	if public.DefaultCount != 4 {
+		t.Fatalf("DefaultCount = %d", public.DefaultCount)
+	}
+
+	larger := 99
+	public, err = store.Update(session.Token, Update{DefaultCount: &larger})
+	if err != nil {
+		t.Fatalf("Update(larger) error = %v", err)
+	}
+	if public.DefaultCount != 12 {
+		t.Fatalf("DefaultCount should clamp to 12, got %d", public.DefaultCount)
+	}
+}

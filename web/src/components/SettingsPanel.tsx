@@ -8,12 +8,14 @@ export function SettingsPanel({ onReady, onConfig }: { onReady?: (ready: boolean
   const [config, setConfig] = useState<UserConfig | null>(null)
   const [apiKey, setApiKey] = useState('')
   const [bananaApiKey, setBananaApiKey] = useState('')
+  const [defaultCount, setDefaultCount] = useState<NumericInputValue>(1)
   const [defaultConcurrency, setDefaultConcurrency] = useState<NumericInputValue>(1)
   const [autoUploadPixhost, setAutoUploadPixhost] = useState(false)
   const [message, setMessage] = useState('')
   useEffect(() => {
     void getUserConfig().then((cfg) => {
       setConfig(cfg)
+      setDefaultCount(cfg.defaultCount || 1)
       setDefaultConcurrency(cfg.defaultConcurrency || 1)
       setAutoUploadPixhost(Boolean(cfg.autoUploadPixhost))
       onReady?.(cfg.apiKeySet)
@@ -22,7 +24,8 @@ export function SettingsPanel({ onReady, onConfig }: { onReady?: (ready: boolean
   }, [onReady, onConfig])
   async function submit(event: FormEvent) {
     event.preventDefault()
-    const payload: { apiKey?: string; bananaApiKey?: string; defaultConcurrency: number; autoUploadPixhost: boolean } = {
+    const payload: { apiKey?: string; bananaApiKey?: string; defaultCount: number; defaultConcurrency: number; autoUploadPixhost: boolean } = {
+      defaultCount: numericOrDefault(defaultCount, 1),
       defaultConcurrency: numericOrDefault(defaultConcurrency, 1),
       autoUploadPixhost,
     }
@@ -30,11 +33,12 @@ export function SettingsPanel({ onReady, onConfig }: { onReady?: (ready: boolean
     if (bananaApiKey.trim()) payload.bananaApiKey = bananaApiKey
     const cfg = await saveUserConfig(payload)
     setConfig(cfg)
+    setDefaultCount(cfg.defaultCount || 1)
     setDefaultConcurrency(cfg.defaultConcurrency || 1)
     setAutoUploadPixhost(Boolean(cfg.autoUploadPixhost))
     setApiKey('')
     setBananaApiKey('')
-    setMessage(apiKey.trim() || bananaApiKey.trim() ? 'API Key 和默认并发已保存' : '默认并发已保存')
+    setMessage(apiKey.trim() || bananaApiKey.trim() ? 'API Key 和默认生成设置已保存' : '默认生成设置已保存')
     onReady?.(cfg.apiKeySet)
     onConfig?.(cfg)
   }
@@ -56,7 +60,7 @@ export function SettingsPanel({ onReady, onConfig }: { onReady?: (ready: boolean
             <span>Banana 分组 Key</span>
             <small>单独 apikey</small>
           </div>
-          <p className="muted">请在 NewAPI / CLIProxyAPI 里新建一个“banana”分组的 apikey，然后填到这里；URL 仍使用 Admin 页面里的 NewAPI URL。</p>
+          <p className="muted">请在 NewAPI / CLIProxyAPI 里新建一个“banana”分组的 apikey，然后填到这里；URL 使用后端统一配置的 NewAPI URL。</p>
           <div className={`status-line ${config?.bananaApiKeySet ? 'ready' : 'missing'}`}>当前：{config?.bananaApiKeySet ? `已设置 ${config.bananaApiKeyPreview}` : '未设置'}</div>
           <input value={bananaApiKey} onChange={(e) => setBananaApiKey(e.target.value)} placeholder="填写 banana 分组 API Key" />
         </section>
@@ -66,6 +70,10 @@ export function SettingsPanel({ onReady, onConfig }: { onReady?: (ready: boolean
             <span>默认生成设置</span>
             <small>提交任务时可覆盖</small>
           </div>
+          <label className="field">
+            <span>默认数量</span>
+            <input type="number" min={1} max={12} value={defaultCount} onChange={(e) => setDefaultCount(readNumberInput(e.target.value))} />
+          </label>
           <label className="field">
             <span>默认并发</span>
             <input type="number" min={1} value={defaultConcurrency} onChange={(e) => setDefaultConcurrency(readNumberInput(e.target.value))} />
@@ -81,7 +89,7 @@ export function SettingsPanel({ onReady, onConfig }: { onReady?: (ready: boolean
             <input type="checkbox" checked={autoUploadPixhost} onChange={(e) => setAutoUploadPixhost(e.target.checked)} />
             <span>生成成功后自动上传到 PiXhost 图床</span>
           </label>
-          <small className="muted">自动上传可关闭；关闭后仍可在结果图悬浮时手动点击“上传图床”。PiXhost 单张最大 10MB。</small>
+          <small className="muted">自动上传可关闭；关闭后仍可在结果页手动点击“上传图床”。PiXhost 单张最大 10MB。</small>
         </section>
 
         <div className="settings-submit-row">

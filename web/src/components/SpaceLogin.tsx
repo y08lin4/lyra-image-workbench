@@ -22,10 +22,10 @@ export function SpaceLogin({ onSession, theme, onToggleTheme }: { onSession: (se
       </div>
       <form className="login-panel" onSubmit={submit}>
         <div className="brand login-brand">
-          <div className="brand-mark">AI</div>
+          <div className="brand-mark">Ly</div>
           <div>
             <p className="eyebrow">个人空间</p>
-            <h1>本机生图工作台</h1>
+            <h1>LyAI生图工作台</h1>
           </div>
         </div>
         <h2>进入个人空间</h2>

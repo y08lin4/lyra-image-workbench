@@ -15,6 +15,7 @@ import (
 type Config struct {
 	APIKey             string `json:"apiKey,omitempty"`
 	BananaAPIKey       string `json:"bananaApiKey,omitempty"`
+	DefaultCount       int    `json:"defaultCount,omitempty"`
 	DefaultConcurrency int    `json:"defaultConcurrency,omitempty"`
 	AutoUploadPixhost  bool   `json:"autoUploadPixhost,omitempty"`
 	UpdatedAt          string `json:"updatedAt"`
@@ -25,6 +26,7 @@ type PublicConfig struct {
 	APIKeyPreview       string `json:"apiKeyPreview"`
 	BananaAPIKeySet     bool   `json:"bananaApiKeySet"`
 	BananaAPIKeyPreview string `json:"bananaApiKeyPreview"`
+	DefaultCount        int    `json:"defaultCount"`
 	DefaultConcurrency  int    `json:"defaultConcurrency"`
 	AutoUploadPixhost   bool   `json:"autoUploadPixhost"`
 	UpdatedAt           string `json:"updatedAt"`
@@ -33,6 +35,7 @@ type PublicConfig struct {
 type Update struct {
 	APIKey             *string `json:"apiKey"`
 	BananaAPIKey       *string `json:"bananaApiKey"`
+	DefaultCount       *int    `json:"defaultCount"`
 	DefaultConcurrency *int    `json:"defaultConcurrency"`
 	AutoUploadPixhost  *bool   `json:"autoUploadPixhost"`
 }
@@ -87,6 +90,9 @@ func (s *Store) Update(spaceToken string, update Update) (PublicConfig, error) {
 	if update.BananaAPIKey != nil {
 		cfg.BananaAPIKey = strings.TrimSpace(*update.BananaAPIKey)
 	}
+	if update.DefaultCount != nil {
+		cfg.DefaultCount = clamp(*update.DefaultCount, 1, 12, 1)
+	}
 	if update.DefaultConcurrency != nil {
 		cfg.DefaultConcurrency = clamp(*update.DefaultConcurrency, 1, 0, 1)
 	}
@@ -131,6 +137,7 @@ func (s *Store) configPath(spaceToken string) (string, error) {
 func normalize(cfg Config) Config {
 	cfg.APIKey = strings.TrimSpace(cfg.APIKey)
 	cfg.BananaAPIKey = strings.TrimSpace(cfg.BananaAPIKey)
+	cfg.DefaultCount = clamp(cfg.DefaultCount, 1, 12, 1)
 	cfg.DefaultConcurrency = clamp(cfg.DefaultConcurrency, 1, 0, 1)
 	cfg.UpdatedAt = strings.TrimSpace(cfg.UpdatedAt)
 	return cfg
@@ -142,6 +149,7 @@ func toPublic(cfg Config) PublicConfig {
 		APIKeyPreview:       maskSecret(cfg.APIKey),
 		BananaAPIKeySet:     cfg.BananaAPIKey != "",
 		BananaAPIKeyPreview: maskSecret(cfg.BananaAPIKey),
+		DefaultCount:        cfg.DefaultCount,
 		DefaultConcurrency:  cfg.DefaultConcurrency,
 		AutoUploadPixhost:   cfg.AutoUploadPixhost,
 		UpdatedAt:           cfg.UpdatedAt,

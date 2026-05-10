@@ -183,7 +183,7 @@ export function AdminPage({ theme, onToggleTheme }: { theme: ThemeMode; onToggle
 function AdminBrand({ title }: { title: string }) {
   return (
     <div className="brand login-brand">
-      <div className="brand-mark">AI</div>
+      <div className="brand-mark">Ly</div>
       <div>
         <p className="eyebrow">Admin</p>
         <h1>{title}</h1>

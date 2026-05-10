@@ -32,6 +32,7 @@ func TestErrorMetaMapsCommonHTTPStatus(t *testing.T) {
 		{"上游请求失败：HTTP 429：rate limit", "E_UPSTREAM_RATE_LIMIT", "upstream_rate_limited", "上游请求限流"},
 		{"上游请求失败：HTTP 413：payload too large", "E_IMAGE_TOO_LARGE", "image_or_payload_too_large", "图片或请求体过大"},
 		{"上游请求失败：HTTP 415：unsupported media type", "E_OUTPUT_FORMAT_UNSUPPORTED", "output_format_or_media_type_unsupported", "上游不支持当前图片或输出格式"},
+		{"上游请求失败：HTTP 502：bad gateway", "E_UPSTREAM_GATEWAY", "upstream_gateway_error", "上游请求失败，可能触发敏感词或上游服务暂不可用"},
 	}
 	for _, tt := range cases {
 		meta := ErrorMeta(tt.raw)

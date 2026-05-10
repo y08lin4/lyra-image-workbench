@@ -243,8 +243,10 @@ func httpErrorMeta(statusCode string, lower string) Meta {
 		return Meta{"E_UPSTREAM_RATE_LIMIT", "upstream_rate_limited", "上游请求限流"}
 	case "500":
 		return Meta{"E_UPSTREAM_SERVER", "upstream_server_error", "上游服务内部错误"}
-	case "502", "503", "504":
-		return Meta{"E_UPSTREAM_GATEWAY", "upstream_gateway_error", "上游网关或服务暂不可用"}
+	case "502":
+		return Meta{"E_UPSTREAM_GATEWAY", "upstream_gateway_error", "上游请求失败，可能触发敏感词或上游服务暂不可用"}
+	case "503", "504":
+		return Meta{"E_UPSTREAM_GATEWAY", "upstream_gateway_error", "上游服务暂不可用或等待超时"}
 	case "524":
 		return Meta{"E_UPSTREAM_GATEWAY_TIMEOUT", "upstream_gateway_timeout", "上游网关等待超时"}
 	default:
