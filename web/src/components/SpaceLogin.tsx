@@ -1,8 +1,9 @@
-﻿import { type FormEvent, useState } from 'react'
+import { type FormEvent, useState } from 'react'
 import { openSpace } from '../api/spaces'
 import type { SpaceSession } from '../types'
+import { ThemeToggle, type ThemeMode } from './ThemeToggle'
 
-export function SpaceLogin({ onSession }: { onSession: (session: SpaceSession) => void }) {
+export function SpaceLogin({ onSession, theme, onToggleTheme }: { onSession: (session: SpaceSession) => void; theme: ThemeMode; onToggleTheme: () => void }) {
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   async function submit(event: FormEvent) {
@@ -16,6 +17,9 @@ export function SpaceLogin({ onSession }: { onSession: (session: SpaceSession) =
   }
   return (
     <main className="center-shell">
+      <div className="center-theme-action">
+        <ThemeToggle theme={theme} onToggle={onToggleTheme} />
+      </div>
       <form className="login-panel" onSubmit={submit}>
         <div className="brand login-brand">
           <div className="brand-mark">AI</div>

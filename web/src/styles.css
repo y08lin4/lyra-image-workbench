@@ -3842,3 +3842,190 @@ button:not(.primary) { background: var(--surface-soft); color: #1e3a8a; border: 
     max-height: none;
   }
 }
+
+/* 主题切换 */
+.theme-toggle {
+  width: auto;
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border-radius: 999px;
+  padding: 0 12px;
+  font-size: 12px;
+  font-weight: 900;
+}
+.theme-toggle span {
+  font-size: 14px;
+  line-height: 1;
+}
+.center-theme-action {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 20;
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --bg: #080d18;
+  --surface: #101827;
+  --surface-soft: #0b1220;
+  --border: #243247;
+  --border-strong: #334155;
+  --text: #e5edf8;
+  --muted: #9aa8bd;
+  --muted-2: #708096;
+  --primary: #2563eb;
+  --primary-2: #60a5fa;
+  --success: #22c55e;
+  --error: #f87171;
+  background: var(--bg);
+  color: var(--text);
+}
+:root[data-theme='dark'] body,
+:root[data-theme='dark'] .tabbed-workbench,
+:root[data-theme='dark'] .center-shell {
+  background: radial-gradient(circle at top left, #111c31 0, #080d18 42%, #060913 100%);
+  color: var(--text);
+}
+:root[data-theme='dark'] input,
+:root[data-theme='dark'] select,
+:root[data-theme='dark'] textarea {
+  background: #0b1220;
+  border-color: #2a3a52;
+  color: var(--text);
+}
+:root[data-theme='dark'] input::placeholder,
+:root[data-theme='dark'] textarea::placeholder {
+  color: #64748b;
+}
+:root[data-theme='dark'] .workflow-tabs,
+:root[data-theme='dark'] .workflow-page,
+:root[data-theme='dark'] .generate-step,
+:root[data-theme='dark'] .result-page .result-canvas,
+:root[data-theme='dark'] .result-page .canvas-header,
+:root[data-theme='dark'] .result-page .result-context,
+:root[data-theme='dark'] .result-page .empty-state,
+:root[data-theme='dark'] .queue-sidebar,
+:root[data-theme='dark'] .queue-item,
+:root[data-theme='dark'] .queue-empty,
+:root[data-theme='dark'] .generate-assistant-panel .prompt-assistant-inline,
+:root[data-theme='dark'] .prompt-tool-panel,
+:root[data-theme='dark'] .prompt-history-list,
+:root[data-theme='dark'] .prompt-result,
+:root[data-theme='dark'] .settings-card,
+:root[data-theme='dark'] .settings-inline-grid .key-section,
+:root[data-theme='dark'] .admin-entry-panel,
+:root[data-theme='dark'] .login-panel,
+:root[data-theme='dark'] .admin-panel,
+:root[data-theme='dark'] .size-modal,
+:root[data-theme='dark'] .banana-model-modal,
+:root[data-theme='dark'] .preview-dialog,
+:root[data-theme='dark'] .task-detail-dialog,
+:root[data-theme='dark'] .result-card,
+:root[data-theme='dark'] .reference-card,
+:root[data-theme='dark'] .upload-dropzone,
+:root[data-theme='dark'] .status-line,
+:root[data-theme='dark'] .submit-readiness,
+:root[data-theme='dark'] .result-action-row,
+:root[data-theme='dark'] .settings-submit-row {
+  background: rgba(16, 24, 39, .96) !important;
+  border-color: var(--border) !important;
+  color: var(--text) !important;
+  box-shadow: none !important;
+}
+:root[data-theme='dark'] .workflow-tabs button:not(.active),
+:root[data-theme='dark'] button:not(.primary):not(.active),
+:root[data-theme='dark'] .ghost-link {
+  background: #0b1220;
+  border-color: #2a3a52;
+  color: #bfdbfe;
+}
+:root[data-theme='dark'] .workflow-tabs button.active,
+:root[data-theme='dark'] .mode-tabs button.active,
+:root[data-theme='dark'] .provider-tabs button.active,
+:root[data-theme='dark'] .quality-btn.active,
+:root[data-theme='dark'] .format-btn.active,
+:root[data-theme='dark'] .resolution-btn.active,
+:root[data-theme='dark'] .ratio-btn.active {
+  background: #2563eb !important;
+  border-color: #2563eb !important;
+  color: #ffffff !important;
+}
+:root[data-theme='dark'] .brand-mark,
+:root[data-theme='dark'] .generate-step-title > b {
+  background: #2563eb;
+  color: #fff;
+}
+:root[data-theme='dark'] .eyebrow,
+:root[data-theme='dark'] a,
+:root[data-theme='dark'] .upload-dropzone span {
+  color: #93c5fd;
+}
+:root[data-theme='dark'] .muted,
+:root[data-theme='dark'] .top-status span,
+:root[data-theme='dark'] .section-title small,
+:root[data-theme='dark'] .field small,
+:root[data-theme='dark'] .generate-step-title span,
+:root[data-theme='dark'] .prompt-helper-row span,
+:root[data-theme='dark'] .canvas-header p,
+:root[data-theme='dark'] .queue-meta span,
+:root[data-theme='dark'] .queue-status-line small {
+  color: var(--muted) !important;
+}
+:root[data-theme='dark'] .section-title span,
+:root[data-theme='dark'] .field > span,
+:root[data-theme='dark'] .generate-step-title strong,
+:root[data-theme='dark'] .result-prompt summary strong,
+:root[data-theme='dark'] .queue-title-line strong,
+:root[data-theme='dark'] .empty-state strong,
+:root[data-theme='dark'] .prompt-result-title strong {
+  color: var(--text) !important;
+}
+:root[data-theme='dark'] .top-status span.ready,
+:root[data-theme='dark'] .request-status-row .key-ready,
+:root[data-theme='dark'] .status-line.ready,
+:root[data-theme='dark'] .submit-readiness.ready,
+:root[data-theme='dark'] .ok {
+  background: rgba(22, 101, 52, .22) !important;
+  border-color: rgba(34, 197, 94, .45) !important;
+  color: #86efac !important;
+}
+:root[data-theme='dark'] .top-status span.missing,
+:root[data-theme='dark'] .request-status-row .key-missing,
+:root[data-theme='dark'] .status-line.missing,
+:root[data-theme='dark'] .submit-readiness.missing,
+:root[data-theme='dark'] .key-warning,
+:root[data-theme='dark'] .error {
+  background: rgba(127, 29, 29, .24) !important;
+  border-color: rgba(248, 113, 113, .45) !important;
+  color: #fecaca !important;
+}
+:root[data-theme='dark'] .param-chips span,
+:root[data-theme='dark'] .actual-chips span,
+:root[data-theme='dark'] .queue-tags span,
+:root[data-theme='dark'] .prompt-chips span,
+:root[data-theme='dark'] .status-pill {
+  background: #172554 !important;
+  border-color: #1d4ed8 !important;
+  color: #bfdbfe !important;
+}
+:root[data-theme='dark'] .result-card img,
+:root[data-theme='dark'] .reference-thumb,
+:root[data-theme='dark'] .queue-thumb,
+:root[data-theme='dark'] .size-preview,
+:root[data-theme='dark'] .result-page .result-prompt p,
+:root[data-theme='dark'] .merge-direction-box,
+:root[data-theme='dark'] .identity-help {
+  background: #0b1220 !important;
+  border-color: var(--border) !important;
+  color: var(--text) !important;
+}
+:root[data-theme='dark'] .size-modal-mask,
+:root[data-theme='dark'] .prompt-assistant-mask,
+:root[data-theme='dark'] .preview-mask,
+:root[data-theme='dark'] .task-detail-mask {
+  background: rgba(2, 6, 23, .72) !important;
+}

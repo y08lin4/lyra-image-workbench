@@ -21,6 +21,7 @@ export interface UserConfig {
 
 export interface AdminConfig {
   newApiBaseUrl: string
+  publicBaseUrl: string
   timeoutSec: number
   model: string
   modelLocked: boolean

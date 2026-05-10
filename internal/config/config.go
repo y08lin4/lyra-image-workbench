@@ -65,7 +65,7 @@ type Config struct {
 }
 
 func Load() Config {
-	host := getenv("LOCAL_IMAGE_HOST", "127.0.0.1")
+	host := getenv("LOCAL_IMAGE_HOST", "0.0.0.0")
 	port := getenvInt("LOCAL_IMAGE_PORT", 8787)
 	return Config{
 		Host:                 host,

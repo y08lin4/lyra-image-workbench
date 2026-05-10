@@ -12,6 +12,7 @@ import { TaskDetailModal } from './TaskDetailModal'
 import { TaskSidebar } from './TaskSidebar'
 import { PromptAssistantModal } from './PromptAssistantModal'
 import { ResultCanvas } from './ResultCanvas'
+import { ThemeToggle, type ThemeMode } from './ThemeToggle'
 import { useTaskEvents } from '../hooks/useTaskEvents'
 import { BANANA_PROVIDER, DEFAULT_BANANA_MODEL, DEFAULT_IMAGE2_MODEL, getBananaModelOption } from '../lib/models'
 
@@ -26,7 +27,7 @@ const workflowTabs: WorkbenchTabItem[] = [
   { id: 'settings', label: '设置', hint: 'Key' },
 ]
 
-export function WorkbenchPage() {
+export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onToggleTheme: () => void }) {
   const [session, setSession] = useState<SpaceSession | null>(null)
   const [spaceReady, setSpaceReady] = useState(false)
   const [activeTab, setActiveTab] = useState<WorkbenchTab>('generate')
@@ -385,7 +386,7 @@ export function WorkbenchPage() {
     setSpaceReady(false)
   }
 
-  if (!session) return <SpaceLogin onSession={(next) => { setSession(next); setSpaceReady(true) }} />
+  if (!session) return <SpaceLogin theme={theme} onToggleTheme={onToggleTheme} onSession={(next) => { setSession(next); setSpaceReady(true) }} />
 
   return (
     <div className="app-shell gallery-shell tabbed-workbench">
@@ -402,7 +403,11 @@ export function WorkbenchPage() {
           <span className={bananaKeyReady ? 'ready' : 'missing'}>Banana {bananaKeyReady ? '已设置' : '未设置'}</span>
           <span className="ready">后端在线</span>
         </div>
-        <nav className="top-actions"><a className="ghost-link" href="/admin">Admin</a><button onClick={logout}>退出空间</button></nav>
+        <nav className="top-actions">
+          <ThemeToggle theme={theme} onToggle={onToggleTheme} />
+          <a className="ghost-link" href="/admin">Admin</a>
+          <button onClick={logout}>退出空间</button>
+        </nav>
       </header>
 
       <WorkbenchTabs tabs={tabItems} activeTab={activeTab} onChange={setActiveTab} className="workflow-tabs desktop-tabs" />

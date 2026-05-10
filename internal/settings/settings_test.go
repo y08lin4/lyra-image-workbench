@@ -19,8 +19,9 @@ func TestFileStoreUpdatePersistsAdminConfig(t *testing.T) {
 	}
 
 	baseURL := "http://127.0.0.1:3010/v1/images/generations"
+	publicURL := "https://image.example.com/"
 	timeout := 601
-	updated, err := store.Update(Update{NewAPIBaseURL: &baseURL, TimeoutSec: &timeout})
+	updated, err := store.Update(Update{NewAPIBaseURL: &baseURL, PublicBaseURL: &publicURL, TimeoutSec: &timeout})
 	if err != nil {
 		t.Fatalf("Update() error = %v", err)
 	}
@@ -29,6 +30,9 @@ func TestFileStoreUpdatePersistsAdminConfig(t *testing.T) {
 	}
 	if updated.TimeoutSec != timeout {
 		t.Fatalf("TimeoutSec = %d", updated.TimeoutSec)
+	}
+	if updated.PublicBaseURL != "https://image.example.com" {
+		t.Fatalf("PublicBaseURL = %q", updated.PublicBaseURL)
 	}
 	if updated.Model != config.DefaultModel {
 		t.Fatalf("Model = %q", updated.Model)
@@ -39,7 +43,7 @@ func TestFileStoreUpdatePersistsAdminConfig(t *testing.T) {
 		t.Fatalf("reopen NewFileStore() error = %v", err)
 	}
 	public := reopened.Public()
-	if public.NewAPIBaseURL != updated.NewAPIBaseURL || public.TimeoutSec != timeout {
+	if public.NewAPIBaseURL != updated.NewAPIBaseURL || public.PublicBaseURL != updated.PublicBaseURL || public.TimeoutSec != timeout {
 		t.Fatalf("Public() = %+v", public)
 	}
 	if !public.ModelLocked || public.Model != config.DefaultModel {
@@ -66,5 +70,10 @@ func TestFileStoreRejectsInvalidAdminConfig(t *testing.T) {
 	tooShort := config.MinTimeoutSec - 1
 	if _, err := store.Update(Update{TimeoutSec: &tooShort}); err == nil {
 		t.Fatal("expected invalid timeout error")
+	}
+
+	badPublicURL := "ftp://example.com"
+	if _, err := store.Update(Update{PublicBaseURL: &badPublicURL}); err == nil {
+		t.Fatal("expected invalid public base URL error")
 	}
 }

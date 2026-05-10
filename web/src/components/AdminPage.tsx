@@ -10,15 +10,17 @@ import {
   setupAdminPassword,
 } from '../api/admin'
 import type { AdminAuthStatus, AdminConfig } from '../types'
+import { ThemeToggle, type ThemeMode } from './ThemeToggle'
 
 type AdminMode = 'loading' | 'setup' | 'login' | 'config'
 type NumericInputValue = number | ''
 
-export function AdminPage() {
+export function AdminPage({ theme, onToggleTheme }: { theme: ThemeMode; onToggleTheme: () => void }) {
   const [mode, setMode] = useState<AdminMode>('loading')
   const [auth, setAuth] = useState<AdminAuthStatus | null>(null)
   const [config, setConfig] = useState<AdminConfig | null>(null)
   const [url, setUrl] = useState('')
+  const [publicBaseUrl, setPublicBaseUrl] = useState('')
   const [timeout, setTimeoutSec] = useState<NumericInputValue>(600)
   const [password, setPassword] = useState('')
   const [message, setMessage] = useState('')
@@ -53,6 +55,7 @@ export function AdminPage() {
       const cfg = await getAdminConfig()
       setConfig(cfg)
       setUrl(cfg.newApiBaseUrl)
+      setPublicBaseUrl(cfg.publicBaseUrl || '')
       setTimeoutSec(cfg.timeoutSec)
       setMode('config')
     } catch (err) {
@@ -87,8 +90,9 @@ export function AdminPage() {
     event.preventDefault()
     setError('')
     try {
-      const cfg = await saveAdminConfig(url, numericOrDefault(timeout, config?.timeoutSec || 600))
+      const cfg = await saveAdminConfig(url, numericOrDefault(timeout, config?.timeoutSec || 600), publicBaseUrl)
       setConfig(cfg)
+      setPublicBaseUrl(cfg.publicBaseUrl || '')
       setMessage('管理配置已保存')
     } catch (err) {
       setError(err instanceof Error ? err.message : '保存失败')
@@ -108,6 +112,9 @@ export function AdminPage() {
   if (mode === 'loading') {
     return (
       <main className="center-shell">
+        <div className="center-theme-action">
+          <ThemeToggle theme={theme} onToggle={onToggleTheme} />
+        </div>
         <section className="admin-panel">
           <AdminBrand title="后台管理" />
           <div className="info">正在检查 Admin 鉴权状态...</div>
@@ -120,6 +127,9 @@ export function AdminPage() {
   if (mode === 'setup' || mode === 'login') {
     return (
       <main className="center-shell">
+        <div className="center-theme-action">
+          <ThemeToggle theme={theme} onToggle={onToggleTheme} />
+        </div>
         <form className="admin-panel" onSubmit={submitPassword}>
           <AdminBrand title={mode === 'setup' ? '初次设置 Admin 密码' : '输入 Admin 密码'} />
           <p className="muted">{mode === 'setup' ? '这是开放服务的管理入口，初次访问必须先设置管理密码。' : '后续访问 Admin 页面需要先输入管理密码。'}</p>
@@ -143,11 +153,16 @@ export function AdminPage() {
 
   return (
     <main className="center-shell">
+      <div className="center-theme-action">
+        <ThemeToggle theme={theme} onToggle={onToggleTheme} />
+      </div>
       <form className="admin-panel" onSubmit={submit}>
         <AdminBrand title="后台管理" />
         <div className="status-line">Admin 已登录 · 密码状态：{auth?.passwordSet ? '已设置' : '未设置'}</div>
         <label>NewAPI 请求 URL<input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="http://127.0.0.1:3000/v1" /></label>
+        <label>对外访问域名<input value={publicBaseUrl} onChange={(e) => setPublicBaseUrl(e.target.value)} placeholder="https://image.example.com，可留空" /></label>
         <label>超时时间（秒）<input type="number" min={config?.limits.minTimeoutSec || 60} max={config?.limits.maxTimeoutSec || 3600} value={timeout} onChange={(e) => setTimeoutSec(readNumberInput(e.target.value))} /></label>
+        <div className="status-line">当前对外域名：{config?.publicBaseUrl || '未设置'}。用于记录部署域名，反代仍在宝塔/Nginx 里配置。</div>
         <div className="status-line">默认 Image-2 模型：{config?.model || 'gpt-image-2'}；Banana Nano 在工作台按规格路由到独立模型 ID。</div>
         <button className="primary" type="submit">保存管理配置</button>
         <div className="admin-actions"><a href="/">返回工作台</a><button type="button" onClick={handleLogout}>退出 Admin</button></div>

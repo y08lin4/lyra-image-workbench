@@ -16,6 +16,7 @@ import (
 
 type RuntimeConfig struct {
 	NewAPIBaseURL string `json:"newApiBaseUrl"`
+	PublicBaseURL string `json:"publicBaseUrl"`
 	TimeoutSec    int    `json:"timeoutSec"`
 	Model         string `json:"model"`
 	UpdatedAt     string `json:"updatedAt"`
@@ -23,6 +24,7 @@ type RuntimeConfig struct {
 
 type PublicRuntimeConfig struct {
 	NewAPIBaseURL string `json:"newApiBaseUrl"`
+	PublicBaseURL string `json:"publicBaseUrl"`
 	TimeoutSec    int    `json:"timeoutSec"`
 	Model         string `json:"model"`
 	ModelLocked   bool   `json:"modelLocked"`
@@ -38,6 +40,7 @@ type Limits struct {
 
 type Update struct {
 	NewAPIBaseURL *string `json:"newApiBaseUrl"`
+	PublicBaseURL *string `json:"publicBaseUrl"`
 	TimeoutSec    *int    `json:"timeoutSec"`
 }
 
@@ -98,6 +101,9 @@ func (s *FileStore) Update(update Update) (RuntimeConfig, error) {
 	if update.NewAPIBaseURL != nil {
 		next.NewAPIBaseURL = strings.TrimSpace(*update.NewAPIBaseURL)
 	}
+	if update.PublicBaseURL != nil {
+		next.PublicBaseURL = strings.TrimSpace(*update.PublicBaseURL)
+	}
 	if update.TimeoutSec != nil {
 		next.TimeoutSec = *update.TimeoutSec
 	}
@@ -133,6 +139,9 @@ func merge(base RuntimeConfig, loaded RuntimeConfig) RuntimeConfig {
 	if strings.TrimSpace(loaded.NewAPIBaseURL) != "" {
 		base.NewAPIBaseURL = loaded.NewAPIBaseURL
 	}
+	if strings.TrimSpace(loaded.PublicBaseURL) != "" {
+		base.PublicBaseURL = loaded.PublicBaseURL
+	}
 	if loaded.TimeoutSec != 0 {
 		base.TimeoutSec = loaded.TimeoutSec
 	}
@@ -164,15 +173,36 @@ func validate(value RuntimeConfig) (RuntimeConfig, error) {
 	if err != nil {
 		return RuntimeConfig{}, err
 	}
+	publicBaseURL, err := normalizePublicBaseURL(value.PublicBaseURL)
+	if err != nil {
+		return RuntimeConfig{}, err
+	}
 	if value.TimeoutSec < config.MinTimeoutSec || value.TimeoutSec > config.MaxTimeoutSec {
 		return RuntimeConfig{}, fmt.Errorf("超时时间必须在 %d 到 %d 秒之间", config.MinTimeoutSec, config.MaxTimeoutSec)
 	}
 	return RuntimeConfig{
 		NewAPIBaseURL: baseURL,
+		PublicBaseURL: publicBaseURL,
 		TimeoutSec:    value.TimeoutSec,
 		Model:         config.DefaultModel,
 		UpdatedAt:     strings.TrimSpace(value.UpdatedAt),
 	}, nil
+}
+
+func normalizePublicBaseURL(raw string) (string, error) {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return "", nil
+	}
+	trimmed = strings.TrimRight(trimmed, "/")
+	parsed, err := url.Parse(trimmed)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return "", errors.New("对外访问域名格式无效，请填写 http:// 或 https:// 开头的完整地址")
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return "", errors.New("对外访问域名仅支持 http 或 https")
+	}
+	return strings.TrimRight(parsed.String(), "/"), nil
 }
 
 func normalizeBaseURL(raw string) (string, error) {
@@ -196,6 +226,7 @@ func normalizeBaseURL(raw string) (string, error) {
 func toPublic(value RuntimeConfig) PublicRuntimeConfig {
 	return PublicRuntimeConfig{
 		NewAPIBaseURL: value.NewAPIBaseURL,
+		PublicBaseURL: value.PublicBaseURL,
 		TimeoutSec:    value.TimeoutSec,
 		Model:         config.DefaultModel,
 		ModelLocked:   true,
