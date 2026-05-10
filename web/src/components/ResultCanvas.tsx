@@ -20,8 +20,8 @@ export function ResultCanvas({ task, onUseAsReference, onUploadPixhost }: { task
 
       {!task ? (
         <div className="empty-state">
-          <strong>还没有选择任务</strong>
-          <span>提交任务后，生成结果会出现在这里。后端继续执行，刷新页面也可以恢复。</span>
+          <strong>从底部请求栏开始生成</strong>
+          <span>输入提示词，选择 Image-2 或 Banana，点击生成后结果会固定显示在这里。刷新页面也能恢复历史结果。</span>
         </div>
       ) : (
         <>

@@ -4,19 +4,18 @@ import { clearSpaceToken, getSpaceToken } from '../api/client'
 import { getCurrentSpace, leaveSpace } from '../api/spaces'
 import { deleteReferenceUpload, listReferenceUploads, uploadReferenceImages } from '../api/uploads'
 import { getUserConfig } from '../api/config'
-import type { CreateTaskRequest, Mode, ModelProvider, ReferenceUpload, SpaceSession, Task, TaskEvent, TaskStatus, UserConfig } from '../types'
+import type { CreateTaskRequest, Mode, ModelProvider, ReferenceUpload, SpaceSession, Task, TaskEvent, UserConfig } from '../types'
 import { SpaceLogin } from './SpaceLogin'
 import { GenerationPanel } from './GenerationPanel'
 import { SettingsWindow } from './SettingsWindow'
 import { TaskDetailModal } from './TaskDetailModal'
-import { TaskGallery } from './TaskGallery'
+import { TaskSidebar } from './TaskSidebar'
 import { PromptAssistantModal } from './PromptAssistantModal'
 import { ResultCanvas } from './ResultCanvas'
 import { useTaskEvents } from '../hooks/useTaskEvents'
 import { BANANA_PROVIDER, DEFAULT_BANANA_MODEL, DEFAULT_IMAGE2_MODEL, getBananaModelOption } from '../lib/models'
 
 type NumericInputValue = number | ''
-type TaskFilter = TaskStatus | 'all'
 
 export function WorkbenchPage() {
   const [session, setSession] = useState<SpaceSession | null>(null)
@@ -31,8 +30,6 @@ export function WorkbenchPage() {
   const [activeId, setActiveId] = useState<string | null>(null)
   const [detailId, setDetailId] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
-  const [statusFilter, setStatusFilter] = useState<TaskFilter>('all')
-  const [favoriteOnly, setFavoriteOnly] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set())
   const [uploads, setUploads] = useState<ReferenceUpload[]>([])
   const [primaryUploadId, setPrimaryUploadId] = useState('')
@@ -377,18 +374,13 @@ export function WorkbenchPage() {
       </header>
       <main className="workbench-main">
         <aside className="task-sidebar" aria-label="任务队列和历史">
-          <TaskGallery
-            compact
+          <TaskSidebar
             tasks={tasks}
             activeId={activeId || undefined}
             query={searchQuery}
-            statusFilter={statusFilter}
-            favoriteOnly={favoriteOnly}
             favoriteIds={favoriteIds}
             selectedIds={selectedIds}
             onQueryChange={setSearchQuery}
-            onStatusFilterChange={setStatusFilter}
-            onFavoriteOnlyChange={setFavoriteOnly}
             onToggleSelect={toggleSelectTask}
             onSelectVisible={selectVisibleTasks}
             onClearSelection={() => setSelectedIds(new Set())}

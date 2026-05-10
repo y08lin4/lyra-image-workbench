@@ -79,23 +79,26 @@ export function GenerationPanel({
 }: Props) {
   return (
     <aside className="generation-panel">
-      <section className="form-section key-summary">
-        <div className="section-title">
-          <span>{provider === 'banana' ? 'Banana API Key' : 'codex-key'}</span>
-          <small>{keyReady ? '已就绪' : '需要设置'}</small>
+      <section className="request-status-row">
+        <div>
+          <strong>请求</strong>
+          <span>{provider === 'banana' ? 'Banana Nano' : 'Image-2'} · {mode === 'image-to-image' ? '图生图' : '文生图'}</span>
         </div>
-        <div className="key-row">
-          <div className="status-line">当前：{keyReady ? `已设置 ${keyPreview}` : '未设置'}</div>
-          <button type="button" onClick={onOpenSettings}>设置</button>
-        </div>
+        <button type="button" className={keyReady ? 'key-ready' : 'key-missing'} onClick={onOpenSettings}>
+          {keyReady ? `Key ${keyPreview || '已设置'}` : '设置 Key'}
+        </button>
       </section>
 
       <form onSubmit={onSubmit} className="generation-form composer-form">
         {mode === 'image-to-image' ? <UploadPanel uploads={uploads} primaryUploadId={primaryUploadId} onPrimaryChange={onPrimaryUploadChange} onUpload={onUpload} onDelete={onDeleteUpload} /> : null}
 
-        <label className="composer-prompt">
-          <textarea value={prompt} onChange={(event) => onPromptChange(event.target.value)} placeholder="描述你想生成的图片..." rows={2} />
-        </label>
+        <div className="composer-primary-row">
+          <label className="composer-prompt">
+            <span>提示词</span>
+            <textarea value={prompt} onChange={(event) => onPromptChange(event.target.value)} placeholder="描述你想生成的图片..." rows={2} />
+          </label>
+          <button className="primary generate-submit" type="submit">生成</button>
+        </div>
 
         <div className="composer-control-row">
           <div className="composer-control-left">
@@ -126,8 +129,6 @@ export function GenerationPanel({
               <input type="number" min={1} value={concurrency} onChange={(event) => onConcurrencyChange(readNumberInput(event.target.value))} />
             </label>
           </div>
-
-          <button className="primary generate-submit" type="submit">生成</button>
         </div>
       </form>
 
