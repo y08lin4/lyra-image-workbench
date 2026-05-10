@@ -14,21 +14,25 @@ import (
 
 type Config struct {
 	APIKey             string `json:"apiKey,omitempty"`
+	BananaAPIKey       string `json:"bananaApiKey,omitempty"`
 	DefaultConcurrency int    `json:"defaultConcurrency,omitempty"`
 	AutoUploadPixhost  bool   `json:"autoUploadPixhost,omitempty"`
 	UpdatedAt          string `json:"updatedAt"`
 }
 
 type PublicConfig struct {
-	APIKeySet          bool   `json:"apiKeySet"`
-	APIKeyPreview      string `json:"apiKeyPreview"`
-	DefaultConcurrency int    `json:"defaultConcurrency"`
-	AutoUploadPixhost  bool   `json:"autoUploadPixhost"`
-	UpdatedAt          string `json:"updatedAt"`
+	APIKeySet           bool   `json:"apiKeySet"`
+	APIKeyPreview       string `json:"apiKeyPreview"`
+	BananaAPIKeySet     bool   `json:"bananaApiKeySet"`
+	BananaAPIKeyPreview string `json:"bananaApiKeyPreview"`
+	DefaultConcurrency  int    `json:"defaultConcurrency"`
+	AutoUploadPixhost   bool   `json:"autoUploadPixhost"`
+	UpdatedAt           string `json:"updatedAt"`
 }
 
 type Update struct {
 	APIKey             *string `json:"apiKey"`
+	BananaAPIKey       *string `json:"bananaApiKey"`
 	DefaultConcurrency *int    `json:"defaultConcurrency"`
 	AutoUploadPixhost  *bool   `json:"autoUploadPixhost"`
 }
@@ -80,6 +84,9 @@ func (s *Store) Update(spaceToken string, update Update) (PublicConfig, error) {
 	if update.APIKey != nil {
 		cfg.APIKey = strings.TrimSpace(*update.APIKey)
 	}
+	if update.BananaAPIKey != nil {
+		cfg.BananaAPIKey = strings.TrimSpace(*update.BananaAPIKey)
+	}
 	if update.DefaultConcurrency != nil {
 		cfg.DefaultConcurrency = clamp(*update.DefaultConcurrency, 1, 0, 1)
 	}
@@ -123,6 +130,7 @@ func (s *Store) configPath(spaceToken string) (string, error) {
 
 func normalize(cfg Config) Config {
 	cfg.APIKey = strings.TrimSpace(cfg.APIKey)
+	cfg.BananaAPIKey = strings.TrimSpace(cfg.BananaAPIKey)
 	cfg.DefaultConcurrency = clamp(cfg.DefaultConcurrency, 1, 0, 1)
 	cfg.UpdatedAt = strings.TrimSpace(cfg.UpdatedAt)
 	return cfg
@@ -130,11 +138,13 @@ func normalize(cfg Config) Config {
 
 func toPublic(cfg Config) PublicConfig {
 	return PublicConfig{
-		APIKeySet:          cfg.APIKey != "",
-		APIKeyPreview:      maskSecret(cfg.APIKey),
-		DefaultConcurrency: cfg.DefaultConcurrency,
-		AutoUploadPixhost:  cfg.AutoUploadPixhost,
-		UpdatedAt:          cfg.UpdatedAt,
+		APIKeySet:           cfg.APIKey != "",
+		APIKeyPreview:       maskSecret(cfg.APIKey),
+		BananaAPIKeySet:     cfg.BananaAPIKey != "",
+		BananaAPIKeyPreview: maskSecret(cfg.BananaAPIKey),
+		DefaultConcurrency:  cfg.DefaultConcurrency,
+		AutoUploadPixhost:   cfg.AutoUploadPixhost,
+		UpdatedAt:           cfg.UpdatedAt,
 	}
 }
 

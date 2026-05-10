@@ -1,4 +1,5 @@
 ﻿export type Mode = 'text-to-image' | 'image-to-image'
+export type ModelProvider = 'image-2' | 'banana'
 export type TaskStatus = 'queued' | 'running' | 'succeeded' | 'partial_failed' | 'failed' | 'cancelled' | 'interrupted'
 
 export interface SpaceSession {
@@ -11,6 +12,8 @@ export interface SpaceSession {
 export interface UserConfig {
   apiKeySet: boolean
   apiKeyPreview: string
+  bananaApiKeySet: boolean
+  bananaApiKeyPreview: string
   defaultConcurrency: number
   autoUploadPixhost: boolean
   updatedAt: string
@@ -71,6 +74,8 @@ export interface TaskResult {
 
 export interface Task {
   id: string
+  provider?: ModelProvider
+  model?: string
   mode: Mode
   prompt: string
   ratio: string
@@ -106,6 +111,8 @@ export interface TaskEvent {
 }
 
 export interface CreateTaskRequest {
+  provider: ModelProvider
+  model: string
   mode: Mode
   prompt: string
   ratio: string

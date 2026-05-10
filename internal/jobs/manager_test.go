@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -114,6 +115,72 @@ func TestManagerAllowsPartialFailed(t *testing.T) {
 	}
 	if okCount != 1 {
 		t.Fatalf("expected exactly one success, got %+v", final.Results)
+	}
+}
+
+func TestManagerRoutesBananaModelWithSeparateKey(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("Authorization"); got != "Bearer sk-banana" {
+			t.Fatalf("Authorization = %q", got)
+		}
+		var payload map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatalf("decode body: %v", err)
+		}
+		if payload["model"] != "gemini-3.1-flash-image-preview-16x9-4k" {
+			t.Fatalf("unexpected banana model: %+v", payload)
+		}
+		for _, key := range []string{"size", "quality", "output_format"} {
+			if _, ok := payload[key]; ok {
+				t.Fatalf("%s should not be sent for banana model-encoded specs: %+v", key, payload)
+			}
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": []map[string]string{{"b64_json": base64.StdEncoding.EncodeToString([]byte("banana"))}}})
+	}))
+	defer server.Close()
+	env := newManagerTestEnv(t, server.URL)
+	bananaKey := "sk-banana"
+	if _, err := env.spaceConfig.Update(env.token, spaceconfig.Update{BananaAPIKey: &bananaKey}); err != nil {
+		t.Fatalf("space config banana Update() error = %v", err)
+	}
+
+	created, err := env.manager.Create(env.token, CreateRequest{
+		Provider:    config.BananaProvider,
+		Model:       "gemini-3.1-flash-image-preview-16x9-4k",
+		Mode:        ModeTextToImage,
+		Prompt:      "banana",
+		Ratio:       "1:1",
+		Resolution:  "standard",
+		Quality:     "high",
+		Count:       1,
+		Concurrency: 1,
+	})
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	if created.Provider != config.BananaProvider || created.Model != "gemini-3.1-flash-image-preview-16x9-4k" {
+		t.Fatalf("banana route fields were not stored: %+v", created)
+	}
+	if created.Ratio != "16:9" || created.Resolution != "4k" || created.Size != "3840x2160" || created.Quality != "auto" || created.OutputFormat != "auto" {
+		t.Fatalf("banana model spec was not mapped onto task params: %+v", created)
+	}
+	final := waitForJobStatus(t, env.store, env.token, created.ID, StatusSucceeded, 3*time.Second)
+	if len(final.Results) != 1 || !final.Results[0].OK {
+		t.Fatalf("unexpected final banana result: %+v", final.Results)
+	}
+}
+
+func TestManagerRequiresBananaKeyForBananaProvider(t *testing.T) {
+	env := newManagerTestEnv(t, "http://127.0.0.1:1")
+	_, err := env.manager.Create(env.token, CreateRequest{
+		Provider: config.BananaProvider,
+		Model:    config.DefaultBananaModel,
+		Mode:     ModeTextToImage,
+		Prompt:   "banana",
+		Count:    1,
+	})
+	if err == nil || !strings.Contains(err.Error(), "banana 分组") {
+		t.Fatalf("expected banana key error, got %v", err)
 	}
 }
 

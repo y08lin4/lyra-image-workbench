@@ -11,12 +11,44 @@ import (
 const (
 	DefaultNewAPIBaseURL    = "http://127.0.0.1:3000/v1"
 	DefaultModel            = "gpt-image-2"
+	DefaultProvider         = "image-2"
+	BananaProvider          = "banana"
+	DefaultBananaModel      = "gemini-3.1-flash-image-preview"
 	DefaultPromptModel      = "gpt-5.5"
 	DefaultPromptTimeoutSec = 180
 	DefaultTimeoutSec       = 600
 	MinTimeoutSec           = 60
 	MaxTimeoutSec           = 3600
 )
+
+var bananaModels = []string{
+	"gemini-3.1-flash-image-preview",
+	"gemini-3.1-flash-image-preview-16x9-4k",
+	"gemini-3.1-flash-image-preview-9x16-4k",
+	"gemini-3.1-flash-image-preview-16x9-2k",
+	"gemini-3.1-flash-image-preview-9x16-2k",
+	"gemini-3.1-flash-image-preview-2k",
+	"gemini-3.1-flash-image-preview-4k",
+	"gemini-3.1-flash-image-preview-4x3-4k",
+	"gemini-3.1-flash-image-preview-4x3-2k",
+	"gemini-3.1-flash-image-preview-1x1-4k",
+	"gemini-3.1-flash-image-preview-3x4-2k",
+	"gemini-3.1-flash-image-preview-3x4-4k",
+	"gemini-3.1-flash-image-preview-1x1-2k",
+}
+
+func BananaModels() []string {
+	return append([]string{}, bananaModels...)
+}
+
+func IsBananaModel(model string) bool {
+	for _, item := range bananaModels {
+		if model == item {
+			return true
+		}
+	}
+	return false
+}
 
 type Config struct {
 	Host                 string

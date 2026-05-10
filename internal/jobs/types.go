@@ -47,6 +47,8 @@ type Meta struct {
 type Job struct {
 	ID           string    `json:"id"`
 	SpaceToken   string    `json:"spaceToken"`
+	Provider     string    `json:"provider"`
+	Model        string    `json:"model"`
 	Mode         Mode      `json:"mode"`
 	Prompt       string    `json:"prompt"`
 	Ratio        string    `json:"ratio"`
@@ -97,6 +99,8 @@ type Result struct {
 }
 
 type CreateRequest struct {
+	Provider     string   `json:"provider"`
+	Model        string   `json:"model"`
 	Mode         Mode     `json:"mode"`
 	Prompt       string   `json:"prompt"`
 	Ratio        string   `json:"ratio"`

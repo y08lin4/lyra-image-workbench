@@ -28,16 +28,17 @@ type InputImage struct {
 }
 
 type Request struct {
-	Mode         string
-	BaseURL      string
-	APIKey       string
-	Model        string
-	Prompt       string
-	Size         string
-	Quality      string
-	OutputFormat string
-	TimeoutSec   int
-	InputImages  []InputImage
+	Mode            string
+	BaseURL         string
+	APIKey          string
+	Model           string
+	Prompt          string
+	Size            string
+	Quality         string
+	OutputFormat    string
+	SkipImageParams bool
+	TimeoutSec      int
+	InputImages     []InputImage
 }
 
 type Image struct {
@@ -86,13 +87,15 @@ func (c *Client) generateText(ctx context.Context, req Request) (Image, error) {
 		"prompt":          req.Prompt,
 		"n":               1,
 		"response_format": "b64_json",
-		"output_format":   outputFormat,
 	}
-	if req.Size != "" && req.Size != "自动" && req.Size != "auto" {
-		body["size"] = req.Size
-	}
-	if req.Quality != "" {
-		body["quality"] = normalizeQuality(req.Quality)
+	if !req.SkipImageParams {
+		body["output_format"] = outputFormat
+		if req.Size != "" && req.Size != "自动" && req.Size != "auto" {
+			body["size"] = req.Size
+		}
+		if req.Quality != "" {
+			body["quality"] = normalizeQuality(req.Quality)
+		}
 	}
 	payload, err := json.Marshal(body)
 	if err != nil {
@@ -119,12 +122,14 @@ func (c *Client) editImage(ctx context.Context, req Request) (Image, error) {
 	_ = writer.WriteField("prompt", req.Prompt)
 	_ = writer.WriteField("n", "1")
 	_ = writer.WriteField("response_format", "b64_json")
-	_ = writer.WriteField("output_format", outputFormat)
-	if req.Size != "" && req.Size != "自动" && req.Size != "auto" {
-		_ = writer.WriteField("size", req.Size)
-	}
-	if req.Quality != "" {
-		_ = writer.WriteField("quality", normalizeQuality(req.Quality))
+	if !req.SkipImageParams {
+		_ = writer.WriteField("output_format", outputFormat)
+		if req.Size != "" && req.Size != "自动" && req.Size != "auto" {
+			_ = writer.WriteField("size", req.Size)
+		}
+		if req.Quality != "" {
+			_ = writer.WriteField("quality", normalizeQuality(req.Quality))
+		}
 	}
 	for idx, input := range req.InputImages {
 		if err := addImagePart(writer, input, idx); err != nil {

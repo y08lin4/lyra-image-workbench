@@ -1,4 +1,5 @@
 import type { Task, TaskStatus } from '../types'
+import { BANANA_PROVIDER, getBananaModelOption, providerLabel } from '../lib/models'
 
 type TaskFilter = TaskStatus | 'all'
 
@@ -177,8 +178,15 @@ function TaskGalleryCard({ task, active, favorite, selected, onSelect, onToggleS
         </div>
         <div className="gallery-tags">
           <span>{task.mode === 'image-to-image' ? '图生图' : '文生图'}</span>
-          <span>质量 {qualityLabel(task.quality)}</span>
-          <span>格式 {outputFormatLabel(task.outputFormat)}</span>
+          <span>{providerLabel(task.provider)}</span>
+          {task.provider === BANANA_PROVIDER ? (
+            <span>{getBananaModelOption(task.model || '').label}</span>
+          ) : (
+            <>
+              <span>质量 {qualityLabel(task.quality)}</span>
+              <span>格式 {outputFormatLabel(task.outputFormat)}</span>
+            </>
+          )}
           <span>{task.statusText} / {task.statusCode}</span>
           {hasError ? <span className="warn">含失败</span> : null}
         </div>
@@ -232,6 +240,8 @@ function filterTasks(tasks: Task[], query: string, statusFilter: TaskFilter, fav
       task.statusCode,
       task.stageText,
       task.stageCode,
+      task.provider,
+      task.model,
       task.ratio,
       task.resolution,
       task.quality,
@@ -256,7 +266,7 @@ function qualityLabel(value?: string) {
 }
 
 function outputFormatLabel(value?: string) {
-  const labels: Record<string, string> = { png: 'PNG', jpeg: 'JPG', jpg: 'JPG', webp: 'WEBP' }
+  const labels: Record<string, string> = { auto: '自动', png: 'PNG', jpeg: 'JPG', jpg: 'JPG', webp: 'WEBP' }
   return value ? labels[value] || value.toUpperCase() : 'PNG'
 }
 

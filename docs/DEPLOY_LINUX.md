@@ -163,8 +163,10 @@ sudo ln -s /var/lib/image-workbench/outputs outputs
 
 - `/admin` 页面保存的 URL 和超时时间会写入 `data/config.local.json`。
 - 普通用户的 `codex-key` 会写入个人空间配置，只向前端返回掩码。
+- Banana Nano 使用单独的 Banana API Key。请在 NewAPI / CLIProxyAPI 中新建一个 `banana` 分组的 apikey，再在工作台设置窗口填写；URL 仍复用 `/admin` 配置的 NewAPI URL。
 - 模型当前固定：
   - 生图：`gpt-image-2`
+  - Banana Nano：通过规格选择路由到 `gemini-3.1-flash-image-preview...` 系列模型 ID
   - 提示词助手：`gpt-5.5`
 
 ---
@@ -552,4 +554,3 @@ sudo journalctl -u image-workbench -n 100 --no-pager
 7. 任务执行中刷新页面，任务和进度仍可恢复。
 8. 生成结果图片可下载、复制、预览、作为图生图参考图。
 9. 提示词助手可调用 `gpt-5.5`，且错误显示中文、错误码、英文。
-

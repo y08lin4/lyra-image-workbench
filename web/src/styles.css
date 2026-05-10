@@ -135,6 +135,7 @@ textarea { resize: vertical; line-height: 1.55; }
   font-size: 13px;
 }
 .key-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: center; }
+.key-subtitle { margin-top: 10px; }
 
 .mode-tabs {
   display: grid;
@@ -146,6 +147,7 @@ textarea { resize: vertical; line-height: 1.55; }
 }
 .mode-tabs button { border: 0; background: transparent; color: var(--muted); border-radius: 9px; padding: 10px; font-weight: 800; }
 .mode-tabs button.active { background: var(--primary); color: white; }
+.provider-tabs button.active { background: #111827; color: #ffffff; }
 .ratio-list { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
 .ratio-btn {
   border: 1px solid var(--border);
@@ -421,6 +423,33 @@ textarea { resize: vertical; line-height: 1.55; }
   color: #475569;
   font-size: 12px;
   font-weight: 800;
+}
+.banana-model-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.banana-model-grid button {
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: #ffffff;
+  color: var(--text);
+  padding: 12px;
+  text-align: left;
+  display: grid;
+  gap: 5px;
+}
+.banana-model-grid button.active {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #ffffff;
+}
+.banana-model-grid span,
+.banana-model-grid small {
+  color: inherit;
+  opacity: .78;
+  font-size: 11px;
+  word-break: break-all;
 }
 .result-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 14px; }
 .result-card {
@@ -1235,9 +1264,15 @@ button:not(.primary) { background: var(--surface-soft); color: #1e3a8a; border: 
   width: 150px;
   flex: none;
 }
+.gallery-shell .composer-control-left .provider-tabs {
+  width: 180px;
+}
 .gallery-shell .composer-control-left .size-selector-button {
   width: 190px;
   flex: none;
+}
+.gallery-shell .composer-control-left .banana-model-button {
+  width: 260px;
 }
 .gallery-shell .composer-control-left .quality-list {
   width: 184px;
@@ -1323,7 +1358,9 @@ button:not(.primary) { background: var(--surface-soft); color: #1e3a8a; border: 
   }
   .gallery-shell .composer-control-left,
   .gallery-shell .composer-control-left .mode-tabs,
+  .gallery-shell .composer-control-left .provider-tabs,
   .gallery-shell .composer-control-left .size-selector-button,
+  .gallery-shell .composer-control-left .banana-model-button,
   .gallery-shell .composer-control-left .quality-list,
   .gallery-shell .composer-control-left .format-list,
   .gallery-shell .prompt-assistant-trigger {
@@ -1591,6 +1628,9 @@ button:not(.primary) { background: var(--surface-soft); color: #1e3a8a; border: 
 }
 
 @media (max-width: 720px) {
+  .banana-model-grid {
+    grid-template-columns: 1fr;
+  }
   .gallery-shell { padding: 10px 10px 320px; }
   .gallery-shell .topbar {
     align-items: flex-start;

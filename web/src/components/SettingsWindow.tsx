@@ -9,7 +9,7 @@ export function SettingsWindow({ onClose, onConfig }: { onClose: () => void; onC
           <div>
             <p className="eyebrow">Settings</p>
             <h2>设置</h2>
-            <p className="muted">当前空间的 codex-key 和个人配置集中放在这里，后续模型会独立分组。</p>
+            <p className="muted">当前空间的 codex-key、Banana 分组 API Key 和个人配置集中放在这里。</p>
           </div>
           <button type="button" onClick={onClose}>关闭</button>
         </header>

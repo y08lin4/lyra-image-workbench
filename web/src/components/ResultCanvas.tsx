@@ -3,6 +3,7 @@ import type { Task, TaskResult } from '../types'
 import { formatBytes } from '../lib/format'
 import { errorReasonLabel } from '../lib/errorLabels'
 import { ImagePreviewModal } from './ImagePreviewModal'
+import { BANANA_PROVIDER, getBananaModelOption, providerLabel } from '../lib/models'
 
 export function ResultCanvas({ task, onUseAsReference, onUploadPixhost }: { task?: Task; onUseAsReference?: (src: string, index: number) => Promise<void>; onUploadPixhost?: (taskId: string, index: number) => Promise<void> }) {
   const okCount = task?.results.filter((item) => item.ok).length || 0
@@ -199,8 +200,23 @@ function extensionFromMime(mime: string) {
 }
 
 function taskParameters(task: Task) {
+  const provider = task.provider || 'image-2'
+  if (provider === BANANA_PROVIDER) {
+    const option = getBananaModelOption(task.model || '')
+    return [
+      task.mode === 'image-to-image' ? '图生图' : '文生图',
+      `模型分组 ${providerLabel(provider)}`,
+      `规格 ${option.label}`,
+      `模型 ID ${option.id}`,
+      option.size !== '自动' ? `尺寸 ${option.size}` : '自动尺寸',
+      `数量 ${task.count || 1}`,
+      `并发 ${task.concurrency || 1}`,
+    ]
+  }
   return [
     task.mode === 'image-to-image' ? '图生图' : '文生图',
+    `模型分组 ${providerLabel(provider)}`,
+    `模型 ${task.model || 'gpt-image-2'}`,
     !task.ratio || task.ratio === 'auto' ? '自动比例' : `比例 ${task.ratio}`,
     `清晰度 ${resolutionLabel(task.resolution)}`,
     `质量 ${qualityLabel(task.quality)}`,
@@ -234,7 +250,7 @@ function qualityLabel(value?: string) {
 }
 
 function outputFormatLabel(value?: string) {
-  const labels: Record<string, string> = { png: 'PNG', jpeg: 'JPG', jpg: 'JPG', webp: 'WEBP' }
+  const labels: Record<string, string> = { auto: '自动', png: 'PNG', jpeg: 'JPG', jpg: 'JPG', webp: 'WEBP' }
   if (!value) return 'PNG'
   return labels[value] || value.toUpperCase()
 }

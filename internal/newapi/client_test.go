@@ -64,6 +64,48 @@ func TestGenerateParsesB64JSON(t *testing.T) {
 	}
 }
 
+func TestGenerateCanSkipImageParamsForModelEncodedSpecs(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode request body: %v", err)
+		}
+		if body["model"] != "gemini-3.1-flash-image-preview-16x9-4k" {
+			t.Fatalf("unexpected model: %+v", body)
+		}
+		for _, key := range []string{"size", "quality", "output_format"} {
+			if _, ok := body[key]; ok {
+				t.Fatalf("%s should not be sent for model-encoded specs: %+v", key, body)
+			}
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": []map[string]string{{
+			"b64_json": base64.StdEncoding.EncodeToString([]byte("banana")),
+		}}})
+	}))
+	defer server.Close()
+
+	client := NewClient()
+	client.httpClient = server.Client()
+	image, err := client.Generate(context.Background(), Request{
+		Mode:            "text-to-image",
+		BaseURL:         server.URL,
+		APIKey:          "sk-banana",
+		Model:           "gemini-3.1-flash-image-preview-16x9-4k",
+		Prompt:          "banana",
+		Size:            "3840x2160",
+		Quality:         "high",
+		OutputFormat:    "webp",
+		SkipImageParams: true,
+		TimeoutSec:      60,
+	})
+	if err != nil {
+		t.Fatalf("Generate() error = %v", err)
+	}
+	if string(image.Bytes) != "banana" {
+		t.Fatalf("Generate() image = %+v", image)
+	}
+}
+
 func TestGenerateParsesRawImageResponse(t *testing.T) {
 	want := []byte("raw-image")
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {

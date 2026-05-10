@@ -4,7 +4,7 @@ import { clearSpaceToken, getSpaceToken } from '../api/client'
 import { getCurrentSpace, leaveSpace } from '../api/spaces'
 import { deleteReferenceUpload, listReferenceUploads, uploadReferenceImages } from '../api/uploads'
 import { getUserConfig } from '../api/config'
-import type { CreateTaskRequest, Mode, ReferenceUpload, SpaceSession, Task, TaskEvent, TaskStatus, UserConfig } from '../types'
+import type { CreateTaskRequest, Mode, ModelProvider, ReferenceUpload, SpaceSession, Task, TaskEvent, TaskStatus, UserConfig } from '../types'
 import { SpaceLogin } from './SpaceLogin'
 import { GenerationPanel } from './GenerationPanel'
 import { SettingsWindow } from './SettingsWindow'
@@ -12,6 +12,7 @@ import { TaskDetailModal } from './TaskDetailModal'
 import { TaskGallery } from './TaskGallery'
 import { PromptAssistantModal } from './PromptAssistantModal'
 import { useTaskEvents } from '../hooks/useTaskEvents'
+import { BANANA_PROVIDER, DEFAULT_BANANA_MODEL, DEFAULT_IMAGE2_MODEL, getBananaModelOption } from '../lib/models'
 
 type NumericInputValue = number | ''
 type TaskFilter = TaskStatus | 'all'
@@ -21,6 +22,8 @@ export function WorkbenchPage() {
   const [spaceReady, setSpaceReady] = useState(false)
   const [keyReady, setKeyReady] = useState(false)
   const [keyPreview, setKeyPreview] = useState('')
+  const [bananaKeyReady, setBananaKeyReady] = useState(false)
+  const [bananaKeyPreview, setBananaKeyPreview] = useState('')
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [promptAssistantOpen, setPromptAssistantOpen] = useState(false)
   const [tasks, setTasks] = useState<Task[]>([])
@@ -32,6 +35,8 @@ export function WorkbenchPage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set())
   const [uploads, setUploads] = useState<ReferenceUpload[]>([])
   const [mode, setMode] = useState<Mode>('text-to-image')
+  const [provider, setProvider] = useState<ModelProvider>('image-2')
+  const [bananaModel, setBananaModel] = useState(DEFAULT_BANANA_MODEL)
   const [prompt, setPrompt] = useState('')
   const [ratio, setRatio] = useState('1:1')
   const [resolution, setResolution] = useState('standard')
@@ -107,22 +112,30 @@ export function WorkbenchPage() {
   const applyUserConfig = useCallback((cfg: UserConfig) => {
     setKeyReady(cfg.apiKeySet)
     setKeyPreview(cfg.apiKeyPreview)
+    setBananaKeyReady(Boolean(cfg.bananaApiKeySet))
+    setBananaKeyPreview(cfg.bananaApiKeyPreview || '')
     setConcurrency(cfg.defaultConcurrency || 1)
   }, [])
 
   async function submit(event: FormEvent) {
     event.preventDefault()
     setError('')
-    if (!keyReady) { setError('请先保存当前空间的 codex-key'); return }
+    const currentKeyReady = provider === BANANA_PROVIDER ? bananaKeyReady : keyReady
+    if (!currentKeyReady) {
+      setError(provider === BANANA_PROVIDER ? '请先在设置里保存 banana 分组的 API Key' : '请先保存当前空间的 codex-key')
+      return
+    }
     if (!prompt.trim()) { setError('请先输入提示词'); return }
     if (mode === 'image-to-image' && uploads.length === 0) { setError('图生图需要先上传参考图'); return }
     const payload: CreateTaskRequest = {
+      provider,
+      model: provider === BANANA_PROVIDER ? bananaModel : DEFAULT_IMAGE2_MODEL,
       mode,
       prompt,
-      ratio,
-      resolution,
-      quality,
-      outputFormat,
+      ratio: provider === BANANA_PROVIDER ? getBananaModelOption(bananaModel).ratio : ratio,
+      resolution: provider === BANANA_PROVIDER ? getBananaModelOption(bananaModel).resolution : resolution,
+      quality: provider === BANANA_PROVIDER ? 'auto' : quality,
+      outputFormat: provider === BANANA_PROVIDER ? 'auto' : outputFormat,
       count: numericOrDefault(count, 1),
       concurrency: numericOrDefault(concurrency, 1),
       uploadIds: mode === 'image-to-image' ? uploads.map((item) => item.id) : [],
@@ -181,6 +194,9 @@ export function WorkbenchPage() {
   }
 
   function handleReuseTask(task: Task) {
+    const nextProvider = task.provider || 'image-2'
+    setProvider(nextProvider)
+    setBananaModel(nextProvider === BANANA_PROVIDER ? getBananaModelOption(task.model || '').id : bananaModel)
     setMode(task.mode)
     setPrompt(task.prompt)
     setRatio(task.ratio || '1:1')
@@ -357,24 +373,28 @@ export function WorkbenchPage() {
       <div className="composer-dock" data-generation-composer>
         <GenerationPanel
             mode={mode}
+            provider={provider}
             prompt={prompt}
             ratio={ratio}
             resolution={resolution}
             quality={quality}
             outputFormat={outputFormat}
+            bananaModel={bananaModel}
             count={count}
             concurrency={concurrency}
             uploads={uploads}
-            keyReady={keyReady}
-            keyPreview={keyPreview}
+            keyReady={provider === BANANA_PROVIDER ? bananaKeyReady : keyReady}
+            keyPreview={provider === BANANA_PROVIDER ? bananaKeyPreview : keyPreview}
             message={message}
             error={error}
             onModeChange={setMode}
+            onProviderChange={setProvider}
             onPromptChange={setPrompt}
             onRatioChange={setRatio}
             onResolutionChange={setResolution}
             onQualityChange={setQuality}
             onOutputFormatChange={setOutputFormat}
+            onBananaModelChange={setBananaModel}
             onCountChange={setCount}
             onConcurrencyChange={setConcurrency}
             onOpenSettings={() => setSettingsOpen(true)}

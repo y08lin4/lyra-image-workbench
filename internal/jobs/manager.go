@@ -85,11 +85,23 @@ func (m *Manager) Create(spaceToken string, req CreateRequest) (Job, error) {
 	if err := validateCreate(req); err != nil {
 		return Job{}, err
 	}
+	provider, err := resolveProvider(req.Provider)
+	if err != nil {
+		return Job{}, err
+	}
+	model, err := resolveModel(provider, req.Model)
+	if err != nil {
+		return Job{}, err
+	}
 	spaceCfg, err := m.spaceConfig.Get(spaceToken)
 	if err != nil {
 		return Job{}, err
 	}
-	if strings.TrimSpace(spaceCfg.APIKey) == "" {
+	if provider == config.BananaProvider {
+		if strings.TrimSpace(spaceCfg.BananaAPIKey) == "" {
+			return Job{}, errors.New("请先在当前个人空间填写 banana 分组的 API Key")
+		}
+	} else if strings.TrimSpace(spaceCfg.APIKey) == "" {
 		return Job{}, errors.New("请先在当前个人空间填写 codex-key")
 	}
 	if req.Mode == ModeImageToImage {
@@ -107,16 +119,31 @@ func (m *Manager) Create(spaceToken string, req CreateRequest) (Job, error) {
 	if err != nil {
 		return Job{}, err
 	}
+	ratio := normalizeRatio(req.Ratio)
+	resolution := normalizeResolution(req.Resolution)
+	quality := normalizeQuality(req.Quality)
+	outputFormat := normalizeOutputFormat(req.OutputFormat)
+	size := imageSize(ratio, resolution)
+	if provider == config.BananaProvider {
+		spec := bananaModelSpec(model)
+		ratio = spec.Ratio
+		resolution = spec.Resolution
+		quality = "auto"
+		outputFormat = "auto"
+		size = spec.Size
+	}
 	job := Job{
 		ID:           id,
 		SpaceToken:   spaceToken,
+		Provider:     provider,
+		Model:        model,
 		Mode:         req.Mode,
 		Prompt:       strings.TrimSpace(req.Prompt),
-		Ratio:        normalizeRatio(req.Ratio),
-		Resolution:   normalizeResolution(req.Resolution),
-		Quality:      normalizeQuality(req.Quality),
-		OutputFormat: normalizeOutputFormat(req.OutputFormat),
-		Size:         imageSize(normalizeRatio(req.Ratio), normalizeResolution(req.Resolution)),
+		Ratio:        ratio,
+		Resolution:   resolution,
+		Quality:      quality,
+		OutputFormat: outputFormat,
+		Size:         size,
 		Count:        clamp(req.Count, 1, 12, 1),
 		Concurrency:  clamp(req.Concurrency, 1, 0, 1),
 		UploadIDs:    append([]string{}, req.UploadIDs...),
@@ -231,7 +258,7 @@ func (m *Manager) Retry(spaceToken string, id string) (Job, error) {
 	if !ok {
 		return Job{}, errors.New("任务不存在")
 	}
-	return m.Create(spaceToken, CreateRequest{Mode: old.Mode, Prompt: old.Prompt, Ratio: old.Ratio, Resolution: old.Resolution, Quality: old.Quality, OutputFormat: old.OutputFormat, Count: old.Count, Concurrency: old.Concurrency, UploadIDs: old.UploadIDs})
+	return m.Create(spaceToken, CreateRequest{Provider: old.Provider, Model: old.Model, Mode: old.Mode, Prompt: old.Prompt, Ratio: old.Ratio, Resolution: old.Resolution, Quality: old.Quality, OutputFormat: old.OutputFormat, Count: old.Count, Concurrency: old.Concurrency, UploadIDs: old.UploadIDs})
 }
 
 func (m *Manager) Cancel(spaceToken string, id string) (Job, error) {
@@ -394,6 +421,26 @@ func (m *Manager) generateOne(ctx context.Context, spaceToken string, jobID stri
 	if err != nil {
 		return NewResult(index, StatusFailed, err.Error())
 	}
+	provider, err := resolveProvider(job.Provider)
+	if err != nil {
+		return NewResult(index, StatusFailed, err.Error())
+	}
+	model, err := resolveModel(provider, job.Model)
+	if err != nil {
+		return NewResult(index, StatusFailed, err.Error())
+	}
+	apiKey := strings.TrimSpace(spaceCfg.APIKey)
+	skipImageParams := false
+	if provider == config.BananaProvider {
+		apiKey = strings.TrimSpace(spaceCfg.BananaAPIKey)
+		skipImageParams = true
+	}
+	if apiKey == "" {
+		if provider == config.BananaProvider {
+			return NewResult(index, StatusFailed, "请先在当前个人空间填写 banana 分组的 API Key")
+		}
+		return NewResult(index, StatusFailed, "请先在当前个人空间填写 codex-key")
+	}
 	inputs := make([]newapi.InputImage, 0, len(job.UploadIDs))
 	for _, id := range job.UploadIDs {
 		item, path, err := m.uploads.GetReferenceImage(spaceToken, id)
@@ -409,7 +456,7 @@ func (m *Manager) generateOne(ctx context.Context, spaceToken string, jobID stri
 		}
 	})
 	m.publish(jobID, "progress", eventPayload(job))
-	image, err := m.newapi.Generate(ctx, newapi.Request{Mode: string(job.Mode), BaseURL: admin.NewAPIBaseURL, APIKey: spaceCfg.APIKey, Model: config.DefaultModel, Prompt: job.Prompt, Size: job.Size, Quality: job.Quality, OutputFormat: job.OutputFormat, TimeoutSec: admin.TimeoutSec, InputImages: inputs})
+	image, err := m.newapi.Generate(ctx, newapi.Request{Mode: string(job.Mode), BaseURL: admin.NewAPIBaseURL, APIKey: apiKey, Model: model, Prompt: job.Prompt, Size: job.Size, Quality: job.Quality, OutputFormat: job.OutputFormat, SkipImageParams: skipImageParams, TimeoutSec: admin.TimeoutSec, InputImages: inputs})
 	if err != nil {
 		return withElapsed(NewResult(index, StatusFailed, err.Error()), started)
 	}
@@ -484,9 +531,69 @@ func (m *Manager) publish(jobID string, name string, data any) {
 	m.hub.Publish(jobID, events.Event{Event: name, Code: meta.Code, English: meta.English, Chinese: meta.Chinese, Data: data})
 }
 
+type bananaSpec struct {
+	Ratio      string
+	Resolution string
+	Size       string
+}
+
+func resolveProvider(value string) (string, error) {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "", config.DefaultProvider, "image2", "gpt-image-2":
+		return config.DefaultProvider, nil
+	case config.BananaProvider, "banana-nano", "nano-banana":
+		return config.BananaProvider, nil
+	default:
+		return "", errors.New("模型分组无效")
+	}
+}
+
+func resolveModel(provider string, value string) (string, error) {
+	value = strings.TrimSpace(value)
+	if provider == config.BananaProvider {
+		if value == "" {
+			value = config.DefaultBananaModel
+		}
+		if !config.IsBananaModel(value) {
+			return "", errors.New("Banana 模型 ID 无效")
+		}
+		return value, nil
+	}
+	return config.DefaultModel, nil
+}
+
+func bananaModelSpec(model string) bananaSpec {
+	specs := map[string]bananaSpec{
+		"gemini-3.1-flash-image-preview":         {Ratio: "auto", Resolution: "auto", Size: "自动"},
+		"gemini-3.1-flash-image-preview-2k":      {Ratio: "auto", Resolution: "2k", Size: "自动"},
+		"gemini-3.1-flash-image-preview-4k":      {Ratio: "auto", Resolution: "4k", Size: "自动"},
+		"gemini-3.1-flash-image-preview-16x9-2k": {Ratio: "16:9", Resolution: "2k", Size: imageSize("16:9", "2k")},
+		"gemini-3.1-flash-image-preview-16x9-4k": {Ratio: "16:9", Resolution: "4k", Size: imageSize("16:9", "4k")},
+		"gemini-3.1-flash-image-preview-9x16-2k": {Ratio: "9:16", Resolution: "2k", Size: imageSize("9:16", "2k")},
+		"gemini-3.1-flash-image-preview-9x16-4k": {Ratio: "9:16", Resolution: "4k", Size: imageSize("9:16", "4k")},
+		"gemini-3.1-flash-image-preview-4x3-2k":  {Ratio: "4:3", Resolution: "2k", Size: imageSize("4:3", "2k")},
+		"gemini-3.1-flash-image-preview-4x3-4k":  {Ratio: "4:3", Resolution: "4k", Size: imageSize("4:3", "4k")},
+		"gemini-3.1-flash-image-preview-3x4-2k":  {Ratio: "3:4", Resolution: "2k", Size: imageSize("3:4", "2k")},
+		"gemini-3.1-flash-image-preview-3x4-4k":  {Ratio: "3:4", Resolution: "4k", Size: imageSize("3:4", "4k")},
+		"gemini-3.1-flash-image-preview-1x1-2k":  {Ratio: "1:1", Resolution: "2k", Size: imageSize("1:1", "2k")},
+		"gemini-3.1-flash-image-preview-1x1-4k":  {Ratio: "1:1", Resolution: "4k", Size: imageSize("1:1", "4k")},
+	}
+	if spec, ok := specs[model]; ok {
+		return spec
+	}
+	return specs[config.DefaultBananaModel]
+}
+
 func validateCreate(req CreateRequest) error {
 	if strings.TrimSpace(req.Prompt) == "" {
 		return errors.New("提示词不能为空")
+	}
+	provider, err := resolveProvider(req.Provider)
+	if err != nil {
+		return err
+	}
+	if _, err := resolveModel(provider, req.Model); err != nil {
+		return err
 	}
 	if req.Mode != ModeTextToImage && req.Mode != ModeImageToImage {
 		return errors.New("任务模式无效")
@@ -539,6 +646,8 @@ func normalizeQuality(value string) string {
 
 func normalizeOutputFormat(value string) string {
 	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "auto":
+		return "auto"
 	case "jpg", "jpeg":
 		return "jpeg"
 	case "png", "webp":

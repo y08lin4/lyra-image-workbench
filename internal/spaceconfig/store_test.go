@@ -44,6 +44,43 @@ func TestStoreMasksAPIKeyInPublicConfig(t *testing.T) {
 	}
 }
 
+func TestStoreMasksBananaAPIKeySeparately(t *testing.T) {
+	spaceStore, err := spaces.NewFileStore(t.TempDir())
+	if err != nil {
+		t.Fatalf("NewFileStore() error = %v", err)
+	}
+	session, err := spaceStore.CreateOrOpenByPassword("R7!Banana#Vault$2026")
+	if err != nil {
+		t.Fatalf("CreateOrOpenByPassword() error = %v", err)
+	}
+	store := NewStore(spaceStore)
+
+	image2Key := "sk-image2-secret-1234567890"
+	bananaKey := "  sk-banana-secret-0987654321  "
+	public, err := store.Update(session.Token, Update{APIKey: &image2Key, BananaAPIKey: &bananaKey})
+	if err != nil {
+		t.Fatalf("Update() error = %v", err)
+	}
+	if !public.APIKeySet || !public.BananaAPIKeySet {
+		t.Fatalf("both key flags should be true: %+v", public)
+	}
+	encoded, _ := json.Marshal(public)
+	if strings.Contains(string(encoded), "sk-banana-secret-0987654321") {
+		t.Fatalf("public config leaked raw banana API key: %s", encoded)
+	}
+
+	private, err := store.Get(session.Token)
+	if err != nil {
+		t.Fatalf("Get() error = %v", err)
+	}
+	if private.APIKey != image2Key {
+		t.Fatalf("image-2 key changed: %q", private.APIKey)
+	}
+	if private.BananaAPIKey != "sk-banana-secret-0987654321" {
+		t.Fatalf("banana API key was not trimmed/persisted: %q", private.BananaAPIKey)
+	}
+}
+
 func TestStorePersistsDefaultConcurrency(t *testing.T) {
 	spaceStore, err := spaces.NewFileStore(t.TempDir())
 	if err != nil {

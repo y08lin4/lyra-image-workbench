@@ -28,16 +28,17 @@ func TestConfigAPIDoesNotReturnRawAPIKey(t *testing.T) {
 	router := newTestRouter(t)
 	token := createTestSession(t, router)
 	rawKey := "sk-router-secret-1234567890"
+	rawBananaKey := "sk-router-banana-secret-0987654321"
 
-	body := doJSON(t, router, http.MethodPost, "/api/config", token, map[string]string{"apiKey": rawKey})
-	if strings.Contains(body, rawKey) {
+	body := doJSON(t, router, http.MethodPost, "/api/config", token, map[string]string{"apiKey": rawKey, "bananaApiKey": rawBananaKey})
+	if strings.Contains(body, rawKey) || strings.Contains(body, rawBananaKey) {
 		t.Fatalf("POST /api/config leaked raw key: %s", body)
 	}
 	body = doJSON(t, router, http.MethodGet, "/api/config", token, nil)
-	if strings.Contains(body, rawKey) {
+	if strings.Contains(body, rawKey) || strings.Contains(body, rawBananaKey) {
 		t.Fatalf("GET /api/config leaked raw key: %s", body)
 	}
-	if !strings.Contains(body, `"apiKeySet":true`) {
+	if !strings.Contains(body, `"apiKeySet":true`) || !strings.Contains(body, `"bananaApiKeySet":true`) {
 		t.Fatalf("GET /api/config did not report key set: %s", body)
 	}
 }

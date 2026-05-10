@@ -7,6 +7,7 @@ type NumericInputValue = number | ''
 export function SettingsPanel({ onReady, onConfig }: { onReady?: (ready: boolean) => void; onConfig?: (config: UserConfig) => void }) {
   const [config, setConfig] = useState<UserConfig | null>(null)
   const [apiKey, setApiKey] = useState('')
+  const [bananaApiKey, setBananaApiKey] = useState('')
   const [defaultConcurrency, setDefaultConcurrency] = useState<NumericInputValue>(1)
   const [autoUploadPixhost, setAutoUploadPixhost] = useState(false)
   const [message, setMessage] = useState('')
@@ -21,17 +22,19 @@ export function SettingsPanel({ onReady, onConfig }: { onReady?: (ready: boolean
   }, [onReady, onConfig])
   async function submit(event: FormEvent) {
     event.preventDefault()
-    const payload: { apiKey?: string; defaultConcurrency: number; autoUploadPixhost: boolean } = {
+    const payload: { apiKey?: string; bananaApiKey?: string; defaultConcurrency: number; autoUploadPixhost: boolean } = {
       defaultConcurrency: numericOrDefault(defaultConcurrency, 1),
       autoUploadPixhost,
     }
     if (apiKey.trim()) payload.apiKey = apiKey
+    if (bananaApiKey.trim()) payload.bananaApiKey = bananaApiKey
     const cfg = await saveUserConfig(payload)
     setConfig(cfg)
     setDefaultConcurrency(cfg.defaultConcurrency || 1)
     setAutoUploadPixhost(Boolean(cfg.autoUploadPixhost))
     setApiKey('')
-    setMessage(apiKey.trim() ? 'codex-key 和默认并发已保存' : '默认并发已保存')
+    setBananaApiKey('')
+    setMessage(apiKey.trim() || bananaApiKey.trim() ? 'API Key 和默认并发已保存' : '默认并发已保存')
     onReady?.(cfg.apiKeySet)
     onConfig?.(cfg)
   }
@@ -41,10 +44,17 @@ export function SettingsPanel({ onReady, onConfig }: { onReady?: (ready: boolean
         <span>codex-key</span>
         <small>后端保存</small>
       </div>
-      <p className="muted">codex-key 只保存到 Go 后端当前个人空间，前端不请求上游；后续会为 Gemini Banana 等模型预留独立 Key。</p>
+      <p className="muted">codex-key 只保存到 Go 后端当前个人空间，前端不请求上游；提示词助手继续复用该 Key。</p>
       <div className="status-line">当前：{config?.apiKeySet ? `已设置 ${config.apiKeyPreview}` : '未设置'}</div>
       <form onSubmit={submit} className="inline-form">
         <input value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="填写 codex-key" />
+        <div className="section-title key-subtitle">
+          <span>Banana API Key</span>
+          <small>banana 分组</small>
+        </div>
+        <p className="muted">请在 NewAPI / CLIProxyAPI 里新建一个“banana”分组的 apikey，然后填到这里；URL 仍使用 Admin 页面里的 NewAPI URL。</p>
+        <div className="status-line">Banana：{config?.bananaApiKeySet ? `已设置 ${config.bananaApiKeyPreview}` : '未设置'}</div>
+        <input value={bananaApiKey} onChange={(e) => setBananaApiKey(e.target.value)} placeholder="填写 banana 分组 API Key" />
         <label className="field">
           <span>默认并发</span>
           <input type="number" min={1} value={defaultConcurrency} onChange={(e) => setDefaultConcurrency(readNumberInput(e.target.value))} />
