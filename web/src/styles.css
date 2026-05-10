@@ -755,11 +755,15 @@ progress { width: 100%; height: 8px; accent-color: var(--primary-2); }
   right: 22px;
   width: 42px;
   height: 42px;
+  display: grid;
+  place-items: center;
   border: 0;
   border-radius: 50%;
+  padding: 0;
   background: white;
   color: #111827;
   font-size: 26px;
+  line-height: 1;
 }
 .preview-info {
   position: absolute;
@@ -4208,6 +4212,58 @@ button:not(.primary) { background: var(--surface-soft); color: #1e3a8a; border: 
 :root[data-theme='dark'] .preview-mask,
 :root[data-theme='dark'] .task-detail-mask {
   background: rgba(2, 6, 23, .72) !important;
+}
+
+/* 暗色模式队列页对比度修复 */
+:root[data-theme='dark'] .queue-header h2,
+:root[data-theme='dark'] .queue-stat-grid strong,
+:root[data-theme='dark'] .queue-title-line strong {
+  color: #f8fafc !important;
+}
+
+:root[data-theme='dark'] .queue-header > span,
+:root[data-theme='dark'] .queue-stat-grid div,
+:root[data-theme='dark'] .queue-filter-row,
+:root[data-theme='dark'] .queue-search input {
+  background: #0b1220 !important;
+  border-color: #334155 !important;
+  color: #e5edf8 !important;
+}
+
+:root[data-theme='dark'] .queue-stat-grid span,
+:root[data-theme='dark'] .queue-search span,
+:root[data-theme='dark'] .queue-search input::placeholder {
+  color: #9aa8bd !important;
+}
+
+:root[data-theme='dark'] .queue-filter-row button {
+  color: #c7d2fe !important;
+}
+
+:root[data-theme='dark'] .queue-filter-row button.active {
+  background: #2563eb !important;
+  color: #ffffff !important;
+}
+
+:root[data-theme='dark'] .queue-item:hover,
+:root[data-theme='dark'] .queue-item.active {
+  background: #111f35 !important;
+  border-color: #60a5fa !important;
+}
+
+:root[data-theme='dark'] .queue-item.selected {
+  background: #13213a !important;
+  border-color: #93c5fd !important;
+}
+
+:root[data-theme='dark'] .queue-error {
+  color: #fca5a5 !important;
+}
+
+:root[data-theme='dark'] .favorite-btn.active {
+  background: rgba(146, 64, 14, .3) !important;
+  border-color: #f59e0b !important;
+  color: #fbbf24 !important;
 }
 
 /* 手机端工作台兜底：让页面按文档流滚动，避免队列/结果被旧高度规则裁切 */

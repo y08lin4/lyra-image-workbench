@@ -229,15 +229,59 @@ async function copyURL(src: string, setNotice: (value: string) => void) {
 
 async function copyImage(src: string, setNotice: (value: string) => void) {
   try {
-    const response = await fetch(src)
+    if (!navigator.clipboard?.write || typeof ClipboardItem === 'undefined') {
+      throw new Error('当前浏览器不支持直接复制图片')
+    }
+    const response = await fetch(src, { cache: 'no-store' })
+    if (!response.ok) throw new Error(`读取图片失败：HTTP ${response.status}`)
     const blob = await response.blob()
+    const clipboardBlob = await ensureClipboardImageBlob(blob)
     await navigator.clipboard.write([
-      new ClipboardItem({ [blob.type || 'image/png']: blob }),
+      new ClipboardItem({ [clipboardBlob.type]: clipboardBlob }),
     ])
     flash(setNotice, '图片已复制')
-  } catch {
-    await copyURL(src, setNotice)
+  } catch (err) {
+    flash(setNotice, err instanceof Error ? err.message : '复制图片失败')
   }
+}
+
+async function ensureClipboardImageBlob(blob: Blob) {
+  const mime = (blob.type || '').toLowerCase()
+  if (mime === 'image/png') return blob
+  return convertImageBlobToPng(blob)
+}
+
+async function convertImageBlobToPng(blob: Blob): Promise<Blob> {
+  const url = URL.createObjectURL(blob)
+  try {
+    const image = await loadImageElement(url)
+    const width = image.naturalWidth || image.width
+    const height = image.naturalHeight || image.height
+    if (!width || !height) throw new Error('图片尺寸读取失败')
+    const canvas = document.createElement('canvas')
+    canvas.width = width
+    canvas.height = height
+    const context = canvas.getContext('2d')
+    if (!context) throw new Error('浏览器无法创建图片画布')
+    context.drawImage(image, 0, 0)
+    return await new Promise<Blob>((resolve, reject) => {
+      canvas.toBlob((next) => {
+        if (next) resolve(next)
+        else reject(new Error('图片转换失败'))
+      }, 'image/png')
+    })
+  } finally {
+    URL.revokeObjectURL(url)
+  }
+}
+
+function loadImageElement(src: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const image = new Image()
+    image.onload = () => resolve(image)
+    image.onerror = () => reject(new Error('图片加载失败'))
+    image.src = src
+  })
 }
 
 async function downloadImage(src: string, index: number) {
