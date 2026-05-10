@@ -4711,3 +4711,260 @@ button:not(.primary) { background: var(--surface-soft); color: #1e3a8a; border: 
 :root[data-theme='dark'] .result-page .result-revised-prompt p {
   background: #0b1220 !important;
 }
+
+/* 浅色主题 v8：白底 + 浅灰卡片 + 靛蓝主按钮 + 浅靛蓝选中态 */
+:root[data-theme='light'] {
+  --bg: #f7f8fa;
+  --surface: #ffffff;
+  --surface-soft: #f9fafb;
+  --border: #e5e7eb;
+  --border-strong: #d1d5db;
+  --text: #111827;
+  --muted: #6b7280;
+  --muted-2: #9ca3af;
+  --primary: #4f46e5;
+  --primary-2: #4f46e5;
+  --primary-hover: #4338ca;
+  --indigo-soft: #eef2ff;
+  --indigo-border: #c7d2fe;
+  --indigo-text: #3730a3;
+}
+
+:root[data-theme='light'] body,
+:root[data-theme='light'] .app-shell,
+:root[data-theme='light'] .gallery-shell,
+:root[data-theme='light'] .tabbed-workbench,
+:root[data-theme='light'] .center-shell {
+  background: #f7f8fa !important;
+  color: var(--text);
+}
+
+:root[data-theme='light'] .workflow-page,
+:root[data-theme='light'] .workflow-tabs,
+:root[data-theme='light'] .generate-step,
+:root[data-theme='light'] .generation-panel,
+:root[data-theme='light'] .result-canvas,
+:root[data-theme='light'] .result-page .result-canvas,
+:root[data-theme='light'] .result-page .canvas-header,
+:root[data-theme='light'] .result-page .result-context,
+:root[data-theme='light'] .debug-log-panel,
+:root[data-theme='light'] .queue-sidebar,
+:root[data-theme='light'] .queue-item,
+:root[data-theme='light'] .settings-card,
+:root[data-theme='light'] .login-panel,
+:root[data-theme='light'] .admin-panel,
+:root[data-theme='light'] .size-modal,
+:root[data-theme='light'] .banana-model-modal,
+:root[data-theme='light'] .result-card,
+:root[data-theme='light'] .reference-card,
+:root[data-theme='light'] .upload-dropzone,
+:root[data-theme='light'] .prompt-assistant,
+:root[data-theme='light'] .prompt-assistant-inline,
+:root[data-theme='light'] .generate-assistant-panel .prompt-assistant-inline,
+:root[data-theme='light'] .prompt-tool-panel,
+:root[data-theme='light'] .prompt-history-list,
+:root[data-theme='light'] .prompt-result,
+:root[data-theme='light'] .prompt-apply-model,
+:root[data-theme='light'] .submit-readiness,
+:root[data-theme='light'] .result-action-row,
+:root[data-theme='light'] .settings-submit-row {
+  background: #ffffff !important;
+  border-color: var(--border) !important;
+  color: var(--text) !important;
+  box-shadow: none !important;
+}
+
+:root[data-theme='light'] input,
+:root[data-theme='light'] select,
+:root[data-theme='light'] textarea,
+:root[data-theme='light'] .size-selector-button,
+:root[data-theme='light'] .queue-search input,
+:root[data-theme='light'] .composer-prompt textarea {
+  background: #ffffff !important;
+  border-color: var(--border) !important;
+  color: var(--text) !important;
+  box-shadow: none;
+}
+
+:root[data-theme='light'] input:focus,
+:root[data-theme='light'] select:focus,
+:root[data-theme='light'] textarea:focus {
+  border-color: var(--indigo-border) !important;
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, .10) !important;
+}
+
+:root[data-theme='light'] .brand-mark {
+  background: #4f46e5 !important;
+  color: #ffffff !important;
+}
+
+:root[data-theme='light'] .api-service-banner {
+  background: #eef2ff !important;
+  border-color: #c7d2fe !important;
+  color: #3730a3 !important;
+  box-shadow: none !important;
+}
+:root[data-theme='light'] .api-service-banner strong,
+:root[data-theme='light'] .api-service-banner span {
+  color: #3730a3 !important;
+}
+
+:root[data-theme='light'] .primary,
+:root[data-theme='light'] button.primary,
+:root[data-theme='light'] .generate-submit,
+:root[data-theme='light'] .generate-page .execute-step .generate-submit,
+:root[data-theme='light'] .gallery-shell .composer-control-row .generate-submit,
+:root[data-theme='light'] .gallery-shell .composer-primary-row .generate-submit,
+:root[data-theme='light'] .prompt-tool-panel button.primary,
+:root[data-theme='light'] .prompt-result-actions button.primary,
+:root[data-theme='light'] .prompt-result-actions-top button.primary {
+  background: #4f46e5 !important;
+  border: 1px solid #4f46e5 !important;
+  color: #ffffff !important;
+  box-shadow: none !important;
+  background-image: none !important;
+}
+
+:root[data-theme='light'] .primary:hover,
+:root[data-theme='light'] button.primary:hover,
+:root[data-theme='light'] .generate-submit:hover,
+:root[data-theme='light'] .generate-page .execute-step .generate-submit:hover {
+  background: #4338ca !important;
+  border-color: #4338ca !important;
+}
+
+:root[data-theme='light'] button:not(.primary):not(.active),
+:root[data-theme='light'] .ghost-link,
+:root[data-theme='light'] .theme-toggle,
+:root[data-theme='light'] .card-toolbar button,
+:root[data-theme='light'] .preview-actions button,
+:root[data-theme='light'] .prompt-result-title-actions button,
+:root[data-theme='light'] .prompt-result-actions button:not(.primary),
+:root[data-theme='light'] .prompt-result-actions-top button:not(.primary) {
+  background: #ffffff !important;
+  border: 1px solid var(--border) !important;
+  color: #374151 !important;
+  box-shadow: none !important;
+}
+
+:root[data-theme='light'] button:not(.primary):not(.active):hover,
+:root[data-theme='light'] .ghost-link:hover,
+:root[data-theme='light'] .theme-toggle:hover,
+:root[data-theme='light'] .card-toolbar button:hover {
+  background: #f9fafb !important;
+  border-color: #d1d5db !important;
+  color: #111827 !important;
+}
+
+:root[data-theme='light'] .workflow-tabs button.active,
+:root[data-theme='light'] .mode-tabs button.active,
+:root[data-theme='light'] .provider-tabs button.active,
+:root[data-theme='light'] .quality-btn.active,
+:root[data-theme='light'] .format-btn.active,
+:root[data-theme='light'] .resolution-btn.active,
+:root[data-theme='light'] .ratio-btn.active,
+:root[data-theme='light'] .prompt-tabs button.active,
+:root[data-theme='light'] .prompt-source-tabs button.active,
+:root[data-theme='light'] .prompt-apply-model .provider-tabs button.active,
+:root[data-theme='light'] .prompt-version-list button.active,
+:root[data-theme='light'] .queue-filter-row button.active,
+:root[data-theme='light'] .size-tabs button.active,
+:root[data-theme='light'] .size-choice-grid button.active,
+:root[data-theme='light'] .banana-model-grid button.active,
+:root[data-theme='light'] .image-ratio-card.active,
+:root[data-theme='light'] .gallery-shell .mode-tabs button.active,
+:root[data-theme='light'] .gallery-shell .quality-btn.active,
+:root[data-theme='light'] .gallery-shell .format-btn.active,
+:root[data-theme='light'] .gallery-shell .resolution-btn.active,
+:root[data-theme='light'] .gallery-shell .ratio-btn.active,
+:root[data-theme='light'] .gallery-shell .size-tabs button.active,
+:root[data-theme='light'] .gallery-shell .size-choice-grid button.active {
+  background: #eef2ff !important;
+  border-color: #c7d2fe !important;
+  color: #3730a3 !important;
+  box-shadow: none !important;
+}
+
+:root[data-theme='light'] .workflow-tabs button.active strong,
+:root[data-theme='light'] .workflow-tabs button.active span,
+:root[data-theme='light'] .mode-tabs button.active,
+:root[data-theme='light'] .provider-tabs button.active,
+:root[data-theme='light'] .banana-model-grid button.active,
+:root[data-theme='light'] .image-ratio-card.active {
+  color: #3730a3 !important;
+}
+
+:root[data-theme='light'] .workflow-tabs button.active strong i {
+  background: #c7d2fe !important;
+  color: #3730a3 !important;
+}
+
+:root[data-theme='light'] .generate-step-title > b {
+  background: #eef2ff !important;
+  border: 1px solid #c7d2fe !important;
+  color: #4f46e5 !important;
+}
+
+:root[data-theme='light'] .prompt-result,
+:root[data-theme='light'] .generate-assistant-panel .prompt-result,
+:root[data-theme='light'] .prompt-result.empty,
+:root[data-theme='light'] .generate-assistant-panel .prompt-result.empty {
+  background: #f9fafb !important;
+  border: 1px solid #e5e7eb !important;
+  border-style: solid !important;
+}
+
+:root[data-theme='light'] .prompt-chips span,
+:root[data-theme='light'] .param-chips span,
+:root[data-theme='light'] .actual-chips span,
+:root[data-theme='light'] .queue-tags span {
+  background: #f9fafb !important;
+  border-color: #e5e7eb !important;
+  color: #4b5563 !important;
+}
+
+:root[data-theme='light'] .submit-readiness.ready,
+:root[data-theme='light'] .status-line.ready,
+:root[data-theme='light'] .request-status-row .key-ready,
+:root[data-theme='light'] .ok {
+  background: #f0fdf4 !important;
+  border-color: #bbf7d0 !important;
+  color: #166534 !important;
+}
+
+:root[data-theme='light'] .submit-readiness.missing,
+:root[data-theme='light'] .status-line.missing,
+:root[data-theme='light'] .request-status-row .key-missing,
+:root[data-theme='light'] .key-warning,
+:root[data-theme='light'] .error {
+  background: #fff7ed !important;
+  border-color: #fed7aa !important;
+  color: #9a3412 !important;
+}
+
+:root[data-theme='light'] .reference-step .merge-direction-box,
+:root[data-theme='light'] .result-image-frame,
+:root[data-theme='light'] .result-page .result-prompt p,
+:root[data-theme='light'] .result-page .result-revised-prompt p,
+:root[data-theme='light'] .queue-stat-grid div,
+:root[data-theme='light'] .queue-filter-row,
+:root[data-theme='light'] .queue-header > span,
+:root[data-theme='light'] .result-workspace .empty-state {
+  background: #f9fafb !important;
+  border-color: #e5e7eb !important;
+}
+
+:root[data-theme='light'] .timeline-item.active,
+:root[data-theme='light'] .queue-item.active,
+:root[data-theme='light'] .queue-item.selected,
+:root[data-theme='light'] .gallery-card.active,
+:root[data-theme='light'] .reference-card.primary-ref {
+  background: #eef2ff !important;
+  border-color: #c7d2fe !important;
+}
+
+:root[data-theme='light'] .favorite-btn.active {
+  background: #fef3c7 !important;
+  border-color: #fde68a !important;
+  color: #92400e !important;
+}
