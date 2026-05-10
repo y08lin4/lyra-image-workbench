@@ -5,6 +5,7 @@ outputs/
 *.log
 
 # 构建产物
+bin/
 dist/
 web/dist/
 *.tsbuildinfo
