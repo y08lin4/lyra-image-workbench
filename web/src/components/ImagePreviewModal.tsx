@@ -10,7 +10,6 @@ type Props = {
   requestedSize?: string
   ratio?: string
   bytes?: number
-  prompt?: string
   parameters?: string[]
   onCopyImage?: () => void | Promise<void>
   onCopyUrl?: () => void | Promise<void>
@@ -19,7 +18,7 @@ type Props = {
   onClose: () => void
 }
 
-export function ImagePreviewModal({ src, title, bytes, prompt, parameters = [], onCopyImage, onCopyUrl, onDownload, onUseAsReference, onClose }: Props) {
+export function ImagePreviewModal({ src, title, bytes, parameters = [], onCopyImage, onCopyUrl, onDownload, onUseAsReference, onClose }: Props) {
   const [dimensions, setDimensions] = useState<ImageDimensions>()
   const [byteSize, setByteSize] = useState(bytes || 0)
 
@@ -73,7 +72,6 @@ export function ImagePreviewModal({ src, title, bytes, prompt, parameters = [], 
         </div>
         <div className="preview-context">
           <strong>{title}</strong>
-          {prompt ? <p>{prompt}</p> : null}
           {parameters.length ? <div>{parameters.map((item) => <span key={item}>{item}</span>)}</div> : null}
         </div>
         <div className="preview-actions">

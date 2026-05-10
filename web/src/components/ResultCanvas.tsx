@@ -184,7 +184,6 @@ function ResultCard({ task, index, result, onUseAsReference, onUploadPixhost }: 
           requestedSize={task.size}
           ratio={task.ratio}
           bytes={result.bytes}
-          prompt={task.prompt}
           parameters={[...taskParameters(task), ...resultParameters(result)]}
           onCopyImage={() => copyImage(imageUrl, setNotice)}
           onCopyUrl={() => copyURL(copyableURL, setNotice)}
