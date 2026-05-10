@@ -424,32 +424,74 @@ textarea { resize: vertical; line-height: 1.55; }
   font-size: 12px;
   font-weight: 800;
 }
+.banana-model-modal {
+  width: min(780px, calc(100vw - 28px));
+  max-height: min(760px, calc(100vh - 44px));
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
 .banana-model-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
+  margin-top: 14px;
+  padding: 2px 4px 2px 0;
+  overflow: auto;
 }
 .banana-model-grid button {
-  border: 1px solid var(--border);
+  min-width: 0;
+  min-height: 78px;
+  border: 1px solid #dbeafe;
   border-radius: 14px;
   background: #ffffff;
   color: var(--text);
-  padding: 12px;
+  padding: 10px;
   text-align: left;
-  display: grid;
-  gap: 5px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 .banana-model-grid button.active {
-  background: var(--primary);
-  border-color: var(--primary);
+  background: #0f172a;
+  border-color: #0f172a;
   color: #ffffff;
 }
-.banana-model-grid span,
-.banana-model-grid small {
+.banana-ratio-preview {
+  width: 44px;
+  max-width: 44px;
+  min-width: 22px;
+  max-height: 48px;
+  border: 2px solid currentColor;
+  border-radius: 7px;
+  opacity: .9;
+  display: grid;
+  place-items: center;
+  flex: none;
+}
+.banana-ratio-preview i {
+  font-style: normal;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: .02em;
+}
+.banana-model-text {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+.banana-model-text strong {
+  font-size: 14px;
+  line-height: 1.1;
+}
+.banana-model-text span,
+.banana-model-text small {
   color: inherit;
   opacity: .78;
   font-size: 11px;
-  word-break: break-all;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .result-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 14px; }
 .result-card {
@@ -1352,6 +1394,12 @@ button:not(.primary) { background: var(--surface-soft); color: #1e3a8a; border: 
 }
 
 @media (max-width: 760px) {
+  .banana-model-modal {
+    width: min(560px, calc(100vw - 22px));
+  }
+  .banana-model-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
   .gallery-shell .composer-control-row {
     display: grid;
     gap: 10px;
@@ -1563,10 +1611,26 @@ button:not(.primary) { background: var(--surface-soft); color: #1e3a8a; border: 
   font-size: 12px;
   font-weight: 800;
 }
+.prompt-apply-model {
+  display: grid;
+  gap: 10px;
+  border: 1px solid #dbeafe;
+  border-radius: 16px;
+  background: #f8fbff;
+  padding: 12px;
+}
+.prompt-apply-model .mode-tabs {
+  grid-template-columns: 1fr 1fr;
+}
+.prompt-apply-model .provider-tabs button.active {
+  background: #0f172a;
+  color: #ffffff;
+}
 .prompt-result-actions {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
+  flex-wrap: wrap;
 }
 .prompt-history-list {
   display: grid;
@@ -1628,9 +1692,6 @@ button:not(.primary) { background: var(--surface-soft); color: #1e3a8a; border: 
 }
 
 @media (max-width: 720px) {
-  .banana-model-grid {
-    grid-template-columns: 1fr;
-  }
   .gallery-shell { padding: 10px 10px 320px; }
   .gallery-shell .topbar {
     align-items: flex-start;
@@ -1687,5 +1748,14 @@ button:not(.primary) { background: var(--surface-soft); color: #1e3a8a; border: 
   }
   .prompt-result-actions {
     display: grid;
+  }
+}
+
+@media (max-width: 520px) {
+  .banana-model-grid {
+    grid-template-columns: 1fr;
+  }
+  .banana-model-grid button {
+    min-height: 70px;
   }
 }

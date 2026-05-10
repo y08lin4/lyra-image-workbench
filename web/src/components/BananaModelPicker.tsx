@@ -30,9 +30,14 @@ export function BananaModelPicker({ value, onChange }: Props) {
         <div className="banana-model-grid">
           {BANANA_MODEL_OPTIONS.map((option) => (
             <button key={option.id} type="button" className={option.id === current.id ? 'active' : ''} onClick={() => choose(option.id)}>
-              <strong>{option.label}</strong>
-              <span>{option.hint}</span>
-              <small>{option.id}</small>
+              <span className="banana-ratio-preview" style={ratioPreviewStyle(option.ratio)}>
+                <i>{option.ratio === 'auto' ? 'AUTO' : ''}</i>
+              </span>
+              <span className="banana-model-text">
+                <strong>{option.label}</strong>
+                <span>{option.hint}</span>
+                <small title={option.id}>{compactModelID(option.id)}</small>
+              </span>
             </button>
           ))}
         </div>
@@ -54,3 +59,12 @@ export function BananaModelPicker({ value, onChange }: Props) {
   )
 }
 
+function compactModelID(id: string) {
+  return id.replace('gemini-3.1-flash-image-preview', 'gemini-preview')
+}
+
+function ratioPreviewStyle(ratio: string) {
+  if (ratio === 'auto') return { aspectRatio: '1 / 1' }
+  const [w, h] = ratio.split(':').map(Number)
+  return { aspectRatio: `${w} / ${h}` }
+}

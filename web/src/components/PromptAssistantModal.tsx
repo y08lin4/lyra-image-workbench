@@ -2,15 +2,18 @@ import { useEffect, useMemo, useState } from 'react'
 import { formatError } from '../api/client'
 import { deletePromptHistory, imageToPrompt, listPromptHistory, textToPrompt } from '../api/promptTools'
 import { uploadReferenceImages } from '../api/uploads'
-import type { PromptRecord, ReferenceUpload, Task } from '../types'
+import type { ModelProvider, PromptRecord, ReferenceUpload, Task } from '../types'
+import { BANANA_MODEL_OPTIONS, BANANA_PROVIDER, DEFAULT_BANANA_MODEL, DEFAULT_IMAGE2_MODEL, providerLabel } from '../lib/models'
 
 type Tab = 'text' | 'image' | 'history'
 
 type Props = {
   tasks: Task[]
   uploads: ReferenceUpload[]
+  provider: ModelProvider
+  bananaModel: string
   onClose: () => void
-  onUsePrompt: (prompt: string) => void
+  onUsePrompt: (prompt: string, options: { provider: ModelProvider; model: string }) => void
   onRefreshUploads: () => Promise<void>
 }
 
@@ -25,11 +28,13 @@ const styleOptions = [
 
 const ratioOptions = ['auto', '1:1', '2:3', '3:2', '3:4', '4:3', '9:16', '16:9']
 
-export function PromptAssistantModal({ tasks, uploads, onClose, onUsePrompt, onRefreshUploads }: Props) {
+export function PromptAssistantModal({ tasks, uploads, provider, bananaModel, onClose, onUsePrompt, onRefreshUploads }: Props) {
   const [tab, setTab] = useState<Tab>('text')
   const [idea, setIdea] = useState('')
   const [style, setStyle] = useState('auto')
   const [ratio, setRatio] = useState('auto')
+  const [applyProvider, setApplyProvider] = useState<ModelProvider>(provider || 'image-2')
+  const [applyBananaModel, setApplyBananaModel] = useState(bananaModel || DEFAULT_BANANA_MODEL)
   const [sourceType, setSourceType] = useState<'upload' | 'result'>('upload')
   const [uploadId, setUploadId] = useState('')
   const [resultKey, setResultKey] = useState('')
@@ -60,6 +65,11 @@ export function PromptAssistantModal({ tasks, uploads, onClose, onUsePrompt, onR
   useEffect(() => {
     if (!resultKey && resultOptions[0]) setResultKey(resultOptions[0].key)
   }, [resultOptions, resultKey])
+
+  useEffect(() => {
+    setApplyProvider(provider || 'image-2')
+    setApplyBananaModel(bananaModel || DEFAULT_BANANA_MODEL)
+  }, [provider, bananaModel])
 
   async function refreshHistory() {
     try {
@@ -160,7 +170,7 @@ export function PromptAssistantModal({ tasks, uploads, onClose, onUsePrompt, onR
           <div>
             <p className="eyebrow">Prompt Assistant</p>
             <h2>提示词助手</h2>
-            <p>调用 gpt-5.5 生成提示词，前端仍只请求本机后端。</p>
+            <p>全局调用 gpt-5.5 生成提示词，生成后可选择填入 Image-2 或 Banana 模型。</p>
           </div>
           <button type="button" onClick={onClose}>关闭</button>
         </header>
@@ -246,8 +256,12 @@ export function PromptAssistantModal({ tasks, uploads, onClose, onUsePrompt, onR
 
           <PromptResult
             record={activeRecord}
+            provider={applyProvider}
+            bananaModel={applyBananaModel}
+            onProviderChange={setApplyProvider}
+            onBananaModelChange={setApplyBananaModel}
             onCopy={(prompt) => void copyPrompt(prompt)}
-            onUse={(prompt) => { onUsePrompt(prompt); setMessage('已填入主提示词输入框') }}
+            onUse={(prompt, options) => { onUsePrompt(prompt, options); setMessage(`已填入主提示词输入框，并切到 ${providerLabel(options.provider)}`) }}
           />
         </div>
 
@@ -258,7 +272,24 @@ export function PromptAssistantModal({ tasks, uploads, onClose, onUsePrompt, onR
   )
 }
 
-function PromptResult({ record, onCopy, onUse }: { record: PromptRecord | null; onCopy: (prompt: string) => void; onUse: (prompt: string) => void }) {
+function PromptResult({
+  record,
+  provider,
+  bananaModel,
+  onProviderChange,
+  onBananaModelChange,
+  onCopy,
+  onUse,
+}: {
+  record: PromptRecord | null
+  provider: ModelProvider
+  bananaModel: string
+  onProviderChange: (provider: ModelProvider) => void
+  onBananaModelChange: (model: string) => void
+  onCopy: (prompt: string) => void
+  onUse: (prompt: string, options: { provider: ModelProvider; model: string }) => void
+}) {
+  const model = provider === BANANA_PROVIDER ? bananaModel : DEFAULT_IMAGE2_MODEL
   if (!record) {
     return (
       <aside className="prompt-result empty">
@@ -288,9 +319,29 @@ function PromptResult({ record, onCopy, onUse }: { record: PromptRecord | null; 
           {record.mustKeep.map((item) => <span key={item}>{item}</span>)}
         </div>
       ) : null}
+      <section className="prompt-apply-model" aria-label="选择应用模型">
+        <div className="section-title">
+          <span>应用到模型</span>
+          <small>生成完再选择</small>
+        </div>
+        <div className="mode-tabs provider-tabs">
+          <button type="button" className={provider === 'image-2' ? 'active' : ''} onClick={() => onProviderChange('image-2')}>Image-2</button>
+          <button type="button" className={provider === BANANA_PROVIDER ? 'active' : ''} onClick={() => onProviderChange(BANANA_PROVIDER)}>Banana</button>
+        </div>
+        {provider === BANANA_PROVIDER ? (
+          <label>
+            <span>Banana 模型 ID</span>
+            <select value={bananaModel} onChange={(event) => onBananaModelChange(event.target.value)}>
+              {BANANA_MODEL_OPTIONS.map((item) => <option key={item.id} value={item.id}>{item.label} · {item.id}</option>)}
+            </select>
+          </label>
+        ) : (
+          <div className="status-line">模型：{DEFAULT_IMAGE2_MODEL}</div>
+        )}
+      </section>
       <div className="prompt-result-actions">
         <button type="button" onClick={() => onCopy(record.flatPrompt)}>复制提示词</button>
-        <button type="button" className="primary" onClick={() => onUse(record.flatPrompt)}>填入输入框</button>
+        <button type="button" className="primary" onClick={() => onUse(record.flatPrompt, { provider, model })}>填入并使用该模型</button>
       </div>
     </aside>
   )

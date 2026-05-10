@@ -179,10 +179,16 @@ export function WorkbenchPage() {
     setMessage(data.result.remoteUrl ? 'PiXhost 图床上传成功' : 'PiXhost 图床上传完成')
   }
 
-  function handleUseAssistantPrompt(nextPrompt: string) {
+  function handleUseAssistantPrompt(nextPrompt: string, options?: { provider: ModelProvider; model: string }) {
     setPrompt(nextPrompt)
+    if (options) {
+      setProvider(options.provider)
+      if (options.provider === BANANA_PROVIDER) {
+        setBananaModel(getBananaModelOption(options.model).id)
+      }
+    }
     setPromptAssistantOpen(false)
-    setMessage('提示词助手已填入主输入框')
+    setMessage(options ? '提示词助手已填入主输入框，并同步模型选择' : '提示词助手已填入主输入框')
     window.setTimeout(() => {
       document.querySelector('[data-generation-composer] textarea')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
     }, 0)
@@ -342,7 +348,7 @@ export function WorkbenchPage() {
             <p>{session.space.displayName} · {session.tokenPreview}</p>
           </div>
         </div>
-        <nav className="top-actions"><button type="button" onClick={() => setSettingsOpen(true)}>设置</button><a className="ghost-link" href="/admin">Admin</a><button onClick={logout}>退出空间</button></nav>
+        <nav className="top-actions"><button type="button" onClick={() => setPromptAssistantOpen(true)}>提示词助手</button><button type="button" onClick={() => setSettingsOpen(true)}>设置</button><a className="ghost-link" href="/admin">Admin</a><button onClick={logout}>退出空间</button></nav>
       </header>
       <main className="gallery-workspace">
         <TaskGallery
@@ -423,6 +429,8 @@ export function WorkbenchPage() {
         <PromptAssistantModal
           tasks={tasks}
           uploads={uploads}
+          provider={provider}
+          bananaModel={bananaModel}
           onClose={() => setPromptAssistantOpen(false)}
           onUsePrompt={handleUseAssistantPrompt}
           onRefreshUploads={refreshUploads}
