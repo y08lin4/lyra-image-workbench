@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { formatError } from '../api/client'
 import { deletePromptHistory, imageToPrompt, listPromptHistory, textToPrompt } from '../api/promptTools'
 import { uploadReferenceImages } from '../api/uploads'
 import type { PromptRecord, ReferenceUpload, Task } from '../types'
@@ -88,7 +89,7 @@ export function PromptAssistantModal({ tasks, uploads, onClose, onUsePrompt, onR
       setMessage('文字提示词已生成')
       await refreshHistory()
     } catch (err) {
-      setError(err instanceof Error ? err.message : '生成失败')
+      setError(formatError(err, '生成失败'))
     } finally {
       setLoading(false)
     }
@@ -109,7 +110,7 @@ export function PromptAssistantModal({ tasks, uploads, onClose, onUsePrompt, onR
       setMessage('图片还原提示词已生成')
       await refreshHistory()
     } catch (err) {
-      setError(err instanceof Error ? err.message : '图片分析失败')
+      setError(formatError(err, '图片分析失败'))
     } finally {
       setLoading(false)
     }
@@ -126,7 +127,7 @@ export function PromptAssistantModal({ tasks, uploads, onClose, onUsePrompt, onR
       await onRefreshUploads()
       setMessage('参考图已上传，可直接还原提示词')
     } catch (err) {
-      setError(err instanceof Error ? err.message : '上传失败')
+      setError(formatError(err, '上传失败'))
     } finally {
       setLoading(false)
     }

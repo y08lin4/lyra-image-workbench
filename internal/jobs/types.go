@@ -157,14 +157,34 @@ func ErrorMeta(raw string) Meta {
 		return Meta{"E_UPSTREAM_EMPTY", "upstream_empty_response", "上游返回空响应"}
 	}
 	if match := regexp.MustCompile(`(?i)http\s+(\d{3})`).FindStringSubmatch(raw); len(match) == 2 {
-		code := match[1]
-		return Meta{Code: "E_UPSTREAM_HTTP_" + code, English: "upstream_http_" + code, Chinese: "上游接口返回 HTTP " + code}
+		return httpErrorMeta(match[1], lower)
 	}
 	if strings.Contains(lower, "context deadline exceeded") || strings.Contains(lower, "timeout") {
 		return Meta{"E_UPSTREAM_TIMEOUT", "upstream_timeout", "上游请求超时"}
 	}
 	if strings.Contains(lower, "context canceled") || strings.Contains(raw, "已取消") {
 		return Meta{"E_TASK_CANCELLED", "task_cancelled", "任务已取消"}
+	}
+	if strings.Contains(lower, "unauthorized") || strings.Contains(lower, "invalid api key") || strings.Contains(lower, "invalid key") || strings.Contains(lower, "forbidden") {
+		return Meta{"E_UPSTREAM_AUTH", "upstream_auth_failed", "上游鉴权失败"}
+	}
+	if strings.Contains(lower, "rate limit") || strings.Contains(lower, "too many requests") || strings.Contains(lower, "429") {
+		return Meta{"E_UPSTREAM_RATE_LIMIT", "upstream_rate_limited", "上游请求限流"}
+	}
+	if strings.Contains(lower, "quota") || strings.Contains(lower, "insufficient") || strings.Contains(lower, "balance") || strings.Contains(lower, "billing") {
+		return Meta{"E_UPSTREAM_QUOTA", "upstream_quota_or_balance_insufficient", "上游额度或余额不足"}
+	}
+	if strings.Contains(lower, "unsupported parameter") || strings.Contains(lower, "unsupported_param") || strings.Contains(lower, "unknown parameter") || strings.Contains(lower, "invalid parameter") {
+		return Meta{"E_PROVIDER_UNSUPPORTED_PARAM", "provider_unsupported_parameter", "上游不支持当前参数"}
+	}
+	if strings.Contains(lower, "unsupported output") || strings.Contains(lower, "output_format") || strings.Contains(lower, "unsupported format") {
+		return Meta{"E_OUTPUT_FORMAT_UNSUPPORTED", "output_format_unsupported", "上游不支持当前输出格式"}
+	}
+	if strings.Contains(lower, "connection refused") || strings.Contains(lower, "no such host") || strings.Contains(lower, "tls") || strings.Contains(lower, "connection reset") {
+		return Meta{"E_UPSTREAM_NETWORK", "upstream_network_error", "上游网络连接失败"}
+	}
+	if strings.Contains(lower, "request body too large") || strings.Contains(lower, "payload too large") || strings.Contains(lower, "file too large") {
+		return Meta{"E_IMAGE_TOO_LARGE", "image_too_large", "图片或请求体过大"}
 	}
 	if strings.Contains(raw, "没有返回可用图片") || strings.Contains(lower, "no usable image") {
 		return Meta{"E_UPSTREAM_NO_IMAGE", "upstream_no_image", "上游没有返回可用图片"}
@@ -179,6 +199,42 @@ func ErrorMeta(raw string) Meta {
 		return Meta{"E_REFERENCE_IMAGE", "reference_image_error", "参考图处理失败"}
 	}
 	return Meta{"E_UNKNOWN", "unknown_error", "任务执行失败"}
+}
+
+func httpErrorMeta(statusCode string, lower string) Meta {
+	switch statusCode {
+	case "400":
+		if strings.Contains(lower, "unsupported") || strings.Contains(lower, "unknown parameter") || strings.Contains(lower, "invalid parameter") {
+			return Meta{"E_PROVIDER_UNSUPPORTED_PARAM", "provider_unsupported_parameter", "上游不支持当前参数"}
+		}
+		return Meta{"E_UPSTREAM_BAD_REQUEST", "upstream_bad_request", "上游认为请求参数无效"}
+	case "401", "403":
+		return Meta{"E_UPSTREAM_AUTH", "upstream_auth_failed", "上游鉴权失败"}
+	case "402":
+		return Meta{"E_UPSTREAM_QUOTA", "upstream_quota_or_balance_insufficient", "上游额度或余额不足"}
+	case "404":
+		return Meta{"E_UPSTREAM_ROUTE_NOT_FOUND", "upstream_route_not_found", "上游接口路径不存在"}
+	case "405":
+		return Meta{"E_UPSTREAM_METHOD_NOT_ALLOWED", "upstream_method_not_allowed", "上游接口不支持当前请求方法或路径"}
+	case "408":
+		return Meta{"E_UPSTREAM_TIMEOUT", "upstream_timeout", "上游请求超时"}
+	case "413":
+		return Meta{"E_IMAGE_TOO_LARGE", "image_or_payload_too_large", "图片或请求体过大"}
+	case "415":
+		return Meta{"E_OUTPUT_FORMAT_UNSUPPORTED", "output_format_or_media_type_unsupported", "上游不支持当前图片或输出格式"}
+	case "422":
+		return Meta{"E_UPSTREAM_UNPROCESSABLE", "upstream_unprocessable_request", "上游无法处理当前请求"}
+	case "429":
+		return Meta{"E_UPSTREAM_RATE_LIMIT", "upstream_rate_limited", "上游请求限流"}
+	case "500":
+		return Meta{"E_UPSTREAM_SERVER", "upstream_server_error", "上游服务内部错误"}
+	case "502", "503", "504":
+		return Meta{"E_UPSTREAM_GATEWAY", "upstream_gateway_error", "上游网关或服务暂不可用"}
+	case "524":
+		return Meta{"E_UPSTREAM_GATEWAY_TIMEOUT", "upstream_gateway_timeout", "上游网关等待超时"}
+	default:
+		return Meta{Code: "E_UPSTREAM_HTTP_" + statusCode, English: "upstream_http_" + statusCode, Chinese: "上游接口返回 HTTP " + statusCode}
+	}
 }
 
 func StatusMeta(status Status) Meta {
