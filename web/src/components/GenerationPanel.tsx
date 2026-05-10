@@ -38,7 +38,6 @@ type Props = {
   onConcurrencyChange: (value: NumericInputValue) => void
   onPrimaryUploadChange: (id: string) => void
   onOpenSettings: () => void
-  onOpenPromptAssistant: () => void
   onUpload: (files: File[]) => void
   onDeleteUpload: (id: string) => void
   onSubmit: (event: FormEvent) => void
@@ -73,7 +72,6 @@ export function GenerationPanel({
   onConcurrencyChange,
   onPrimaryUploadChange,
   onOpenSettings,
-  onOpenPromptAssistant,
   onUpload,
   onDeleteUpload,
   onSubmit,
@@ -101,10 +99,6 @@ export function GenerationPanel({
             <span>主提示词</span>
             <textarea value={prompt} onChange={(event) => onPromptChange(event.target.value)} placeholder="描述你想生成的图片，例如：雨夜东京街头，霓虹灯，电影感，写实摄影..." rows={5} />
           </label>
-          <div className="prompt-helper-row">
-            <button type="button" className="prompt-assistant-trigger" onClick={onOpenPromptAssistant}>打开提示词助手</button>
-            <span>助手生成后会自动填回这里。</span>
-          </div>
         </section>
 
         <section className="generate-step model-step">

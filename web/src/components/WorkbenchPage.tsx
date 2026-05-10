@@ -46,9 +46,9 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
   const [provider, setProvider] = useState<ModelProvider>('image-2')
   const [bananaModel, setBananaModel] = useState(DEFAULT_BANANA_MODEL)
   const [prompt, setPrompt] = useState('')
-  const [ratio, setRatio] = useState('1:1')
-  const [resolution, setResolution] = useState('standard')
-  const [quality, setQuality] = useState('auto')
+  const [ratio, setRatio] = useState('auto')
+  const [resolution, setResolution] = useState('auto')
+  const [quality, setQuality] = useState('high')
   const [outputFormat, setOutputFormat] = useState('png')
   const [count, setCount] = useState<NumericInputValue>(1)
   const [concurrency, setConcurrency] = useState<NumericInputValue>(1)
@@ -230,13 +230,6 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
     }, 0)
   }
 
-  function focusPromptAssistant() {
-    setActiveTab('generate')
-    window.setTimeout(() => {
-      document.querySelector('[data-prompt-assistant-panel]')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-    }, 0)
-  }
-
   function handleSelectTask(task: Task) {
     setActiveId(task.id)
     setActiveTab('result')
@@ -253,9 +246,9 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
     setBananaModel(nextProvider === BANANA_PROVIDER ? getBananaModelOption(task.model || '').id : bananaModel)
     setMode(task.mode)
     setPrompt(task.prompt)
-    setRatio(task.ratio || '1:1')
-    setResolution(task.resolution || 'standard')
-    setQuality(task.quality || 'auto')
+    setRatio(task.ratio || 'auto')
+    setResolution(task.resolution || 'auto')
+    setQuality(task.quality || 'high')
     setOutputFormat(task.outputFormat || 'png')
     setCount(task.count || 1)
     setConcurrency(task.concurrency || 1)
@@ -454,7 +447,6 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
                   onConcurrencyChange={setConcurrency}
                   onPrimaryUploadChange={setPrimaryUploadId}
                   onOpenSettings={() => setActiveTab('settings')}
-                  onOpenPromptAssistant={focusPromptAssistant}
                   onUpload={handleUpload}
                   onDeleteUpload={handleDeleteUpload}
                   onSubmit={submit}
