@@ -11,6 +11,7 @@ import { SettingsWindow } from './SettingsWindow'
 import { TaskDetailModal } from './TaskDetailModal'
 import { TaskGallery } from './TaskGallery'
 import { PromptAssistantModal } from './PromptAssistantModal'
+import { ResultCanvas } from './ResultCanvas'
 import { useTaskEvents } from '../hooks/useTaskEvents'
 import { BANANA_PROVIDER, DEFAULT_BANANA_MODEL, DEFAULT_IMAGE2_MODEL, getBananaModelOption } from '../lib/models'
 
@@ -34,6 +35,7 @@ export function WorkbenchPage() {
   const [favoriteOnly, setFavoriteOnly] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set())
   const [uploads, setUploads] = useState<ReferenceUpload[]>([])
+  const [primaryUploadId, setPrimaryUploadId] = useState('')
   const [mode, setMode] = useState<Mode>('text-to-image')
   const [provider, setProvider] = useState<ModelProvider>('image-2')
   const [bananaModel, setBananaModel] = useState(DEFAULT_BANANA_MODEL)
@@ -48,6 +50,7 @@ export function WorkbenchPage() {
   const [error, setError] = useState('')
 
   const detailTask = useMemo(() => tasks.find((task) => task.id === detailId), [tasks, detailId])
+  const activeTask = useMemo(() => tasks.find((task) => task.id === activeId), [tasks, activeId])
   const favoriteIds = useMemo(() => new Set(tasks.filter((task) => task.favorite).map((task) => task.id)), [tasks])
   const upsertTask = useCallback((task: Task) => {
     setTasks((prev) => {
@@ -94,6 +97,16 @@ export function WorkbenchPage() {
     })
   }, [tasks])
 
+  useEffect(() => {
+    if (!uploads.length) {
+      setPrimaryUploadId('')
+      return
+    }
+    if (!primaryUploadId || !uploads.some((item) => item.id === primaryUploadId)) {
+      setPrimaryUploadId(uploads[0].id)
+    }
+  }, [uploads, primaryUploadId])
+
   async function refreshTasks() {
     const items = await listTasks()
     setTasks(items)
@@ -127,18 +140,19 @@ export function WorkbenchPage() {
     }
     if (!prompt.trim()) { setError('请先输入提示词'); return }
     if (mode === 'image-to-image' && uploads.length === 0) { setError('图生图需要先上传参考图'); return }
+    const orderedUploadIds = orderedUploads(uploads, primaryUploadId).map((item) => item.id)
     const payload: CreateTaskRequest = {
       provider,
       model: provider === BANANA_PROVIDER ? bananaModel : DEFAULT_IMAGE2_MODEL,
       mode,
-      prompt,
+      prompt: mode === 'image-to-image' ? withMergeDirectionPrompt(prompt, uploads, primaryUploadId) : prompt,
       ratio: provider === BANANA_PROVIDER ? getBananaModelOption(bananaModel).ratio : ratio,
       resolution: provider === BANANA_PROVIDER ? getBananaModelOption(bananaModel).resolution : resolution,
       quality: provider === BANANA_PROVIDER ? 'auto' : quality,
       outputFormat: provider === BANANA_PROVIDER ? 'auto' : outputFormat,
       count: numericOrDefault(count, 1),
       concurrency: numericOrDefault(concurrency, 1),
-      uploadIds: mode === 'image-to-image' ? uploads.map((item) => item.id) : [],
+      uploadIds: mode === 'image-to-image' ? orderedUploadIds : [],
     }
     try {
       const job = await createTask(payload)
@@ -153,8 +167,9 @@ export function WorkbenchPage() {
 
   async function handleUpload(files: File[]) {
     if (!files.length) return
-    setUploads([...(await uploadReferenceImages(files)), ...(await listReferenceUploads())])
+    const created = await uploadReferenceImages(files)
     await refreshUploads()
+    if (!primaryUploadId && created[0]) setPrimaryUploadId(created[0].id)
   }
 
   async function handleDeleteUpload(id: string) {
@@ -167,8 +182,9 @@ export function WorkbenchPage() {
     if (!response.ok) throw new Error(`读取结果图失败：HTTP ${response.status}`)
     const blob = await response.blob()
     const file = new File([blob], `result-reference-${index + 1}.${extensionFromMime(blob.type)}`, { type: blob.type || 'image/png' })
-    await uploadReferenceImages([file])
+    const created = await uploadReferenceImages([file])
     await refreshUploads()
+    if (!primaryUploadId && created[0]) setPrimaryUploadId(created[0].id)
     setMode('image-to-image')
     setMessage('已作为图生图参考图')
   }
@@ -195,6 +211,10 @@ export function WorkbenchPage() {
   }
 
   function handleSelectTask(task: Task) {
+    setActiveId(task.id)
+  }
+
+  function handleOpenTaskDetail(task: Task) {
     setActiveId(task.id)
     setDetailId(task.id)
   }
@@ -348,33 +368,45 @@ export function WorkbenchPage() {
             <p>{session.space.displayName} · {session.tokenPreview}</p>
           </div>
         </div>
+        <div className="top-status" aria-label="当前状态">
+          <span className={keyReady ? 'ready' : 'missing'}>codex-key {keyReady ? '已设置' : '未设置'}</span>
+          <span className={bananaKeyReady ? 'ready' : 'missing'}>Banana {bananaKeyReady ? '已设置' : '未设置'}</span>
+          <span className="ready">后端在线</span>
+        </div>
         <nav className="top-actions"><button type="button" onClick={() => setPromptAssistantOpen(true)}>提示词助手</button><button type="button" onClick={() => setSettingsOpen(true)}>设置</button><a className="ghost-link" href="/admin">Admin</a><button onClick={logout}>退出空间</button></nav>
       </header>
-      <main className="gallery-workspace">
-        <TaskGallery
-          tasks={tasks}
-          activeId={activeId || undefined}
-          query={searchQuery}
-          statusFilter={statusFilter}
-          favoriteOnly={favoriteOnly}
-          favoriteIds={favoriteIds}
-          selectedIds={selectedIds}
-          onQueryChange={setSearchQuery}
-          onStatusFilterChange={setStatusFilter}
-          onFavoriteOnlyChange={setFavoriteOnly}
-          onToggleSelect={toggleSelectTask}
-          onSelectVisible={selectVisibleTasks}
-          onClearSelection={() => setSelectedIds(new Set())}
-          onBatchFavorite={(favorite) => void handleBatchFavorite(favorite)}
-          onBatchDelete={() => void handleBatchDelete()}
-          onBatchDownload={handleBatchDownload}
-          onSelect={handleSelectTask}
-          onRetry={(id) => void handleRetry(id)}
-          onCancel={(id) => void handleCancel(id)}
-          onDelete={(id) => void handleDelete(id)}
-          onReuse={handleReuseTask}
-          onToggleFavorite={(id) => void toggleFavorite(id)}
-        />
+      <main className="workbench-main">
+        <aside className="task-sidebar" aria-label="任务队列和历史">
+          <TaskGallery
+            compact
+            tasks={tasks}
+            activeId={activeId || undefined}
+            query={searchQuery}
+            statusFilter={statusFilter}
+            favoriteOnly={favoriteOnly}
+            favoriteIds={favoriteIds}
+            selectedIds={selectedIds}
+            onQueryChange={setSearchQuery}
+            onStatusFilterChange={setStatusFilter}
+            onFavoriteOnlyChange={setFavoriteOnly}
+            onToggleSelect={toggleSelectTask}
+            onSelectVisible={selectVisibleTasks}
+            onClearSelection={() => setSelectedIds(new Set())}
+            onBatchFavorite={(favorite) => void handleBatchFavorite(favorite)}
+            onBatchDelete={() => void handleBatchDelete()}
+            onBatchDownload={handleBatchDownload}
+            onSelect={handleSelectTask}
+            onOpenDetail={handleOpenTaskDetail}
+            onRetry={(id) => void handleRetry(id)}
+            onCancel={(id) => void handleCancel(id)}
+            onDelete={(id) => void handleDelete(id)}
+            onReuse={handleReuseTask}
+            onToggleFavorite={(id) => void toggleFavorite(id)}
+          />
+        </aside>
+        <section className="result-workspace" aria-label="生成结果">
+          <ResultCanvas task={activeTask} onUseAsReference={handleUseResultAsReference} onUploadPixhost={handleUploadPixhost} />
+        </section>
       </main>
       <div className="composer-dock" data-generation-composer>
         <GenerationPanel
@@ -389,6 +421,7 @@ export function WorkbenchPage() {
             count={count}
             concurrency={concurrency}
             uploads={uploads}
+            primaryUploadId={primaryUploadId}
             keyReady={provider === BANANA_PROVIDER ? bananaKeyReady : keyReady}
             keyPreview={provider === BANANA_PROVIDER ? bananaKeyPreview : keyPreview}
             message={message}
@@ -403,6 +436,7 @@ export function WorkbenchPage() {
             onBananaModelChange={setBananaModel}
             onCountChange={setCount}
             onConcurrencyChange={setConcurrency}
+            onPrimaryUploadChange={setPrimaryUploadId}
             onOpenSettings={() => setSettingsOpen(true)}
             onOpenPromptAssistant={() => setPromptAssistantOpen(true)}
             onUpload={handleUpload}
@@ -459,6 +493,20 @@ function downloadURL(url: string, filename: string) {
 
 function numericOrDefault(value: NumericInputValue, fallback: number) {
   return value === '' ? fallback : value
+}
+
+function orderedUploads(uploads: ReferenceUpload[], primaryUploadId: string) {
+  if (!uploads.length) return []
+  const primary = uploads.find((item) => item.id === primaryUploadId) || uploads[0]
+  return [primary, ...uploads.filter((item) => item.id !== primary.id)]
+}
+
+function withMergeDirectionPrompt(prompt: string, uploads: ReferenceUpload[], primaryUploadId: string) {
+  const text = prompt.trim()
+  if (uploads.length <= 1) return text
+  const primary = orderedUploads(uploads, primaryUploadId)[0]
+  const prefix = `请以第一张参考图「${primary?.originalName || '主图'}」为主图，保留主图的主体、构图、姿态、光影方向和画面比例，将其他参考图中的风格、元素、服装、材质或背景自然融合进主图；不要反向把主图融合到其他图里。`
+  return `${prefix}\n\n${text}`
 }
 
 function isFinal(task: Task) {

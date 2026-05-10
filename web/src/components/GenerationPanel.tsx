@@ -20,6 +20,7 @@ type Props = {
   count: NumericInputValue
   concurrency: NumericInputValue
   uploads: ReferenceUpload[]
+  primaryUploadId: string
   keyReady: boolean
   keyPreview: string
   message: string
@@ -34,6 +35,7 @@ type Props = {
   onBananaModelChange: (value: string) => void
   onCountChange: (value: NumericInputValue) => void
   onConcurrencyChange: (value: NumericInputValue) => void
+  onPrimaryUploadChange: (id: string) => void
   onOpenSettings: () => void
   onOpenPromptAssistant: () => void
   onUpload: (files: File[]) => void
@@ -53,6 +55,7 @@ export function GenerationPanel({
   count,
   concurrency,
   uploads,
+  primaryUploadId,
   keyReady,
   keyPreview,
   message,
@@ -67,6 +70,7 @@ export function GenerationPanel({
   onBananaModelChange,
   onCountChange,
   onConcurrencyChange,
+  onPrimaryUploadChange,
   onOpenSettings,
   onOpenPromptAssistant,
   onUpload,
@@ -87,7 +91,7 @@ export function GenerationPanel({
       </section>
 
       <form onSubmit={onSubmit} className="generation-form composer-form">
-        {mode === 'image-to-image' ? <UploadPanel uploads={uploads} onUpload={onUpload} onDelete={onDeleteUpload} /> : null}
+        {mode === 'image-to-image' ? <UploadPanel uploads={uploads} primaryUploadId={primaryUploadId} onPrimaryChange={onPrimaryUploadChange} onUpload={onUpload} onDelete={onDeleteUpload} /> : null}
 
         <label className="composer-prompt">
           <textarea value={prompt} onChange={(event) => onPromptChange(event.target.value)} placeholder="描述你想生成的图片..." rows={2} />

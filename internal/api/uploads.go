@@ -57,6 +57,18 @@ func (h UploadHandler) DeleteReferenceImage(w http.ResponseWriter, r *http.Reque
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
+
+func (h UploadHandler) ServeReferenceImage(w http.ResponseWriter, r *http.Request) {
+	item, path, err := h.store.GetReferenceImage(r.Header.Get("X-Space-Token"), r.PathValue("id"))
+	if err != nil {
+		writeUploadError(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", item.Mime)
+	w.Header().Set("Cache-Control", "no-store")
+	http.ServeFile(w, r, path)
+}
+
 func writeUploadError(w http.ResponseWriter, err error) {
 	status := http.StatusBadRequest
 	code := "REFERENCE_UPLOAD_ERROR"

@@ -6,6 +6,7 @@ type TaskFilter = TaskStatus | 'all'
 type Props = {
   tasks: Task[]
   activeId?: string
+  compact?: boolean
   query: string
   statusFilter: TaskFilter
   favoriteOnly: boolean
@@ -21,6 +22,7 @@ type Props = {
   onBatchDelete: () => void
   onBatchDownload: () => void
   onSelect: (task: Task) => void
+  onOpenDetail?: (task: Task) => void
   onRetry: (id: string) => void
   onCancel: (id: string) => void
   onDelete: (id: string) => void
@@ -42,6 +44,7 @@ const statusOptions: Array<{ value: TaskFilter; label: string }> = [
 export function TaskGallery({
   tasks,
   activeId,
+  compact = false,
   query,
   statusFilter,
   favoriteOnly,
@@ -57,6 +60,7 @@ export function TaskGallery({
   onBatchDelete,
   onBatchDownload,
   onSelect,
+  onOpenDetail,
   onRetry,
   onCancel,
   onDelete,
@@ -67,7 +71,7 @@ export function TaskGallery({
   const runningCount = tasks.filter((task) => !isFinal(task)).length
 
   return (
-    <section className="gallery-area" aria-label="任务画廊">
+    <section className={`gallery-area ${compact ? 'compact-gallery' : ''}`} aria-label="任务画廊">
       <div className="gallery-toolbar">
         <button
           type="button"
@@ -119,6 +123,7 @@ export function TaskGallery({
               favorite={favoriteIds.has(task.id)}
               selected={selectedIds.has(task.id)}
               onSelect={() => onSelect(task)}
+              onOpenDetail={() => (onOpenDetail ? onOpenDetail(task) : onSelect(task))}
               onToggleSelect={() => onToggleSelect(task.id)}
               onRetry={() => onRetry(task.id)}
               onCancel={() => onCancel(task.id)}
@@ -133,12 +138,13 @@ export function TaskGallery({
   )
 }
 
-function TaskGalleryCard({ task, active, favorite, selected, onSelect, onToggleSelect, onRetry, onCancel, onDelete, onReuse, onToggleFavorite }: {
+function TaskGalleryCard({ task, active, favorite, selected, onSelect, onOpenDetail, onToggleSelect, onRetry, onCancel, onDelete, onReuse, onToggleFavorite }: {
   task: Task
   active: boolean
   favorite: boolean
   selected: boolean
   onSelect: () => void
+  onOpenDetail: () => void
   onToggleSelect: () => void
   onRetry: () => void
   onCancel: () => void
@@ -202,7 +208,7 @@ function TaskGalleryCard({ task, active, favorite, selected, onSelect, onToggleS
             ? <button type="button" onClick={(event) => { event.stopPropagation(); onRetry() }}>重试</button>
             : <button type="button" onClick={(event) => { event.stopPropagation(); onCancel() }}>取消</button>}
           <button type="button" className="danger-text" onClick={(event) => { event.stopPropagation(); onDelete() }}>删除</button>
-          <button type="button" onClick={(event) => { event.stopPropagation(); onSelect() }}>详情</button>
+          <button type="button" onClick={(event) => { event.stopPropagation(); onOpenDetail() }}>详情</button>
         </div>
       </div>
     </article>

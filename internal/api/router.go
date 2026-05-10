@@ -55,6 +55,7 @@ func NewRouter(deps Dependencies) http.Handler {
 	mux.HandleFunc("DELETE /api/spaces/session", spaceHandler.DeleteSession)
 	mux.HandleFunc("POST /api/uploads/reference", uploadHandler.SaveReferenceImages)
 	mux.HandleFunc("GET /api/uploads/reference", uploadHandler.ListReferenceImages)
+	mux.HandleFunc("GET /api/uploads/reference/{id}/image", uploadHandler.ServeReferenceImage)
 	mux.HandleFunc("DELETE /api/uploads/reference/{id}", uploadHandler.DeleteReferenceImage)
 	mux.HandleFunc("POST /api/background-tasks", taskHandler.Create)
 	mux.HandleFunc("GET /api/background-tasks", taskHandler.List)
