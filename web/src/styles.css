@@ -4209,3 +4209,137 @@ button:not(.primary) { background: var(--surface-soft); color: #1e3a8a; border: 
 :root[data-theme='dark'] .task-detail-mask {
   background: rgba(2, 6, 23, .72) !important;
 }
+
+/* 手机端工作台兜底：让页面按文档流滚动，避免队列/结果被旧高度规则裁切 */
+@media (max-width: 980px) {
+  .tabbed-workbench {
+    min-height: 100dvh;
+    display: block;
+    padding: 10px 8px calc(92px + env(safe-area-inset-bottom));
+    overflow-x: hidden;
+  }
+
+  .tabbed-workbench .workbench-topbar,
+  .workflow-content,
+  .workflow-page {
+    min-height: 0;
+    height: auto;
+    overflow: visible;
+  }
+
+  .tabbed-workbench .workbench-topbar {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 8px;
+    padding-bottom: 8px;
+  }
+
+  .top-status,
+  .tabbed-workbench .top-actions {
+    min-width: 0;
+    flex-wrap: wrap;
+  }
+
+  .workflow-content {
+    display: block;
+  }
+
+  .workflow-page {
+    width: 100%;
+    padding: 10px;
+  }
+
+  .result-page,
+  .queue-page {
+    padding: 0;
+  }
+
+  .result-page .result-canvas {
+    min-height: 0;
+    height: auto;
+    overflow: visible;
+  }
+
+  .queue-page .queue-sidebar,
+  .queue-sidebar {
+    height: auto;
+    max-height: none;
+    min-height: 0;
+    grid-template-rows: auto auto auto auto auto;
+    overflow: visible;
+  }
+
+  .queue-page .queue-list,
+  .queue-list {
+    height: auto;
+    max-height: none;
+    overflow: visible;
+    padding-right: 0;
+    padding-bottom: calc(16px + env(safe-area-inset-bottom));
+  }
+
+  .mobile-tabs {
+    left: 8px;
+    right: 8px;
+    bottom: calc(8px + env(safe-area-inset-bottom));
+    width: auto;
+    max-width: none;
+    margin: 0;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 560px) {
+  .tabbed-workbench {
+    padding-left: 6px;
+    padding-right: 6px;
+  }
+
+  .workflow-page {
+    border-radius: 14px;
+  }
+
+  .queue-sidebar {
+    padding: 10px;
+    border-radius: 14px;
+  }
+
+  .queue-item {
+    grid-template-columns: 70px minmax(0, 1fr);
+    gap: 8px;
+    padding: 7px;
+  }
+
+  .queue-thumb {
+    width: 70px;
+    height: 70px;
+    border-radius: 10px;
+  }
+
+  .queue-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .queue-actions button {
+    width: 100%;
+  }
+
+  .mobile-tabs {
+    gap: 3px;
+    padding: 4px;
+  }
+
+  .mobile-tabs button {
+    min-height: 38px;
+    padding: 4px 2px;
+  }
+
+  .mobile-tabs button strong {
+    font-size: 11px;
+  }
+
+  .mobile-tabs button span {
+    display: none;
+  }
+}
