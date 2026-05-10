@@ -2,6 +2,7 @@ type NativeBridge = {
   copyText?: (text: string) => string | Promise<string>
   copyImage?: (dataUrl: string, fileName: string) => string | Promise<string>
   saveImage?: (dataUrl: string, fileName: string) => string | Promise<string>
+  exitApp?: () => string | Promise<string>
 }
 
 type NativeResult = {
@@ -40,12 +41,17 @@ export async function nativeSaveImage(src: string, fileName: string): Promise<Na
   }
 }
 
+export async function nativeExitApp(): Promise<NativeResult> {
+  return callNativeBridge('exitApp')
+}
+
 function hasNativeMethod(method: keyof NativeBridge) {
   return typeof window.AIImageApp?.[method] === 'function'
 }
 
 async function callNativeBridge(method: 'copyText', text: string): Promise<NativeResult>
 async function callNativeBridge(method: 'copyImage' | 'saveImage', dataUrl: string, fileName: string): Promise<NativeResult>
+async function callNativeBridge(method: 'exitApp'): Promise<NativeResult>
 async function callNativeBridge(method: keyof NativeBridge, ...args: string[]): Promise<NativeResult> {
   const bridge = window.AIImageApp
   if (!bridge || typeof bridge[method] !== 'function') return { handled: false, ok: false }
@@ -56,7 +62,9 @@ async function callNativeBridge(method: keyof NativeBridge, ...args: string[]): 
       ? String(await bridge.copyText!(args[0] || '') || '')
       : method === 'copyImage'
         ? String(await bridge.copyImage!(args[0] || '', args[1] || '') || '')
-        : String(await bridge.saveImage!(args[0] || '', args[1] || '') || '')
+        : method === 'saveImage'
+          ? String(await bridge.saveImage!(args[0] || '', args[1] || '') || '')
+          : String(await bridge.exitApp!() || '')
 
     if (result === 'ok' || result.startsWith('ok:')) return { handled: true, ok: true }
     return { handled: true, ok: false, message: result.replace(/^error:/, '') || 'App 原生操作失败' }

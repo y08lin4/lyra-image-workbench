@@ -73,7 +73,7 @@ export function ImagePreviewModal({ src, title, bytes, onCopyImage, onCopyUrl, o
       <section className="image-preview-shell" role="dialog" aria-modal="true" aria-label={title}>
         <button type="button" className="image-preview-close" onClick={onClose} aria-label={'\u5173\u95ed\u9884\u89c8'}>{'\u00d7'}</button>
         <PreviewMetaBar dimensions={dimensions} byteSizeLabel={sizeLabel} />
-        <PreviewImageStage src={src} title={title} onDimensions={setDimensions} />
+        <PreviewImageStage src={src} title={title} onDimensions={setDimensions} onClose={onClose} />
         {notice ? <div className="image-preview-toast" role="status">{notice}</div> : null}
         <PreviewToolbar
           onDownload={onDownload}

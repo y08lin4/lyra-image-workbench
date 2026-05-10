@@ -55,6 +55,8 @@
   display: grid;
   place-items: center;
   overflow: hidden;
+  touch-action: none;
+  user-select: none;
 }
 
 .image-preview-img {
@@ -67,6 +69,10 @@
   border-radius: 12px;
   background: transparent;
   box-shadow: 0 20px 70px rgba(15, 23, 42, .28);
+  transform-origin: center center;
+  will-change: transform;
+  user-select: none;
+  -webkit-user-drag: none;
 }
 
 .image-preview-toolbar {

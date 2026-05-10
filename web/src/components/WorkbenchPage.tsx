@@ -1,4 +1,4 @@
-﻿import { type FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
+import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { cancelTask, createTask, deleteTask, listTasks, retryTask, setTaskFavorite, uploadTaskImageToPixhost } from '../api/tasks'
 import { clearSpaceToken, getSpaceToken } from '../api/client'
 import { getCurrentSpace, leaveSpace } from '../api/spaces'
@@ -16,7 +16,8 @@ import { ThemeToggle, type ThemeMode } from './ThemeToggle'
 import { useTaskEvents } from '../hooks/useTaskEvents'
 import { BANANA_PROVIDER, DEFAULT_BANANA_MODEL, DEFAULT_IMAGE2_MODEL, getBananaModelOption } from '../lib/models'
 import { formatBytes } from '../lib/format'
-import { nativeSaveImage } from '../lib/nativeBridge'
+import { nativeExitApp, nativeSaveImage } from '../lib/nativeBridge'
+import { ensureAppBackBridge, installEdgeBackGesture, registerAppBackHandler } from '../lib/appBack'
 
 type NumericInputValue = number | ''
 type WorkbenchTab = 'generate' | 'result' | 'queue' | 'settings'
@@ -62,6 +63,13 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
   const [toast, setToast] = useState('')
+  const activeTabRef = useRef(activeTab)
+  const detailIdRef = useRef(detailId)
+  const tabHistoryRef = useRef<WorkbenchTab[]>([])
+  const lastExitBackAtRef = useRef(0)
+
+  activeTabRef.current = activeTab
+  detailIdRef.current = detailId
 
   const detailTask = useMemo(() => tasks.find((task) => task.id === detailId), [tasks, detailId])
   const activeTask = useMemo(() => tasks.find((task) => task.id === activeId), [tasks, activeId])
@@ -78,6 +86,18 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
     return tab
   }), [activeCount, activeTask, currentKeyReady, missingKeyCount])
 
+  const goToTab = useCallback((nextTab: WorkbenchTab, options?: { replace?: boolean }) => {
+    setActiveTab((current) => {
+      if (current === nextTab) return current
+      if (!options?.replace) {
+        const history = tabHistoryRef.current
+        if (history[history.length - 1] !== current) history.push(current)
+        if (history.length > 32) history.splice(0, history.length - 32)
+      }
+      return nextTab
+    })
+  }, [])
+
   const upsertTask = useCallback((task: Task) => {
     setTasks((prev) => {
       const index = prev.findIndex((item) => item.id === task.id)
@@ -93,6 +113,49 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
   }, [])
 
   useTaskEvents(activeId, upsertTask, handleTaskEvent)
+
+  useEffect(() => {
+    ensureAppBackBridge()
+    const removeEdgeGesture = installEdgeBackGesture()
+    const unregister = registerAppBackHandler(() => {
+      if (detailIdRef.current) {
+        setDetailId(null)
+        return true
+      }
+
+      const current = activeTabRef.current
+      const history = tabHistoryRef.current
+      while (history.length) {
+        const previous = history.pop()
+        if (previous && previous !== current) {
+          setActiveTab(previous)
+          return true
+        }
+      }
+
+      if (current !== 'generate') {
+        setActiveTab('generate')
+        return true
+      }
+
+      const now = Date.now()
+      if (now - lastExitBackAtRef.current <= 2000) {
+        void nativeExitApp().then((result) => {
+          if (!result.handled || !result.ok) setToast(result.message || '请使用系统手势退出 APP')
+        })
+        return true
+      }
+
+      lastExitBackAtRef.current = now
+      setToast('再返回一次退出 APP')
+      return true
+    })
+
+    return () => {
+      unregister()
+      removeEdgeGesture()
+    }
+  }, [])
 
   useEffect(() => {
     const token = getSpaceToken()
@@ -192,7 +255,7 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
       upsertTask(job)
       setActiveId(job.id)
       setPrompt('')
-      setActiveTab('result')
+      goToTab('result')
       setMessage('任务已提交，后端会继续执行，前端可刷新或断开')
     } catch (err) {
       setError(err instanceof Error ? err.message : '提交失败')
@@ -230,7 +293,7 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
     await refreshUploads()
     if (!primaryUploadId && created[0]) setPrimaryUploadId(created[0].id)
     setMode('image-to-image')
-    setActiveTab('generate')
+    goToTab('generate')
     setMessage('已作为图生图参考图')
   }
 
@@ -248,7 +311,7 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
         setBananaModel(getBananaModelOption(options.model).id)
       }
     }
-    setActiveTab('generate')
+    goToTab('generate')
     setMessage(options ? '提示词助手已填入主输入框，并同步模型选择' : '提示词助手已填入主输入框')
     window.setTimeout(() => {
       document.querySelector('[data-generation-composer] textarea')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
@@ -257,7 +320,7 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
 
   function handleSelectTask(task: Task) {
     setActiveId(task.id)
-    setActiveTab('result')
+    goToTab('result')
   }
 
   function handleOpenTaskDetail(task: Task) {
@@ -277,7 +340,7 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
     setOutputFormat(task.outputFormat || 'png')
     setCount(task.count || 1)
     setConcurrency(task.concurrency || 1)
-    setActiveTab('generate')
+    goToTab('generate')
     setMessage('已复用该任务的提示词和参数')
     window.setTimeout(() => {
       document.querySelector('[data-generation-composer] textarea')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
@@ -295,7 +358,7 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
     const job = await retryTask(id)
     upsertTask(job)
     setActiveId(job.id)
-    setActiveTab('result')
+    goToTab('result')
     setDetailId(job.id)
     setMessage('已重新提交任务')
   }
@@ -440,7 +503,7 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
         <span>访问 https://ai-cf.ailinyu.de</span>
       </a>
 
-      <WorkbenchTabs tabs={tabItems} activeTab={activeTab} onChange={setActiveTab} className="workflow-tabs desktop-tabs" />
+      <WorkbenchTabs tabs={tabItems} activeTab={activeTab} onChange={goToTab} className="workflow-tabs desktop-tabs" />
 
       <main className={`workflow-content workflow-${activeTab}`}>
         {activeTab === 'generate' ? (
@@ -452,7 +515,7 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
                   <div className="key-warning">
                     <strong>{provider === BANANA_PROVIDER ? 'Banana Key 未设置' : 'codex-key 未设置'}</strong>
                     <span>当前模型还没有可用 Key，先去设置保存后再生成。</span>
-                    <button type="button" onClick={() => setActiveTab('settings')}>去设置</button>
+                    <button type="button" onClick={() => goToTab('settings')}>去设置</button>
                   </div>
                 ) : null}
                 <GenerationPanel
@@ -483,7 +546,7 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
                   onCountChange={setCount}
                   onConcurrencyChange={setConcurrency}
                   onPrimaryUploadChange={setPrimaryUploadId}
-                  onOpenSettings={() => setActiveTab('settings')}
+                  onOpenSettings={() => goToTab('settings')}
                   onUpload={handleUpload}
                   onDeleteUpload={handleDeleteUpload}
                   onSubmit={submit}
@@ -496,7 +559,7 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
                   uploads={uploads}
                   provider={provider}
                   bananaModel={bananaModel}
-                  onClose={() => setActiveTab('generate')}
+                  onClose={() => goToTab('generate')}
                   onUsePrompt={handleUseAssistantPrompt}
                   onRefreshUploads={refreshUploads}
                 />
@@ -511,8 +574,8 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
               task={activeTask}
               onUseAsReference={handleUseResultAsReference}
               onUploadPixhost={handleUploadPixhost}
-              onOpenGenerate={() => setActiveTab('generate')}
-              onOpenQueue={() => setActiveTab('queue')}
+              onOpenGenerate={() => goToTab('generate')}
+              onOpenQueue={() => goToTab('queue')}
               onReuse={handleReuseTask}
               onRetry={(id) => void handleRetry(id)}
             />
@@ -555,7 +618,7 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
         ) : null}
       </main>
 
-      <WorkbenchTabs tabs={tabItems} activeTab={activeTab} onChange={setActiveTab} className="workflow-tabs mobile-tabs" />
+      <WorkbenchTabs tabs={tabItems} activeTab={activeTab} onChange={goToTab} className="workflow-tabs mobile-tabs" />
 
       {toast ? <div className="workbench-toast" role="status">{toast}</div> : null}
 
