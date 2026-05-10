@@ -69,20 +69,22 @@ export function ImagePreviewModal({ src, title, bytes, onCopyImage, onCopyUrl, o
           <span>{actualRatio}</span>
           <span>{byteSize ? formatBytes(byteSize) : '读取大小中'}</span>
         </div>
+        <div className="preview-stage">
+          <img
+            src={src}
+            alt={title}
+            onLoad={(event) => setDimensions({
+              width: event.currentTarget.naturalWidth,
+              height: event.currentTarget.naturalHeight,
+            })}
+          />
+        </div>
         <div className="preview-actions">
           {onDownload ? <button type="button" onClick={() => void onDownload()}>下载</button> : null}
           {onCopyImage ? <button type="button" onClick={() => void onCopyImage()}>复制图片</button> : null}
           {onCopyUrl ? <button type="button" onClick={() => void onCopyUrl()}>复制链接</button> : null}
           {onUseAsReference ? <button type="button" onClick={() => void onUseAsReference()}>作为参考图</button> : null}
         </div>
-        <img
-          src={src}
-          alt={title}
-          onLoad={(event) => setDimensions({
-            width: event.currentTarget.naturalWidth,
-            height: event.currentTarget.naturalHeight,
-          })}
-        />
       </div>
     </div>,
     document.body,
