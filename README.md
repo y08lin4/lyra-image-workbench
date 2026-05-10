@@ -43,6 +43,7 @@ npm run build
 ## 设计文档
 
 - `docs/DEPLOY_LINUX.md`：Linux 服务器部署、systemd、Nginx/Caddy、升级和备份教程。
+- `docs/DEPLOY_BAOTA.md`：宝塔面板 Go 项目部署教程，包含截图字段填写、Nginx 反代和常见问题。
 - `docs/ROUTES.md`：参考项目路由与本地化调整。
 - `docs/STACK.md`：Go 后端与 React/Vite 前端选型。
 - `docs/PROJECT_REQUIREMENTS.md`：项目模块化和 10 分钟稳定性硬性要求。
