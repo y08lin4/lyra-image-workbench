@@ -47,6 +47,16 @@ func (h PromptToolsHandler) ImageToPrompt(w http.ResponseWriter, r *http.Request
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "record": record})
 }
 
+func decodePromptPayload[T any](w http.ResponseWriter, r *http.Request) (T, bool) {
+	defer r.Body.Close()
+	var payload T
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		writeError(w, http.StatusBadRequest, "BAD_JSON", "请求体不是有效 JSON")
+		return payload, false
+	}
+	return payload, true
+}
+
 func writePromptToolError(w http.ResponseWriter, mode string, err error) {
 	status := http.StatusBadRequest
 	meta := promptToolErrorMeta(mode, err)
@@ -64,6 +74,24 @@ func promptToolErrorMeta(mode string, err error) jobs.Meta {
 	}
 	if strings.Contains(raw, "请输入需要扩写") {
 		return jobs.Meta{Code: "P_TEXT_INPUT_EMPTY", English: "text_input_empty", Chinese: "请输入需要扩写的文字想法"}
+	}
+	if strings.Contains(raw, "请输入初始提示词") {
+		return jobs.Meta{Code: "P_SESSION_INITIAL_PROMPT_EMPTY", English: "prompt_session_initial_prompt_empty", Chinese: "请输入初始提示词"}
+	}
+	if strings.Contains(raw, "请输入修改要求") {
+		return jobs.Meta{Code: "P_REFINE_MESSAGE_EMPTY", English: "refine_message_empty", Chinese: "请输入修改要求"}
+	}
+	if strings.Contains(raw, "提示词会话不存在") {
+		return jobs.Meta{Code: "P_SESSION_NOT_FOUND", English: "prompt_session_not_found", Chinese: "提示词会话不存在"}
+	}
+	if strings.Contains(raw, "提示词版本不存在") {
+		return jobs.Meta{Code: "P_VERSION_NOT_FOUND", English: "prompt_version_not_found", Chinese: "提示词版本不存在"}
+	}
+	if strings.Contains(raw, "没有返回灵感") {
+		return jobs.Meta{Code: "P_INSPIRATION_EMPTY", English: "inspiration_empty", Chinese: "提示词模型没有返回灵感"}
+	}
+	if strings.Contains(raw, "请先选择一个灵感") {
+		return jobs.Meta{Code: "P_INSPIRATION_IDEA_EMPTY", English: "inspiration_idea_empty", Chinese: "请先选择一个灵感"}
 	}
 	if strings.Contains(raw, "图片来源无效") || strings.Contains(raw, "请先选择") {
 		return jobs.Meta{Code: "P_IMAGE_SOURCE_INVALID", English: "image_source_invalid", Chinese: "图片来源无效"}
@@ -88,6 +116,93 @@ func promptToolErrorMeta(mode string, err error) jobs.Meta {
 		return jobs.Meta{Code: "P_IMAGE_TO_PROMPT_FAILED", English: "image_to_prompt_failed", Chinese: "图片还原提示词失败"}
 	}
 	return jobs.Meta{Code: "P_TEXT_TO_PROMPT_FAILED", English: "text_to_prompt_failed", Chinese: "文字生成图片提示词失败"}
+}
+
+func (h PromptToolsHandler) CreateSession(w http.ResponseWriter, r *http.Request) {
+	payload, ok := decodePromptPayload[prompttools.CreateSessionRequest](w, r)
+	if !ok {
+		return
+	}
+	session, err := h.service.CreateSession(r.Header.Get("X-Space-Token"), payload)
+	if err != nil {
+		writePromptToolError(w, "session", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "session": session})
+}
+
+func (h PromptToolsHandler) Sessions(w http.ResponseWriter, r *http.Request) {
+	sessions, err := h.service.ListSessions(r.Header.Get("X-Space-Token"), prompttools.ParseLimit(r.URL.Query().Get("limit")))
+	if err != nil {
+		writeSpaceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "sessions": sessions})
+}
+
+func (h PromptToolsHandler) Session(w http.ResponseWriter, r *http.Request) {
+	session, ok, err := h.service.GetSession(r.Header.Get("X-Space-Token"), r.PathValue("id"))
+	if err != nil {
+		writeSpaceError(w, err)
+		return
+	}
+	if !ok {
+		writeError(w, http.StatusNotFound, "P_SESSION_NOT_FOUND", "提示词会话不存在")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "session": session})
+}
+
+func (h PromptToolsHandler) RefineSession(w http.ResponseWriter, r *http.Request) {
+	payload, ok := decodePromptPayload[prompttools.RefineRequest](w, r)
+	if !ok {
+		return
+	}
+	session, err := h.service.RefineSession(r.Context(), r.Header.Get("X-Space-Token"), r.PathValue("id"), payload)
+	if err != nil {
+		writePromptToolError(w, "refine", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "session": session})
+}
+
+func (h PromptToolsHandler) DeleteSession(w http.ResponseWriter, r *http.Request) {
+	session, ok, err := h.service.DeleteSession(r.Header.Get("X-Space-Token"), r.PathValue("id"))
+	if err != nil {
+		writeSpaceError(w, err)
+		return
+	}
+	if !ok {
+		writeError(w, http.StatusNotFound, "P_SESSION_NOT_FOUND", "提示词会话不存在")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "session": session})
+}
+
+func (h PromptToolsHandler) InspirationIdeas(w http.ResponseWriter, r *http.Request) {
+	payload, ok := decodePromptPayload[prompttools.InspirationIdeasRequest](w, r)
+	if !ok {
+		return
+	}
+	ideas, err := h.service.GenerateIdeas(r.Context(), r.Header.Get("X-Space-Token"), payload)
+	if err != nil {
+		writePromptToolError(w, "inspiration", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "ideas": ideas})
+}
+
+func (h PromptToolsHandler) InspirationExpand(w http.ResponseWriter, r *http.Request) {
+	payload, ok := decodePromptPayload[prompttools.InspirationExpandRequest](w, r)
+	if !ok {
+		return
+	}
+	session, err := h.service.ExpandIdea(r.Context(), r.Header.Get("X-Space-Token"), payload)
+	if err != nil {
+		writePromptToolError(w, "inspiration", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "session": session})
 }
 
 func (h PromptToolsHandler) History(w http.ResponseWriter, r *http.Request) {

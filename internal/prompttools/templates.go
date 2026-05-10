@@ -68,6 +68,106 @@ func imageUserPrompt(target string) string {
 	return fmt.Sprintf(`请分析这张图片，并生成适用于 %s 的图片还原提示词。`, valueOr(target, "gpt-image-2"))
 }
 
+func refineSystemPrompt() string {
+	return `你是本机生图工作台内置的提示词协作修改助手。用户已经有一个图片生成提示词，现在会用自然语言提出修改要求，你需要在保留可用细节的前提下输出一个新的、更符合要求的提示词版本。
+
+要求：
+1. 输出必须是一个 JSON 对象，不要 Markdown，不要代码块。
+2. flatPrompt 必须是一段可直接生图的中文提示词。
+3. 严格执行用户本轮修改要求；没有要求删除的关键视觉锚点尽量保留。
+4. 如果用户要求“更简洁”，应减少元素但保留主体、构图、光影、氛围。
+5. 如果用户要求“更写实/更电影感/换风格/换主体/换比例”，要体现在 flatPrompt 中。
+6. 不要输出违法、隐私、真人身份识别或裸露色情内容；遇到敏感内容时转成安全艺术化表达。
+
+JSON Schema：
+{
+  "flatPrompt": "修改后的可直接生图提示词",
+  "negativePrompt": "负面提示词",
+  "mustKeep": ["必须保留的关键元素"],
+  "avoid": ["需要避免的偏差"],
+  "notes": "这次主要改了什么"
+}`
+}
+
+func refineUserPrompt(session PromptSession, current PromptVersion, message string, provider string, model string) string {
+	recent := ""
+	if len(session.Messages) > 0 {
+		start := len(session.Messages) - 8
+		if start < 0 {
+			start = 0
+		}
+		for _, item := range session.Messages[start:] {
+			recent += fmt.Sprintf("%s：%s\n", item.Role, item.Content)
+		}
+	}
+	return fmt.Sprintf(`会话标题：%s
+目标模型：%s / %s
+当前提示词：
+%s
+
+当前负面提示词：
+%s
+
+当前必须保留元素：%v
+
+最近对话：
+%s
+
+用户本轮修改要求：
+%s
+
+请返回新的提示词版本。`, valueOr(session.Title, "提示词会话"), valueOr(provider, session.Provider), valueOr(model, session.Model), current.Prompt, valueOr(current.NegativePrompt, "无"), current.MustKeep, recent, message)
+}
+
+func inspirationSystemPrompt() string {
+	return `你是本机生图工作台内置的视觉灵感策划。用户没有明确想法时，你需要给出多个适合图片生成的创意方向。
+
+要求：
+1. 输出必须是一个 JSON 对象，不要 Markdown，不要代码块。
+2. ideas 是数组，每个元素包含 title、summary、tags。
+3. title 要短、好懂、有画面记忆点。
+4. summary 用一句中文描述画面，便于后续扩写成生图提示词。
+5. tags 给 3-5 个中文标签。
+6. 创意要安全、可执行、适合图片生成，不要依赖现实人物身份。 
+
+JSON Schema：
+{
+  "ideas": [
+    {
+      "title": "雨夜便利店",
+      "summary": "一个人在深夜便利店窗边吃关东煮，外面下着雨，玻璃反射霓虹灯。",
+      "tags": ["孤独", "日系胶片", "夜景"]
+    }
+  ]
+}`
+}
+
+func inspirationIdeasUserPrompt(req InspirationIdeasRequest, count int) string {
+	return fmt.Sprintf(`请生成 %d 个图片灵感。
+
+类别：%s
+情绪：%s
+风格：%s
+目标模型：%s
+用户补充：%s`, count, valueOr(req.Category, "随机"), valueOr(req.Mood, "随机"), valueOr(req.Style, "随机"), valueOr(req.Target, "通用图片模型"), valueOr(req.Seed, "无"))
+}
+
+func inspirationExpandUserPrompt(req InspirationExpandRequest) string {
+	idea := req.Idea
+	return fmt.Sprintf(`请把下面这个灵感扩写成专业图片生成提示词。
+
+标题：%s
+摘要：%s
+标签：%v
+类别：%s
+情绪：%s
+风格：%s
+目标比例：%s
+目标模型：%s / %s
+
+请生成专业图片提示词。`, valueOr(idea.Title, "未命名灵感"), valueOr(idea.Summary, "无"), idea.Tags, valueOr(idea.Category, "自动"), valueOr(idea.Mood, "自动"), valueOr(idea.Style, "自动"), valueOr(req.Ratio, "自动"), valueOr(req.Provider, "通用"), valueOr(req.Model, req.Target))
+}
+
 func valueOr(value string, fallback string) string {
 	if value == "" {
 		return fallback

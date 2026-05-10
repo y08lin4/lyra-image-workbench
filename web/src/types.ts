@@ -128,6 +128,8 @@ export type PromptToolMode = 'text-to-prompt' | 'image-to-prompt'
 
 export interface PromptRecord {
   id: string
+  sessionId?: string
+  versionId?: string
   mode: PromptToolMode
   input?: string
   style?: string
@@ -169,4 +171,90 @@ export interface ImageToPromptRequest {
   }
   language: string
   target: string
+}
+
+export type PromptSessionKind = 'text' | 'image' | 'inspiration' | 'manual'
+
+export interface PromptMessage {
+  id: string
+  role: 'user' | 'assistant' | string
+  content: string
+  versionId?: string
+  createdAt: string
+}
+
+export interface PromptVersion {
+  id: string
+  index: number
+  prompt: string
+  negativePrompt?: string
+  mustKeep?: string[]
+  avoid?: string[]
+  notes?: string
+  sourceRecordId?: string
+  model: string
+  elapsedMs: number
+  createdAt: string
+}
+
+export interface PromptSession {
+  id: string
+  kind: PromptSessionKind
+  title: string
+  seed?: string
+  source?: PromptRecord['source']
+  sourceImageUrl?: string
+  target?: string
+  provider?: ModelProvider | string
+  model?: string
+  messages: PromptMessage[]
+  versions: PromptVersion[]
+  activeVersionId: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface CreatePromptSessionRequest {
+  title?: string
+  initialPrompt: string
+  negativePrompt?: string
+  mustKeep?: string[]
+  target?: string
+  provider?: ModelProvider
+  model?: string
+}
+
+export interface RefinePromptSessionRequest {
+  message: string
+  currentVersionId: string
+  provider: ModelProvider
+  model: string
+}
+
+export interface InspirationIdea {
+  id: string
+  title: string
+  summary: string
+  tags: string[]
+  category?: string
+  mood?: string
+  style?: string
+  createdAt?: string
+}
+
+export interface InspirationIdeasRequest {
+  category: string
+  mood: string
+  style: string
+  target: string
+  count: number
+  seed: string
+}
+
+export interface InspirationExpandRequest {
+  idea: InspirationIdea
+  ratio: string
+  target: string
+  provider: ModelProvider
+  model: string
 }

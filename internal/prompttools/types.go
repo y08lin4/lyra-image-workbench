@@ -32,6 +32,8 @@ type ImageRequest struct {
 
 type Record struct {
 	ID              string         `json:"id"`
+	SessionID       string         `json:"sessionId,omitempty"`
+	VersionID       string         `json:"versionId,omitempty"`
 	Mode            Mode           `json:"mode"`
 	Input           string         `json:"input,omitempty"`
 	Style           string         `json:"style,omitempty"`
@@ -49,4 +51,97 @@ type Record struct {
 	Model           string         `json:"model"`
 	ElapsedMs       int64          `json:"elapsedMs"`
 	CreatedAt       time.Time      `json:"createdAt"`
+}
+
+type SessionKind string
+
+const (
+	SessionKindText        SessionKind = "text"
+	SessionKindImage       SessionKind = "image"
+	SessionKindInspiration SessionKind = "inspiration"
+	SessionKindManual      SessionKind = "manual"
+)
+
+type PromptSession struct {
+	ID              string          `json:"id"`
+	Kind            SessionKind     `json:"kind"`
+	Title           string          `json:"title"`
+	Seed            string          `json:"seed,omitempty"`
+	Source          Source          `json:"source,omitempty"`
+	SourceImageURL  string          `json:"sourceImageUrl,omitempty"`
+	Target          string          `json:"target,omitempty"`
+	Provider        string          `json:"provider,omitempty"`
+	Model           string          `json:"model,omitempty"`
+	Messages        []PromptMessage `json:"messages"`
+	Versions        []PromptVersion `json:"versions"`
+	ActiveVersionID string          `json:"activeVersionId"`
+	CreatedAt       time.Time       `json:"createdAt"`
+	UpdatedAt       time.Time       `json:"updatedAt"`
+}
+
+type PromptMessage struct {
+	ID        string    `json:"id"`
+	Role      string    `json:"role"`
+	Content   string    `json:"content"`
+	VersionID string    `json:"versionId,omitempty"`
+	CreatedAt time.Time `json:"createdAt"`
+}
+
+type PromptVersion struct {
+	ID             string    `json:"id"`
+	Index          int       `json:"index"`
+	Prompt         string    `json:"prompt"`
+	NegativePrompt string    `json:"negativePrompt,omitempty"`
+	MustKeep       []string  `json:"mustKeep,omitempty"`
+	Avoid          []string  `json:"avoid,omitempty"`
+	Notes          string    `json:"notes,omitempty"`
+	SourceRecordID string    `json:"sourceRecordId,omitempty"`
+	Model          string    `json:"model"`
+	ElapsedMs      int64     `json:"elapsedMs"`
+	CreatedAt      time.Time `json:"createdAt"`
+}
+
+type CreateSessionRequest struct {
+	Title          string   `json:"title"`
+	InitialPrompt  string   `json:"initialPrompt"`
+	NegativePrompt string   `json:"negativePrompt"`
+	MustKeep       []string `json:"mustKeep"`
+	Target         string   `json:"target"`
+	Provider       string   `json:"provider"`
+	Model          string   `json:"model"`
+}
+
+type RefineRequest struct {
+	Message          string `json:"message"`
+	CurrentVersionID string `json:"currentVersionId"`
+	Provider         string `json:"provider"`
+	Model            string `json:"model"`
+}
+
+type InspirationIdeasRequest struct {
+	Category string `json:"category"`
+	Mood     string `json:"mood"`
+	Style    string `json:"style"`
+	Target   string `json:"target"`
+	Count    int    `json:"count"`
+	Seed     string `json:"seed"`
+}
+
+type InspirationIdea struct {
+	ID        string   `json:"id"`
+	Title     string   `json:"title"`
+	Summary   string   `json:"summary"`
+	Tags      []string `json:"tags"`
+	Category  string   `json:"category,omitempty"`
+	Mood      string   `json:"mood,omitempty"`
+	Style     string   `json:"style,omitempty"`
+	CreatedAt string   `json:"createdAt,omitempty"`
+}
+
+type InspirationExpandRequest struct {
+	Idea     InspirationIdea `json:"idea"`
+	Ratio    string          `json:"ratio"`
+	Target   string          `json:"target"`
+	Provider string          `json:"provider"`
+	Model    string          `json:"model"`
 }

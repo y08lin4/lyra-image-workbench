@@ -1637,6 +1637,12 @@ button:not(.primary) { background: var(--surface-soft); color: #1e3a8a; border: 
   align-content: start;
   gap: 8px;
 }
+.prompt-history-heading {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 850;
+}
 .prompt-history-item {
   display: grid;
   gap: 6px;
@@ -1671,6 +1677,91 @@ button:not(.primary) { background: var(--surface-soft); color: #1e3a8a; border: 
   padding: 24px;
   text-align: center;
   color: var(--muted);
+}
+.prompt-version-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.prompt-version-list button {
+  min-height: 28px;
+  border-radius: 999px;
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 850;
+}
+.prompt-version-list button.active {
+  background: #0f172a;
+  border-color: #0f172a;
+  color: #fff;
+}
+.prompt-version-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.prompt-refine-box {
+  display: grid;
+  gap: 10px;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  background: #ffffff;
+  padding: 12px;
+}
+.prompt-refine-box textarea {
+  width: 100%;
+  resize: vertical;
+}
+.prompt-quick-refines {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.prompt-quick-refines button {
+  min-height: 28px;
+  border-radius: 999px;
+  padding: 0 9px;
+  font-size: 12px;
+}
+.prompt-chat-log {
+  color: var(--muted);
+  font-size: 12px;
+}
+.prompt-chat-log p {
+  margin: 6px 0 0;
+  line-height: 1.5;
+}
+.inspiration-panel {
+  gap: 12px;
+}
+.prompt-idea-grid {
+  display: grid;
+  gap: 8px;
+}
+.prompt-idea-item {
+  display: grid;
+  gap: 7px;
+  border: 1px solid rgba(226, 232, 240, .95);
+  border-radius: 14px;
+  padding: 10px;
+  background: #fff;
+}
+.prompt-idea-item strong {
+  font-size: 14px;
+}
+.prompt-idea-item p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+.prompt-idea-item button {
+  justify-self: start;
+  min-height: 30px;
+  border-radius: 999px;
+  padding: 0 10px;
+  font-size: 12px;
 }
 
 @media (max-width: 980px) {
