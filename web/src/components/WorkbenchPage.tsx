@@ -16,6 +16,7 @@ import { ThemeToggle, type ThemeMode } from './ThemeToggle'
 import { useTaskEvents } from '../hooks/useTaskEvents'
 import { BANANA_PROVIDER, DEFAULT_BANANA_MODEL, DEFAULT_IMAGE2_MODEL, getBananaModelOption } from '../lib/models'
 import { formatBytes } from '../lib/format'
+import { nativeSaveImage } from '../lib/nativeBridge'
 
 type NumericInputValue = number | ''
 type WorkbenchTab = 'generate' | 'result' | 'queue' | 'settings'
@@ -377,7 +378,7 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
     setMessage(`批量删除完成：成功 ${deleted.size}，失败 ${failed}`)
   }
 
-  function handleBatchDownload() {
+  async function handleBatchDownload() {
     const selected = selectedIds
     const items = tasks
       .filter((task) => selected.has(task.id))
@@ -391,10 +392,18 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
       setMessage('选中的任务没有可下载图片')
       return
     }
-    items.forEach((item, index) => {
-      window.setTimeout(() => downloadURL(item.url, item.name), index * 120)
-    })
-    setMessage(`已触发 ${items.length} 张图片下载`)
+    let ok = 0
+    let failed = 0
+    for (const item of items) {
+      try {
+        await downloadURL(item.url, item.name)
+        ok += 1
+      } catch {
+        failed += 1
+      }
+      await delay(120)
+    }
+    setMessage(failed ? `下载完成：成功 ${ok}，失败 ${failed}` : `已保存/下载 ${ok} 张图片`)
   }
 
   async function logout() {
@@ -598,14 +607,24 @@ function extensionFromMime(mime: string) {
   return 'png'
 }
 
-function downloadURL(url: string, filename: string) {
+async function downloadURL(url: string, filename: string) {
+  const absoluteURL = new URL(url, window.location.origin).href
+  const nativeResult = await nativeSaveImage(absoluteURL, filename)
+  if (nativeResult.handled) {
+    if (nativeResult.ok) return
+    throw new Error(nativeResult.message || '保存图片失败')
+  }
   const anchor = document.createElement('a')
-  anchor.href = url
+  anchor.href = absoluteURL
   anchor.download = filename
   anchor.rel = 'noopener'
   document.body.appendChild(anchor)
   anchor.click()
   anchor.remove()
+}
+
+function delay(ms: number) {
+  return new Promise<void>((resolve) => window.setTimeout(resolve, ms))
 }
 
 function numericOrDefault(value: NumericInputValue, fallback: number) {

@@ -4,6 +4,7 @@ import { formatBytes } from '../lib/format'
 import { errorReasonLabel } from '../lib/errorLabels'
 import { ImagePreviewModal } from './ImagePreviewModal'
 import { BANANA_PROVIDER, getBananaModelOption, providerLabel } from '../lib/models'
+import { nativeCopyImage, nativeCopyText, nativeSaveImage } from '../lib/nativeBridge'
 
 type ResultCanvasProps = {
   task?: Task
@@ -158,7 +159,7 @@ function ResultCard({ task, index, result, onUseAsReference, onUploadPixhost }: 
             </div>
             <div className="card-toolbar">
               <button type="button" onClick={() => setPreviewOpen(true)}>预览</button>
-              <button type="button" onClick={() => void downloadImage(imageUrl, index)}>下载</button>
+              <button type="button" onClick={() => void downloadImage(imageUrl, index, setNotice)}>下载</button>
               <button type="button" onClick={() => void copyImage(imageUrl, setNotice)}>复制图片</button>
               <button type="button" onClick={() => void copyURL(copyableURL, setNotice)}>复制链接</button>
               {!result.remoteUrl ? (
@@ -194,7 +195,7 @@ function ResultCard({ task, index, result, onUseAsReference, onUploadPixhost }: 
           bytes={result.bytes}
           onCopyImage={() => copyImage(imageUrl, setNotice)}
           onCopyUrl={() => copyURL(copyableURL, setNotice)}
-          onDownload={() => downloadImage(imageUrl, index)}
+          onDownload={() => downloadImage(imageUrl, index, setNotice)}
           onUseAsReference={() => useAsReference(imageUrl, index, onUseAsReference, setNotice)}
           onClose={() => setPreviewOpen(false)}
         />
@@ -227,6 +228,12 @@ async function useAsReference(src: string, index: number, onUseAsReference: ((sr
 async function copyURL(src: string, setNotice: (value: string) => void) {
   const url = new URL(src, window.location.origin).href
   try {
+    const nativeResult = await nativeCopyText(url)
+    if (nativeResult.handled) {
+      if (!nativeResult.ok) throw new Error(nativeResult.message || '复制失败')
+      flash(setNotice, '链接已复制')
+      return '链接已复制'
+    }
     await navigator.clipboard.writeText(url)
     flash(setNotice, '链接已复制')
     return '链接已复制'
@@ -239,6 +246,12 @@ async function copyURL(src: string, setNotice: (value: string) => void) {
 async function copyImage(src: string, setNotice: (value: string) => void) {
   const absoluteURL = new URL(src, window.location.origin).href
   try {
+    const nativeResult = await nativeCopyImage(absoluteURL, `lyai-image-${Date.now()}.png`)
+    if (nativeResult.handled) {
+      if (!nativeResult.ok) throw new Error(nativeResult.message || '复制图片失败')
+      flash(setNotice, '图片已复制')
+      return '图片已复制'
+    }
     if (!window.isSecureContext) {
       if (copyImageAsHTML(absoluteURL)) {
         flash(setNotice, '图片已复制（兼容模式）')
@@ -346,17 +359,34 @@ function copyImageAsHTML(src: string) {
   return ok
 }
 
-async function downloadImage(src: string, index: number) {
+async function downloadImage(src: string, index: number, setNotice?: (value: string) => void) {
+  const absoluteURL = new URL(src, window.location.origin).href
+  const fileName = `lyai-image-${Date.now()}-${index + 1}.png`
+  try {
+    const nativeResult = await nativeSaveImage(absoluteURL, fileName)
+    if (nativeResult.handled) {
+      if (!nativeResult.ok) throw new Error(nativeResult.message || '保存图片失败')
+      if (setNotice) flash(setNotice, '图片已保存到相册')
+      return '图片已保存到相册'
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '保存图片失败'
+    if (setNotice) flash(setNotice, message)
+    return message
+  }
+
   const response = await fetch(src)
   const blob = await response.blob()
   const url = URL.createObjectURL(blob)
   const link = document.createElement('a')
   link.href = url
-  link.download = `image-2-${Date.now()}-${index + 1}.${extensionFromMime(blob.type)}`
+  link.download = `lyai-image-${Date.now()}-${index + 1}.${extensionFromMime(blob.type)}`
   document.body.appendChild(link)
   link.click()
   link.remove()
   URL.revokeObjectURL(url)
+  if (setNotice) flash(setNotice, '下载已触发')
+  return '下载已触发'
 }
 
 function extensionFromMime(mime: string) {
