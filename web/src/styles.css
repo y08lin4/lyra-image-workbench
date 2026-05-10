@@ -3736,3 +3736,109 @@ button:not(.primary) { background: var(--surface-soft); color: #1e3a8a; border: 
     width: 100%;
   }
 }
+
+/* 工作台 v7：修复合并页拥挤，默认上下排布 */
+.generate-page {
+  max-width: 1280px;
+}
+.generate-combined-layout {
+  grid-template-columns: 1fr;
+  gap: 16px;
+}
+.generate-main-column {
+  width: 100%;
+}
+.generate-page .generate-flow-form {
+  grid-template-columns: 1fr;
+}
+.generate-page .generate-step {
+  width: 100%;
+}
+.generate-page .model-step .generate-control-grid.two {
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+}
+.generate-page .spec-step .generate-control-grid.spec-grid {
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+}
+.generate-page .execute-grid {
+  grid-template-columns: 150px 150px minmax(260px, 1fr) 160px;
+}
+.generate-assistant-panel {
+  position: static;
+  max-height: none;
+  overflow: visible;
+}
+.generate-assistant-panel .prompt-assistant-inline {
+  height: auto;
+  overflow: visible;
+}
+.generate-assistant-panel .prompt-assistant-body {
+  height: auto;
+  min-height: 430px;
+  overflow: visible;
+  grid-template-columns: minmax(320px, .82fr) minmax(420px, 1.18fr);
+}
+.generate-assistant-panel .prompt-tool-panel,
+.generate-assistant-panel .prompt-history-list,
+.generate-assistant-panel .prompt-result {
+  max-height: 560px;
+}
+.generate-assistant-panel .prompt-result-actions {
+  position: static;
+  margin: 0;
+  border-top: 0;
+  padding: 0;
+}
+
+@media (min-width: 1880px) {
+  .generate-page {
+    max-width: 1680px;
+  }
+  .generate-combined-layout {
+    grid-template-columns: minmax(760px, .9fr) minmax(680px, 1.1fr);
+    align-items: start;
+  }
+  .generate-assistant-panel {
+    position: sticky;
+    top: 0;
+    max-height: calc(100vh - 150px);
+    overflow: hidden;
+  }
+  .generate-assistant-panel .prompt-assistant-inline {
+    height: 100%;
+    overflow: hidden;
+  }
+  .generate-assistant-panel .prompt-assistant-body {
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
+    grid-template-columns: minmax(260px, .82fr) minmax(340px, 1.18fr);
+  }
+  .generate-assistant-panel .prompt-tool-panel,
+  .generate-assistant-panel .prompt-history-list,
+  .generate-assistant-panel .prompt-result {
+    max-height: none;
+  }
+  .generate-assistant-panel .prompt-result-actions {
+    position: sticky;
+    bottom: 0;
+    margin: 0 -14px -14px;
+    border-top: 1px solid var(--border);
+    padding: 10px 14px 14px;
+  }
+}
+
+@media (max-width: 980px) {
+  .generate-page .execute-grid {
+    grid-template-columns: 1fr;
+  }
+  .generate-assistant-panel .prompt-assistant-body {
+    min-height: 0;
+    grid-template-columns: 1fr;
+  }
+  .generate-assistant-panel .prompt-tool-panel,
+  .generate-assistant-panel .prompt-history-list,
+  .generate-assistant-panel .prompt-result {
+    max-height: none;
+  }
+}
