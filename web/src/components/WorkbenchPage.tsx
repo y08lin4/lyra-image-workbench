@@ -16,14 +16,13 @@ import { useTaskEvents } from '../hooks/useTaskEvents'
 import { BANANA_PROVIDER, DEFAULT_BANANA_MODEL, DEFAULT_IMAGE2_MODEL, getBananaModelOption } from '../lib/models'
 
 type NumericInputValue = number | ''
-type WorkbenchTab = 'generate' | 'result' | 'queue' | 'assistant' | 'settings'
+type WorkbenchTab = 'generate' | 'result' | 'queue' | 'settings'
 type WorkbenchTabItem = { id: WorkbenchTab; label: string; hint: string; badge?: string; tone?: 'normal' | 'danger' | 'active' }
 
 const workflowTabs: WorkbenchTabItem[] = [
   { id: 'generate', label: '生成', hint: '请求' },
   { id: 'result', label: '结果', hint: '图片' },
   { id: 'queue', label: '队列', hint: '历史' },
-  { id: 'assistant', label: '助手', hint: '提示词' },
   { id: 'settings', label: '设置', hint: 'Key' },
 ]
 
@@ -230,6 +229,13 @@ export function WorkbenchPage() {
     }, 0)
   }
 
+  function focusPromptAssistant() {
+    setActiveTab('generate')
+    window.setTimeout(() => {
+      document.querySelector('[data-prompt-assistant-panel]')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }, 0)
+  }
+
   function handleSelectTask(task: Task) {
     setActiveId(task.id)
     setActiveTab('result')
@@ -404,48 +410,64 @@ export function WorkbenchPage() {
       <main className={`workflow-content workflow-${activeTab}`}>
         {activeTab === 'generate' ? (
           <section className="workflow-page generate-page" data-generation-composer>
-            <PageHeader eyebrow="Generate" title="生成请求" description="按“提示词 → 模型 → 参考图 → 规格 → 执行”的顺序提交任务。提交后自动进入结果页，后端继续执行。" />
-            {!currentKeyReady ? (
-              <div className="key-warning">
-                <strong>{provider === BANANA_PROVIDER ? 'Banana Key 未设置' : 'codex-key 未设置'}</strong>
-                <span>当前模型还没有可用 Key，先去设置保存后再生成。</span>
-                <button type="button" onClick={() => setActiveTab('settings')}>去设置</button>
+            <PageHeader eyebrow="Generate" title="生成请求" description="生成和提示词助手已合并在同一页：左侧提交任务，右侧生成/修改提示词，填入后直接回到主输入框。" />
+            <div className="generate-combined-layout">
+              <div className="generate-main-column">
+                {!currentKeyReady ? (
+                  <div className="key-warning">
+                    <strong>{provider === BANANA_PROVIDER ? 'Banana Key 未设置' : 'codex-key 未设置'}</strong>
+                    <span>当前模型还没有可用 Key，先去设置保存后再生成。</span>
+                    <button type="button" onClick={() => setActiveTab('settings')}>去设置</button>
+                  </div>
+                ) : null}
+                <GenerationPanel
+                  mode={mode}
+                  provider={provider}
+                  prompt={prompt}
+                  ratio={ratio}
+                  resolution={resolution}
+                  quality={quality}
+                  outputFormat={outputFormat}
+                  bananaModel={bananaModel}
+                  count={count}
+                  concurrency={concurrency}
+                  uploads={uploads}
+                  primaryUploadId={primaryUploadId}
+                  keyReady={currentKeyReady}
+                  keyPreview={currentKeyPreview}
+                  message={message}
+                  error={error}
+                  onModeChange={setMode}
+                  onProviderChange={setProvider}
+                  onPromptChange={setPrompt}
+                  onRatioChange={setRatio}
+                  onResolutionChange={setResolution}
+                  onQualityChange={setQuality}
+                  onOutputFormatChange={setOutputFormat}
+                  onBananaModelChange={setBananaModel}
+                  onCountChange={setCount}
+                  onConcurrencyChange={setConcurrency}
+                  onPrimaryUploadChange={setPrimaryUploadId}
+                  onOpenSettings={() => setActiveTab('settings')}
+                  onOpenPromptAssistant={focusPromptAssistant}
+                  onUpload={handleUpload}
+                  onDeleteUpload={handleDeleteUpload}
+                  onSubmit={submit}
+                />
               </div>
-            ) : null}
-            <GenerationPanel
-              mode={mode}
-              provider={provider}
-              prompt={prompt}
-              ratio={ratio}
-              resolution={resolution}
-              quality={quality}
-              outputFormat={outputFormat}
-              bananaModel={bananaModel}
-              count={count}
-              concurrency={concurrency}
-              uploads={uploads}
-              primaryUploadId={primaryUploadId}
-              keyReady={currentKeyReady}
-              keyPreview={currentKeyPreview}
-              message={message}
-              error={error}
-              onModeChange={setMode}
-              onProviderChange={setProvider}
-              onPromptChange={setPrompt}
-              onRatioChange={setRatio}
-              onResolutionChange={setResolution}
-              onQualityChange={setQuality}
-              onOutputFormatChange={setOutputFormat}
-              onBananaModelChange={setBananaModel}
-              onCountChange={setCount}
-              onConcurrencyChange={setConcurrency}
-              onPrimaryUploadChange={setPrimaryUploadId}
-              onOpenSettings={() => setActiveTab('settings')}
-              onOpenPromptAssistant={() => setActiveTab('assistant')}
-              onUpload={handleUpload}
-              onDeleteUpload={handleDeleteUpload}
-              onSubmit={submit}
-            />
+              <aside className="generate-assistant-panel" data-prompt-assistant-panel>
+                <PromptAssistantModal
+                  embedded
+                  tasks={tasks}
+                  uploads={uploads}
+                  provider={provider}
+                  bananaModel={bananaModel}
+                  onClose={() => setActiveTab('generate')}
+                  onUsePrompt={handleUseAssistantPrompt}
+                  onRefreshUploads={refreshUploads}
+                />
+              </aside>
+            </div>
           </section>
         ) : null}
 
@@ -485,21 +507,6 @@ export function WorkbenchPage() {
               onDelete={(id) => void handleDelete(id)}
               onReuse={handleReuseTask}
               onToggleFavorite={(id) => void toggleFavorite(id)}
-            />
-          </section>
-        ) : null}
-
-        {activeTab === 'assistant' ? (
-          <section className="workflow-page assistant-page">
-            <PromptAssistantModal
-              embedded
-              tasks={tasks}
-              uploads={uploads}
-              provider={provider}
-              bananaModel={bananaModel}
-              onClose={() => setActiveTab('generate')}
-              onUsePrompt={handleUseAssistantPrompt}
-              onRefreshUploads={refreshUploads}
             />
           </section>
         ) : null}
