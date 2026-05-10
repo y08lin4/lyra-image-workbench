@@ -27,7 +27,7 @@ npm run build
 
 ## 使用闭环
 
-1. 运行 `go run ./cmd/local-server` 启动本机后端，默认监听 `127.0.0.1:8787`。
+1. 运行 `go run ./cmd/local-server` 启动后端，默认监听 `0.0.0.0:8787`；本机可通过 `http://127.0.0.1:8787` 访问，服务器部署可配合防火墙或 Nginx/宝塔反代控制入口。
 2. 打开工作台，输入空间密码创建/进入个人空间。
 3. 在设置窗口填写用于 `gpt-image-2` 的 codex-key；如果要使用 Banana Nano，请在 NewAPI / CLIProxyAPI 里新建一个 `banana` 分组的 apikey，并在设置窗口单独填写 Banana API Key。两类 Key 后端只向前端返回掩码。
 4. 首次打开 `/admin` 需要先设置 Admin 管理密码；后续访问 Admin 页面需要重新输入管理密码。
@@ -44,6 +44,7 @@ npm run build
 
 - `docs/DEPLOY_LINUX.md`：Linux 服务器部署、systemd、Nginx/Caddy、升级和备份教程。
 - `docs/DEPLOY_BAOTA.md`：宝塔面板 Go 项目部署教程，包含截图字段填写、Nginx 反代和常见问题。
+- `docs/CHANGES_FROM_AI_IMAGE_GENERATE.md`：相较 `AI-Image-generate` 的架构、功能和部署更新说明。
 - `docs/ROUTES.md`：参考项目路由与本地化调整。
 - `docs/STACK.md`：Go 后端与 React/Vite 前端选型。
 - `docs/PROJECT_REQUIREMENTS.md`：项目模块化和 10 分钟稳定性硬性要求。
