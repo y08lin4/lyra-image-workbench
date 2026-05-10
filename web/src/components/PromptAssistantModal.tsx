@@ -475,7 +475,7 @@ export function PromptAssistantModal({ tasks, uploads, provider, bananaModel, on
             onQuickRefine={(text) => setRefineText((current) => current ? `${current}，${text}` : text)}
             onRefine={() => void refineActiveSession()}
             onCopy={(prompt) => void copyPrompt(prompt)}
-            onUse={(prompt, options) => { onUsePrompt(prompt, options); setMessage(`已填入主提示词输入框，并切到 ${providerLabel(options.provider)}`) }}
+            onUse={(prompt, options) => { onUsePrompt(prompt, options); setMessage(`已填入生成页，并切到 ${providerLabel(options.provider)}`) }}
           />
         </div>
 
