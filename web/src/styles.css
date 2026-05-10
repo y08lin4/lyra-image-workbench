@@ -4343,3 +4343,38 @@ button:not(.primary) { background: var(--surface-soft); color: #1e3a8a; border: 
     display: none;
   }
 }
+
+/* 宽屏生成页：提示词助手使用面板内滚动，避免灵感列表被 sticky 容器裁切 */
+@media (min-width: 1880px) {
+  .generate-assistant-panel {
+    height: calc(100vh - 150px);
+  }
+
+  .generate-assistant-panel .prompt-assistant-inline {
+    min-height: 0;
+  }
+
+  .generate-assistant-panel .prompt-assistant-body {
+    min-height: 0;
+  }
+
+  .generate-assistant-panel .prompt-assistant-body.is-inspiration {
+    align-items: stretch;
+  }
+
+  .generate-assistant-panel .prompt-assistant-body.is-inspiration .inspiration-panel,
+  .generate-assistant-panel .prompt-assistant-body.is-inspiration .prompt-result {
+    min-height: 0;
+    height: 100%;
+    overflow-y: auto;
+    scrollbar-gutter: stable;
+  }
+
+  .generate-assistant-panel .prompt-assistant-body.is-inspiration .inspiration-panel {
+    padding-bottom: 18px;
+  }
+
+  .generate-assistant-panel .prompt-assistant-body.is-inspiration .prompt-idea-grid {
+    padding-bottom: 8px;
+  }
+}
