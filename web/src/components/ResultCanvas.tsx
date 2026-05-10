@@ -139,19 +139,16 @@ function ResultCard({ task, index, result, onUseAsReference, onUploadPixhost }: 
         {imageUrl ? (
           <>
             <img src={imageUrl} alt={`生成结果 ${index + 1}`} />
-            <div className="floating-actions">
-              <button type="button" className="zoom-btn" onClick={() => setPreviewOpen(true)} title="放大预览">⛶</button>
-              {result.remoteUrl ? (
-                <button type="button" className="url-copy-btn" onClick={() => void copyURL(result.remoteUrl!, setNotice)}>复制URL</button>
-              ) : (
-                <button type="button" className={`url-copy-btn ${result.uploadError ? 'error' : ''}`} onClick={() => void uploadPixhost(task.id, index, onUploadPixhost, setNotice)}>
-                  {result.uploadError ? '重试上传' : '上传图床'}
-                </button>
-              )}
-            </div>
             <div className="card-toolbar">
+              <button type="button" onClick={() => setPreviewOpen(true)}>预览</button>
               <button type="button" onClick={() => void downloadImage(imageUrl, index)}>下载</button>
               <button type="button" onClick={() => void copyImage(imageUrl, setNotice)}>复制图片</button>
+              <button type="button" onClick={() => void copyURL(copyableURL, setNotice)}>复制链接</button>
+              {!result.remoteUrl ? (
+                <button type="button" className={result.uploadError ? 'danger-text' : ''} onClick={() => void uploadPixhost(task.id, index, onUploadPixhost, setNotice)}>
+                  {result.uploadError ? '重试图床' : '上传图床'}
+                </button>
+              ) : null}
               <button type="button" onClick={() => void useAsReference(imageUrl, index, onUseAsReference, setNotice)}>作为参考图</button>
             </div>
             <small className="card-meta">#{index + 1} · {result.elapsedMs ? `${(result.elapsedMs / 1000).toFixed(1)}s` : '完成'} · {formatBytes(result.bytes)}{result.remoteUrl ? ' · 已上传图床' : result.uploadError ? ` · 图床失败：${result.uploadError}` : ''}</small>
