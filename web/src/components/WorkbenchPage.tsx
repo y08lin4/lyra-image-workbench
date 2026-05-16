@@ -231,7 +231,7 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
     setError('')
     const ready = provider === BANANA_PROVIDER ? bananaKeyReady : keyReady
     if (!ready) {
-      setError(provider === BANANA_PROVIDER ? '请先在设置里保存 banana 分组的 API Key' : '请先保存当前空间的 codex-key')
+      setError(provider === BANANA_PROVIDER ? '请先在当前浏览器保存 banana 分组的 API Key' : '请先在当前浏览器保存 codex-key')
       return
     }
     if (!prompt.trim()) { setError('请先输入提示词'); return }
@@ -355,12 +355,24 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
   }
 
   async function handleRetry(id: string) {
-    const job = await retryTask(id)
-    upsertTask(job)
-    setActiveId(job.id)
-    goToTab('result')
-    setDetailId(job.id)
-    setMessage('已重新提交任务')
+    const task = tasks.find((item) => item.id === id)
+    const nextProvider = task?.provider || 'image-2'
+    const ready = nextProvider === BANANA_PROVIDER ? bananaKeyReady : keyReady
+    if (!ready) {
+      setToast(nextProvider === BANANA_PROVIDER ? '请先在当前浏览器保存 Banana API Key' : '请先在当前浏览器保存 codex-key')
+      goToTab('settings')
+      return
+    }
+    try {
+      const job = await retryTask(id)
+      upsertTask(job)
+      setActiveId(job.id)
+      goToTab('result')
+      setDetailId(job.id)
+      setMessage('已重新提交任务')
+    } catch (err) {
+      setToast(err instanceof Error ? err.message : '重试失败')
+    }
   }
 
   async function handleCancel(id: string) {
@@ -610,7 +622,7 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
 
         {activeTab === 'settings' ? (
           <section className="workflow-page settings-page-inline">
-            <PageHeader eyebrow="Settings" title="设置" description="当前空间的 codex-key、Banana 分组 API Key、默认数量、默认并发和图床设置。" />
+            <PageHeader eyebrow="Settings" title="设置" description="Key 保存在当前浏览器本地；默认数量、默认并发和图床设置随空间保存。" />
             <div className="settings-inline-grid settings-only-grid">
               <SettingsPanel onConfig={applyUserConfig} />
             </div>

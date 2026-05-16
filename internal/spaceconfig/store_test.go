@@ -8,7 +8,7 @@ import (
 	"github.com/y08lin4/image-Workbench-Localhost-Version/internal/spaces"
 )
 
-func TestStoreMasksAPIKeyInPublicConfig(t *testing.T) {
+func TestStoreDoesNotPersistAPIKey(t *testing.T) {
 	spaceStore, err := spaces.NewFileStore(t.TempDir())
 	if err != nil {
 		t.Fatalf("NewFileStore() error = %v", err)
@@ -24,11 +24,8 @@ func TestStoreMasksAPIKeyInPublicConfig(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Update() error = %v", err)
 	}
-	if !public.APIKeySet {
-		t.Fatal("APIKeySet should be true")
-	}
-	if strings.Contains(public.APIKeyPreview, "secret-123456") {
-		t.Fatalf("API key preview leaked too much secret: %q", public.APIKeyPreview)
+	if public.APIKeySet || public.APIKeyPreview != "" {
+		t.Fatalf("API key should not be reported from server config: %+v", public)
 	}
 	encoded, _ := json.Marshal(public)
 	if strings.Contains(string(encoded), "sk-test-secret-1234567890") {
@@ -39,12 +36,12 @@ func TestStoreMasksAPIKeyInPublicConfig(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Get() error = %v", err)
 	}
-	if private.APIKey != "sk-test-secret-1234567890" {
-		t.Fatalf("private API key was not trimmed/persisted: %q", private.APIKey)
+	if private.APIKey != "" {
+		t.Fatalf("private API key should not be persisted: %q", private.APIKey)
 	}
 }
 
-func TestStoreMasksBananaAPIKeySeparately(t *testing.T) {
+func TestStoreDoesNotPersistBananaAPIKey(t *testing.T) {
 	spaceStore, err := spaces.NewFileStore(t.TempDir())
 	if err != nil {
 		t.Fatalf("NewFileStore() error = %v", err)
@@ -61,8 +58,8 @@ func TestStoreMasksBananaAPIKeySeparately(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Update() error = %v", err)
 	}
-	if !public.APIKeySet || !public.BananaAPIKeySet {
-		t.Fatalf("both key flags should be true: %+v", public)
+	if public.APIKeySet || public.BananaAPIKeySet || public.APIKeyPreview != "" || public.BananaAPIKeyPreview != "" {
+		t.Fatalf("key flags should stay false for browser-local keys: %+v", public)
 	}
 	encoded, _ := json.Marshal(public)
 	if strings.Contains(string(encoded), "sk-banana-secret-0987654321") {
@@ -73,11 +70,11 @@ func TestStoreMasksBananaAPIKeySeparately(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Get() error = %v", err)
 	}
-	if private.APIKey != image2Key {
-		t.Fatalf("image-2 key changed: %q", private.APIKey)
+	if private.APIKey != "" {
+		t.Fatalf("image-2 key should not be persisted: %q", private.APIKey)
 	}
-	if private.BananaAPIKey != "sk-banana-secret-0987654321" {
-		t.Fatalf("banana API key was not trimmed/persisted: %q", private.BananaAPIKey)
+	if private.BananaAPIKey != "" {
+		t.Fatalf("banana API key should not be persisted: %q", private.BananaAPIKey)
 	}
 }
 

@@ -51,6 +51,7 @@ func TestManagerCreateReturnsQueuedAndCompletesInBackground(t *testing.T) {
 	env := newManagerTestEnv(t, server.URL+"/v1")
 
 	created, err := env.manager.Create(env.token, CreateRequest{
+		RuntimeSecrets: RuntimeSecrets{APIKey: "sk-test"},
 		Mode:         ModeTextToImage,
 		Prompt:       "cat",
 		Ratio:        "1:1",
@@ -97,6 +98,7 @@ func TestManagerRecordsDebugLogsWhenEnabled(t *testing.T) {
 	}
 
 	created, err := env.manager.Create(env.token, CreateRequest{
+		RuntimeSecrets: RuntimeSecrets{APIKey: "sk-test"},
 		Mode:       ModeTextToImage,
 		Prompt:     "debug cat",
 		Ratio:      "1:1",
@@ -136,6 +138,7 @@ func TestManagerAllowsPartialFailed(t *testing.T) {
 	env := newManagerTestEnv(t, server.URL)
 
 	created, err := env.manager.Create(env.token, CreateRequest{
+		RuntimeSecrets: RuntimeSecrets{APIKey: "sk-test"},
 		Mode:        ModeTextToImage,
 		Prompt:      "cat",
 		Ratio:       "1:1",
@@ -179,12 +182,8 @@ func TestManagerRoutesBananaModelWithSeparateKey(t *testing.T) {
 	}))
 	defer server.Close()
 	env := newManagerTestEnv(t, server.URL)
-	bananaKey := "sk-banana"
-	if _, err := env.spaceConfig.Update(env.token, spaceconfig.Update{BananaAPIKey: &bananaKey}); err != nil {
-		t.Fatalf("space config banana Update() error = %v", err)
-	}
-
 	created, err := env.manager.Create(env.token, CreateRequest{
+		RuntimeSecrets: RuntimeSecrets{BananaAPIKey: "sk-banana"},
 		Provider:    config.BananaProvider,
 		Model:       "gemini-3.1-flash-image-preview-16x9-4k",
 		Mode:        ModeTextToImage,
@@ -219,7 +218,7 @@ func TestManagerRequiresBananaKeyForBananaProvider(t *testing.T) {
 		Prompt:   "banana",
 		Count:    1,
 	})
-	if err == nil || !strings.Contains(err.Error(), "banana 分组") {
+	if err == nil || !strings.Contains(err.Error(), "browser") {
 		t.Fatalf("expected banana key error, got %v", err)
 	}
 }
@@ -240,7 +239,15 @@ func TestManagerCancelDoesNotWaitForUpstreamCompletion(t *testing.T) {
 	defer close(release)
 	env := newManagerTestEnv(t, server.URL)
 
-	created, err := env.manager.Create(env.token, CreateRequest{Mode: ModeTextToImage, Prompt: "slow", Ratio: "1:1", Resolution: "standard", Count: 1, Concurrency: 1})
+	created, err := env.manager.Create(env.token, CreateRequest{
+		RuntimeSecrets: RuntimeSecrets{APIKey: "sk-test"},
+		Mode:           ModeTextToImage,
+		Prompt:         "slow",
+		Ratio:          "1:1",
+		Resolution:     "standard",
+		Count:          1,
+		Concurrency:    1,
+	})
 	if err != nil {
 		t.Fatalf("Create() error = %v", err)
 	}
@@ -262,7 +269,7 @@ func TestManagerCancelDoesNotWaitForUpstreamCompletion(t *testing.T) {
 	}
 }
 
-func TestManagerRecoverRequeuesQueuedAndInterruptsRunning(t *testing.T) {
+func TestManagerRecoverInterruptsQueuedAndRunningWithoutBrowserKeys(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{"data": []map[string]string{{"b64_json": base64.StdEncoding.EncodeToString([]byte("recovered"))}}})
 	}))
@@ -283,7 +290,10 @@ func TestManagerRecoverRequeuesQueuedAndInterruptsRunning(t *testing.T) {
 		t.Fatalf("Recover() error = %v", err)
 	}
 
-	waitForJobStatus(t, env.store, env.token, "img_queued", StatusSucceeded, 3*time.Second)
+	queuedInterrupted := waitForJobStatus(t, env.store, env.token, "img_queued", StatusInterrupted, 2*time.Second)
+	if queuedInterrupted.Stage != StageInterrupted || queuedInterrupted.Progress != 100 {
+		t.Fatalf("queued job was not interrupted cleanly: %+v", queuedInterrupted)
+	}
 	interrupted := waitForJobStatus(t, env.store, env.token, "img_running", StatusInterrupted, 2*time.Second)
 	if interrupted.Stage != StageInterrupted || interrupted.Progress != 100 {
 		t.Fatalf("running job was not interrupted cleanly: %+v", interrupted)
@@ -388,10 +398,6 @@ func newManagerTestEnvWithoutManager(t *testing.T, baseURL string) managerTestEn
 		t.Fatalf("settings.NewFileStore() error = %v", err)
 	}
 	spaceConfigStore := spaceconfig.NewStore(spaceStore)
-	key := "sk-test"
-	if _, err := spaceConfigStore.Update(session.Token, spaceconfig.Update{APIKey: &key}); err != nil {
-		t.Fatalf("space config Update() error = %v", err)
-	}
 	outputStore, err := output.NewStore(filepath.Join(root, "outputs"))
 	if err != nil {
 		t.Fatalf("output.NewStore() error = %v", err)

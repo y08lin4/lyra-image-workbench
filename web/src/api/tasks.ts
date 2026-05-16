@@ -1,9 +1,11 @@
-﻿import { getSpaceToken, requestJson } from './client'
+import { getSpaceToken, requestJson } from './client'
 import type { CreateTaskRequest, Task, TaskEvent } from '../types'
+import { withLocalApiKeyHeaders } from '../lib/localApiKeys'
 
 export async function createTask(payload: CreateTaskRequest) {
   const data = await requestJson<{ ok: boolean; job: Task }>('/api/background-tasks', {
     method: 'POST',
+    headers: withLocalApiKeyHeaders(),
     body: JSON.stringify(payload),
   })
   return data.job
@@ -30,7 +32,10 @@ export async function deleteTask(id: string) {
 }
 
 export async function retryTask(id: string) {
-  const data = await requestJson<{ ok: boolean; job: Task }>(`/api/background-tasks/${encodeURIComponent(id)}/retry`, { method: 'POST' })
+  const data = await requestJson<{ ok: boolean; job: Task }>(`/api/background-tasks/${encodeURIComponent(id)}/retry`, {
+    method: 'POST',
+    headers: withLocalApiKeyHeaders(),
+  })
   return data.job
 }
 

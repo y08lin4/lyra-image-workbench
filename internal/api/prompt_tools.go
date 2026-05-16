@@ -24,6 +24,7 @@ func (h PromptToolsHandler) TextToPrompt(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusBadRequest, "BAD_JSON", "请求体不是有效 JSON")
 		return
 	}
+	payload.RuntimeAPIKey = runtimeAPIKeyFromRequest(r)
 	record, err := h.service.TextToPrompt(r.Context(), r.Header.Get("X-Space-Token"), payload)
 	if err != nil {
 		writePromptToolError(w, "text", err)
@@ -39,6 +40,7 @@ func (h PromptToolsHandler) ImageToPrompt(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusBadRequest, "BAD_JSON", "请求体不是有效 JSON")
 		return
 	}
+	payload.RuntimeAPIKey = runtimeAPIKeyFromRequest(r)
 	record, err := h.service.ImageToPrompt(r.Context(), r.Header.Get("X-Space-Token"), payload)
 	if err != nil {
 		writePromptToolError(w, "image", err)
@@ -69,6 +71,9 @@ func writePromptToolError(w http.ResponseWriter, mode string, err error) {
 func promptToolErrorMeta(mode string, err error) jobs.Meta {
 	raw := strings.TrimSpace(err.Error())
 	lower := strings.ToLower(raw)
+	if strings.Contains(lower, "codex-key is saved only in the browser") {
+		return jobs.Meta{Code: "P_CODEX_KEY_MISSING", English: "codex_key_missing", Chinese: "请先在当前浏览器保存 codex-key"}
+	}
 	if strings.Contains(lower, "请先") && strings.Contains(lower, "key") {
 		return jobs.Meta{Code: "P_CODEX_KEY_MISSING", English: "codex_key_missing", Chinese: "请先填写 codex-key"}
 	}
@@ -158,6 +163,7 @@ func (h PromptToolsHandler) RefineSession(w http.ResponseWriter, r *http.Request
 	if !ok {
 		return
 	}
+	payload.RuntimeAPIKey = runtimeAPIKeyFromRequest(r)
 	session, err := h.service.RefineSession(r.Context(), r.Header.Get("X-Space-Token"), r.PathValue("id"), payload)
 	if err != nil {
 		writePromptToolError(w, "refine", err)
@@ -184,6 +190,7 @@ func (h PromptToolsHandler) InspirationIdeas(w http.ResponseWriter, r *http.Requ
 	if !ok {
 		return
 	}
+	payload.RuntimeAPIKey = runtimeAPIKeyFromRequest(r)
 	ideas, err := h.service.GenerateIdeas(r.Context(), r.Header.Get("X-Space-Token"), payload)
 	if err != nil {
 		writePromptToolError(w, "inspiration", err)
@@ -197,6 +204,7 @@ func (h PromptToolsHandler) InspirationExpand(w http.ResponseWriter, r *http.Req
 	if !ok {
 		return
 	}
+	payload.RuntimeAPIKey = runtimeAPIKeyFromRequest(r)
 	session, err := h.service.ExpandIdea(r.Context(), r.Header.Get("X-Space-Token"), payload)
 	if err != nil {
 		writePromptToolError(w, "inspiration", err)

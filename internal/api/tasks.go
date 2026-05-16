@@ -29,6 +29,7 @@ func (h TaskHandler) Create(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "BAD_JSON", "请求体不是有效 JSON")
 		return
 	}
+	payload.RuntimeSecrets = runtimeSecretsFromRequest(r)
 	job, err := h.manager.Create(r.Header.Get("X-Space-Token"), payload)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "TASK_CREATE_FAILED", err.Error())
@@ -61,7 +62,7 @@ func (h TaskHandler) Get(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h TaskHandler) Retry(w http.ResponseWriter, r *http.Request) {
-	job, err := h.manager.Retry(r.Header.Get("X-Space-Token"), r.PathValue("id"))
+	job, err := h.manager.Retry(r.Header.Get("X-Space-Token"), r.PathValue("id"), runtimeSecretsFromRequest(r))
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "TASK_RETRY_FAILED", err.Error())
 		return

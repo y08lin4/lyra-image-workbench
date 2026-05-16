@@ -135,8 +135,8 @@ func (s *Store) configPath(spaceToken string) (string, error) {
 }
 
 func normalize(cfg Config) Config {
-	cfg.APIKey = strings.TrimSpace(cfg.APIKey)
-	cfg.BananaAPIKey = strings.TrimSpace(cfg.BananaAPIKey)
+	cfg.APIKey = ""
+	cfg.BananaAPIKey = ""
 	cfg.DefaultCount = clamp(cfg.DefaultCount, 1, 12, 1)
 	cfg.DefaultConcurrency = clamp(cfg.DefaultConcurrency, 1, 0, 1)
 	cfg.UpdatedAt = strings.TrimSpace(cfg.UpdatedAt)

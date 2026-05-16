@@ -110,6 +110,7 @@ type Result struct {
 }
 
 type CreateRequest struct {
+	RuntimeSecrets
 	Provider     string   `json:"provider"`
 	Model        string   `json:"model"`
 	Mode         Mode     `json:"mode"`
@@ -121,6 +122,11 @@ type CreateRequest struct {
 	Count        int      `json:"count"`
 	Concurrency  int      `json:"concurrency"`
 	UploadIDs    []string `json:"uploadIds"`
+}
+
+type RuntimeSecrets struct {
+	APIKey       string `json:"apiKey,omitempty"`
+	BananaAPIKey string `json:"bananaApiKey,omitempty"`
 }
 
 type Stats struct {
@@ -164,6 +170,9 @@ func ErrorMeta(raw string) Meta {
 	lower := strings.ToLower(raw)
 	if raw == "" {
 		return Meta{}
+	}
+	if strings.Contains(lower, "saved only in the browser") || strings.Contains(lower, "runtime api key") {
+		return Meta{"E_LOCAL_KEY_MISSING", "local_api_key_missing", "请先在当前浏览器保存 API Key"}
 	}
 	if strings.Contains(lower, "unexpected eof") {
 		return Meta{"E_UPSTREAM_EOF", "upstream_response_truncated", "上游响应提前结束"}

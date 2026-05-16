@@ -49,7 +49,7 @@ func (s *Service) TextToPrompt(ctx context.Context, spaceToken string, req TextR
 	if input == "" {
 		return Record{}, errors.New("请输入需要扩写的文字想法")
 	}
-	apiKey, err := s.apiKey(spaceToken)
+	apiKey, err := s.apiKey(spaceToken, req.RuntimeAPIKey)
 	if err != nil {
 		return Record{}, err
 	}
@@ -104,7 +104,7 @@ func (s *Service) ImageToPrompt(ctx context.Context, spaceToken string, req Imag
 	if err != nil {
 		return Record{}, err
 	}
-	apiKey, err := s.apiKey(spaceToken)
+	apiKey, err := s.apiKey(spaceToken, req.RuntimeAPIKey)
 	if err != nil {
 		return Record{}, err
 	}
@@ -249,7 +249,7 @@ func (s *Service) RefineSession(ctx context.Context, spaceToken string, id strin
 	if !ok {
 		return PromptSession{}, errors.New("提示词版本不存在")
 	}
-	apiKey, err := s.apiKey(spaceToken)
+	apiKey, err := s.apiKey(spaceToken, req.RuntimeAPIKey)
 	if err != nil {
 		return PromptSession{}, err
 	}
@@ -315,7 +315,7 @@ func (s *Service) RefineSession(ctx context.Context, spaceToken string, id strin
 }
 
 func (s *Service) GenerateIdeas(ctx context.Context, spaceToken string, req InspirationIdeasRequest) ([]InspirationIdea, error) {
-	apiKey, err := s.apiKey(spaceToken)
+	apiKey, err := s.apiKey(spaceToken, req.RuntimeAPIKey)
 	if err != nil {
 		return nil, err
 	}
@@ -363,7 +363,7 @@ func (s *Service) ExpandIdea(ctx context.Context, spaceToken string, req Inspira
 	if strings.TrimSpace(req.Idea.Title) == "" && strings.TrimSpace(req.Idea.Summary) == "" {
 		return PromptSession{}, errors.New("请先选择一个灵感")
 	}
-	apiKey, err := s.apiKey(spaceToken)
+	apiKey, err := s.apiKey(spaceToken, req.RuntimeAPIKey)
 	if err != nil {
 		return PromptSession{}, err
 	}
@@ -419,12 +419,15 @@ func (s *Service) ExpandIdea(ctx context.Context, spaceToken string, req Inspira
 	return session, nil
 }
 
-func (s *Service) apiKey(spaceToken string) (string, error) {
-	cfg, err := s.spaceConfig.Get(spaceToken)
-	if err != nil {
+func (s *Service) apiKey(spaceToken string, runtimeAPIKey string) (string, error) {
+	if _, err := s.spaceConfig.Get(spaceToken); err != nil {
 		return "", err
 	}
-	return cfg.APIKey, nil
+	apiKey := strings.TrimSpace(runtimeAPIKey)
+	if apiKey == "" {
+		return "", errors.New("codex-key is saved only in the browser; save it locally and retry")
+	}
+	return apiKey, nil
 }
 
 func (s *Service) resolveImageSource(spaceToken string, source Source) (string, string, string, error) {

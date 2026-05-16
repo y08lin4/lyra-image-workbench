@@ -10,10 +10,12 @@ import type {
   RefinePromptSessionRequest,
   TextToPromptRequest,
 } from '../types'
+import { withLocalApiKeyHeaders } from '../lib/localApiKeys'
 
 export async function textToPrompt(payload: TextToPromptRequest) {
   const data = await requestJson<{ ok: boolean; record: PromptRecord }>('/api/prompt-tools/text-to-prompt', {
     method: 'POST',
+    headers: withLocalApiKeyHeaders(),
     body: JSON.stringify(payload),
   })
   return data.record
@@ -22,6 +24,7 @@ export async function textToPrompt(payload: TextToPromptRequest) {
 export async function imageToPrompt(payload: ImageToPromptRequest) {
   const data = await requestJson<{ ok: boolean; record: PromptRecord }>('/api/prompt-tools/image-to-prompt', {
     method: 'POST',
+    headers: withLocalApiKeyHeaders(),
     body: JSON.stringify(payload),
   })
   return data.record
@@ -60,6 +63,7 @@ export async function getPromptSession(id: string) {
 export async function refinePromptSession(id: string, payload: RefinePromptSessionRequest) {
   const data = await requestJson<{ ok: boolean; session: PromptSession }>(`/api/prompt-tools/sessions/${encodeURIComponent(id)}/messages`, {
     method: 'POST',
+    headers: withLocalApiKeyHeaders(),
     body: JSON.stringify(payload),
   })
   return data.session
@@ -75,6 +79,7 @@ export async function deletePromptSession(id: string) {
 export async function generateInspirationIdeas(payload: InspirationIdeasRequest) {
   const data = await requestJson<{ ok: boolean; ideas: InspirationIdea[] }>('/api/prompt-tools/inspiration/ideas', {
     method: 'POST',
+    headers: withLocalApiKeyHeaders(),
     body: JSON.stringify(payload),
   })
   return data.ideas
@@ -83,6 +88,7 @@ export async function generateInspirationIdeas(payload: InspirationIdeasRequest)
 export async function expandInspirationIdea(payload: InspirationExpandRequest) {
   const data = await requestJson<{ ok: boolean; session: PromptSession }>('/api/prompt-tools/inspiration/expand', {
     method: 'POST',
+    headers: withLocalApiKeyHeaders(),
     body: JSON.stringify(payload),
   })
   return data.session

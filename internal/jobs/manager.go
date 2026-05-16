@@ -33,11 +33,16 @@ type Manager struct {
 	queue       chan jobRef
 	mu          sync.Mutex
 	cancels     map[string]context.CancelFunc
+	secrets     map[string]jobSecret
 }
 
 type jobRef struct {
 	SpaceToken string
 	JobID      string
+}
+
+type jobSecret struct {
+	APIKey string
 }
 
 func NewManager(store *Store, hub *events.Hub, settingsStore *settings.FileStore, spaceConfig *spaceconfig.Store, uploadStore *uploads.Store, outputStore *output.Store, newapiClient *newapi.Client) *Manager {
@@ -52,6 +57,7 @@ func NewManager(store *Store, hub *events.Hub, settingsStore *settings.FileStore
 		pixhost:     pixhost.NewClient(),
 		queue:       make(chan jobRef, 256),
 		cancels:     make(map[string]context.CancelFunc),
+		secrets:     make(map[string]jobSecret),
 	}
 	go m.worker()
 	return m
@@ -65,14 +71,12 @@ func (m *Manager) Recover() error {
 	for token, list := range bySpace {
 		for _, job := range list {
 			switch job.Status {
-			case StatusQueued:
-				m.enqueue(token, job.ID)
-			case StatusRunning:
+			case StatusQueued, StatusRunning:
 				_, _, _ = m.store.Update(token, job.ID, func(j *Job) {
 					ApplyStatus(j, StatusInterrupted)
 					ApplyStage(j, StageInterrupted)
 					j.Progress = 100
-					j.Error = "本机程序曾在任务运行时停止。为避免重复扣费，请手动重试。"
+					j.Error = "Runtime API key is only stored in the browser and is unavailable after server restart. Please retry from the browser."
 					j.FinishedAt = time.Now()
 				})
 			}
@@ -97,12 +101,26 @@ func (m *Manager) Create(spaceToken string, req CreateRequest) (Job, error) {
 	if err != nil {
 		return Job{}, err
 	}
+	apiKey := runtimeAPIKey(req.RuntimeSecrets, provider)
+	spaceCfg.APIKey = ""
+	spaceCfg.BananaAPIKey = ""
+	if provider == config.BananaProvider {
+		spaceCfg.BananaAPIKey = apiKey
+	} else {
+		spaceCfg.APIKey = apiKey
+	}
+	if apiKey == "" {
+		if provider == config.BananaProvider {
+			return Job{}, errors.New("banana API key is saved only in the browser; save it locally and retry")
+		}
+		return Job{}, errors.New("codex-key is saved only in the browser; save it locally and retry")
+	}
 	if provider == config.BananaProvider {
 		if strings.TrimSpace(spaceCfg.BananaAPIKey) == "" {
-			return Job{}, errors.New("请先在当前个人空间填写 banana 分组的 API Key")
+			return Job{}, errors.New("banana API key is saved only in the browser; save it locally and retry")
 		}
 	} else if strings.TrimSpace(spaceCfg.APIKey) == "" {
-		return Job{}, errors.New("请先在当前个人空间填写 codex-key")
+		return Job{}, errors.New("codex-key is saved only in the browser; save it locally and retry")
 	}
 	if req.Mode == ModeImageToImage {
 		if len(req.UploadIDs) == 0 {
@@ -173,6 +191,7 @@ func (m *Manager) Create(spaceToken string, req CreateRequest) (Job, error) {
 	if err := m.store.Save(job); err != nil {
 		return Job{}, err
 	}
+	m.setJobSecret(job.ID, apiKey)
 	m.enqueue(spaceToken, job.ID)
 	m.publish(job.ID, "progress", eventPayload(job))
 	return job, nil
@@ -266,7 +285,7 @@ func (m *Manager) UploadResultToPixhost(ctx context.Context, spaceToken string, 
 	return job, updated, nil
 }
 
-func (m *Manager) Retry(spaceToken string, id string) (Job, error) {
+func (m *Manager) Retry(spaceToken string, id string, secrets RuntimeSecrets) (Job, error) {
 	old, ok, err := m.store.Get(spaceToken, id)
 	if err != nil {
 		return Job{}, err
@@ -274,12 +293,27 @@ func (m *Manager) Retry(spaceToken string, id string) (Job, error) {
 	if !ok {
 		return Job{}, errors.New("任务不存在")
 	}
-	return m.Create(spaceToken, CreateRequest{Provider: old.Provider, Model: old.Model, Mode: old.Mode, Prompt: old.Prompt, Ratio: old.Ratio, Resolution: old.Resolution, Quality: old.Quality, OutputFormat: old.OutputFormat, Count: old.Count, Concurrency: old.Concurrency, UploadIDs: old.UploadIDs})
+	return m.Create(spaceToken, CreateRequest{
+		RuntimeSecrets: secrets,
+		Provider:       old.Provider,
+		Model:          old.Model,
+		Mode:           old.Mode,
+		Prompt:         old.Prompt,
+		Ratio:          old.Ratio,
+		Resolution:     old.Resolution,
+		Quality:        old.Quality,
+		OutputFormat:   old.OutputFormat,
+		Count:          old.Count,
+		Concurrency:    old.Concurrency,
+		UploadIDs:      old.UploadIDs,
+	})
 }
 
 func (m *Manager) Cancel(spaceToken string, id string) (Job, error) {
+	running := false
 	m.mu.Lock()
 	if cancel := m.cancels[id]; cancel != nil {
+		running = true
 		cancel()
 	}
 	m.mu.Unlock()
@@ -298,6 +332,9 @@ func (m *Manager) Cancel(spaceToken string, id string) (Job, error) {
 	if !ok {
 		return Job{}, errors.New("任务不存在")
 	}
+	if !running {
+		m.clearJobSecret(id)
+	}
 	m.publish(id, "done", eventPayload(job))
 	return job, nil
 }
@@ -308,6 +345,7 @@ func (m *Manager) Delete(spaceToken string, id string) (Job, error) {
 		cancel()
 		delete(m.cancels, id)
 	}
+	delete(m.secrets, id)
 	m.mu.Unlock()
 	job, ok, err := m.store.Delete(spaceToken, id)
 	if err != nil {
@@ -326,6 +364,24 @@ func (m *Manager) Subscribe(jobID string) (<-chan events.Event, func()) {
 
 func (m *Manager) enqueue(spaceToken string, jobID string) {
 	m.queue <- jobRef{SpaceToken: spaceToken, JobID: jobID}
+}
+
+func (m *Manager) setJobSecret(jobID string, apiKey string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.secrets[jobID] = jobSecret{APIKey: strings.TrimSpace(apiKey)}
+}
+
+func (m *Manager) jobAPIKey(jobID string) string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return strings.TrimSpace(m.secrets[jobID].APIKey)
+}
+
+func (m *Manager) clearJobSecret(jobID string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.secrets, jobID)
 }
 
 func (m *Manager) worker() {
@@ -347,6 +403,7 @@ func (m *Manager) run(spaceToken string, jobID string) {
 		cancel()
 		m.mu.Lock()
 		delete(m.cancels, jobID)
+		delete(m.secrets, jobID)
 		m.mu.Unlock()
 	}()
 
@@ -445,17 +502,13 @@ func (m *Manager) generateOne(ctx context.Context, spaceToken string, jobID stri
 	if err != nil {
 		return NewResult(index, StatusFailed, err.Error())
 	}
-	apiKey := strings.TrimSpace(spaceCfg.APIKey)
-	skipImageParams := false
-	if provider == config.BananaProvider {
-		apiKey = strings.TrimSpace(spaceCfg.BananaAPIKey)
-		skipImageParams = true
-	}
+	apiKey := m.jobAPIKey(jobID)
+	skipImageParams := provider == config.BananaProvider
 	if apiKey == "" {
 		if provider == config.BananaProvider {
-			return NewResult(index, StatusFailed, "请先在当前个人空间填写 banana 分组的 API Key")
+			return NewResult(index, StatusFailed, "banana API key is saved only in the browser; save it locally and retry")
 		}
-		return NewResult(index, StatusFailed, "请先在当前个人空间填写 codex-key")
+		return NewResult(index, StatusFailed, "codex-key is saved only in the browser; save it locally and retry")
 	}
 	inputs := make([]newapi.InputImage, 0, len(job.UploadIDs))
 	for _, id := range job.UploadIDs {
@@ -720,6 +773,13 @@ func maskSecret(value string) string {
 		return "***"
 	}
 	return string(runes[:4]) + "..." + string(runes[len(runes)-4:])
+}
+
+func runtimeAPIKey(secrets RuntimeSecrets, provider string) string {
+	if provider == config.BananaProvider {
+		return strings.TrimSpace(secrets.BananaAPIKey)
+	}
+	return strings.TrimSpace(secrets.APIKey)
 }
 
 func compactDebugText(value string, limit int) string {

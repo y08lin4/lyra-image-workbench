@@ -17,17 +17,19 @@ type Source struct {
 }
 
 type TextRequest struct {
-	Input    string `json:"input"`
-	Style    string `json:"style"`
-	Ratio    string `json:"ratio"`
-	Language string `json:"language"`
-	Target   string `json:"target"`
+	RuntimeAPIKey string `json:"-"`
+	Input         string `json:"input"`
+	Style         string `json:"style"`
+	Ratio         string `json:"ratio"`
+	Language      string `json:"language"`
+	Target        string `json:"target"`
 }
 
 type ImageRequest struct {
-	Source   Source `json:"source"`
-	Language string `json:"language"`
-	Target   string `json:"target"`
+	RuntimeAPIKey string `json:"-"`
+	Source        Source `json:"source"`
+	Language      string `json:"language"`
+	Target        string `json:"target"`
 }
 
 type Record struct {
@@ -112,6 +114,7 @@ type CreateSessionRequest struct {
 }
 
 type RefineRequest struct {
+	RuntimeAPIKey    string `json:"-"`
 	Message          string `json:"message"`
 	CurrentVersionID string `json:"currentVersionId"`
 	Provider         string `json:"provider"`
@@ -119,12 +122,13 @@ type RefineRequest struct {
 }
 
 type InspirationIdeasRequest struct {
-	Category string `json:"category"`
-	Mood     string `json:"mood"`
-	Style    string `json:"style"`
-	Target   string `json:"target"`
-	Count    int    `json:"count"`
-	Seed     string `json:"seed"`
+	RuntimeAPIKey string `json:"-"`
+	Category      string `json:"category"`
+	Mood          string `json:"mood"`
+	Style         string `json:"style"`
+	Target        string `json:"target"`
+	Count         int    `json:"count"`
+	Seed          string `json:"seed"`
 }
 
 type InspirationIdea struct {
@@ -139,9 +143,10 @@ type InspirationIdea struct {
 }
 
 type InspirationExpandRequest struct {
-	Idea     InspirationIdea `json:"idea"`
-	Ratio    string          `json:"ratio"`
-	Target   string          `json:"target"`
-	Provider string          `json:"provider"`
-	Model    string          `json:"model"`
+	RuntimeAPIKey string          `json:"-"`
+	Idea          InspirationIdea `json:"idea"`
+	Ratio         string          `json:"ratio"`
+	Target        string          `json:"target"`
+	Provider      string          `json:"provider"`
+	Model         string          `json:"model"`
 }

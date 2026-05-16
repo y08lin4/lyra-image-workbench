@@ -24,7 +24,7 @@ import (
 	"github.com/y08lin4/image-Workbench-Localhost-Version/internal/uploads"
 )
 
-func TestConfigAPIDoesNotReturnRawAPIKey(t *testing.T) {
+func TestConfigAPIDoesNotPersistAPIKeys(t *testing.T) {
 	router := newTestRouter(t)
 	token := createTestSession(t, router)
 	rawKey := "sk-router-secret-1234567890"
@@ -38,8 +38,8 @@ func TestConfigAPIDoesNotReturnRawAPIKey(t *testing.T) {
 	if strings.Contains(body, rawKey) || strings.Contains(body, rawBananaKey) {
 		t.Fatalf("GET /api/config leaked raw key: %s", body)
 	}
-	if !strings.Contains(body, `"apiKeySet":true`) || !strings.Contains(body, `"bananaApiKeySet":true`) {
-		t.Fatalf("GET /api/config did not report key set: %s", body)
+	if !strings.Contains(body, `"apiKeySet":false`) || !strings.Contains(body, `"bananaApiKeySet":false`) {
+		t.Fatalf("GET /api/config should not report server-side keys: %s", body)
 	}
 }
 

@@ -1,0 +1,83 @@
+import { getSpaceToken } from '../api/client'
+import type { UserConfig } from '../types'
+
+const LOCAL_API_KEYS_STORAGE_KEY = 'image-workbench:local-api-keys:v1'
+const DEFAULT_SCOPE = '__default__'
+
+export const LOCAL_API_KEY_HEADER = 'X-Image-Workbench-API-Key'
+export const LOCAL_BANANA_API_KEY_HEADER = 'X-Image-Workbench-Banana-API-Key'
+
+export type LocalApiKeyUpdate = {
+  apiKey?: string
+  bananaApiKey?: string
+}
+
+type LocalApiKeys = {
+  apiKey?: string
+  bananaApiKey?: string
+}
+
+type LocalApiKeyStore = Record<string, LocalApiKeys>
+
+export function mergeLocalApiKeys(config: UserConfig, token = getSpaceToken()): UserConfig {
+  const keys = getLocalApiKeys(token)
+  return {
+    ...config,
+    apiKeySet: Boolean(keys.apiKey),
+    apiKeyPreview: maskSecret(keys.apiKey || ''),
+    bananaApiKeySet: Boolean(keys.bananaApiKey),
+    bananaApiKeyPreview: maskSecret(keys.bananaApiKey || ''),
+  }
+}
+
+export function saveLocalApiKeys(update: LocalApiKeyUpdate, token = getSpaceToken()) {
+  const current = getLocalApiKeys(token)
+  const next = { ...current }
+  if (update.apiKey !== undefined && update.apiKey.trim()) next.apiKey = update.apiKey.trim()
+  if (update.bananaApiKey !== undefined && update.bananaApiKey.trim()) next.bananaApiKey = update.bananaApiKey.trim()
+  writeLocalApiKeys(token, next)
+}
+
+export function withLocalApiKeyHeaders(headers?: HeadersInit, token = getSpaceToken()) {
+  const next = new Headers(headers)
+  const keys = getLocalApiKeys(token)
+  if (keys.apiKey) next.set(LOCAL_API_KEY_HEADER, keys.apiKey)
+  if (keys.bananaApiKey) next.set(LOCAL_BANANA_API_KEY_HEADER, keys.bananaApiKey)
+  return next
+}
+
+function getLocalApiKeys(token = getSpaceToken()): LocalApiKeys {
+  return readLocalApiKeyStore()[scopeForToken(token)] || {}
+}
+
+function writeLocalApiKeys(token: string, keys: LocalApiKeys) {
+  const store = readLocalApiKeyStore()
+  const scope = scopeForToken(token)
+  store[scope] = {
+    apiKey: keys.apiKey?.trim() || undefined,
+    bananaApiKey: keys.bananaApiKey?.trim() || undefined,
+  }
+  localStorage.setItem(LOCAL_API_KEYS_STORAGE_KEY, JSON.stringify(store))
+}
+
+function readLocalApiKeyStore(): LocalApiKeyStore {
+  const raw = localStorage.getItem(LOCAL_API_KEYS_STORAGE_KEY)
+  if (!raw) return {}
+  try {
+    const parsed = JSON.parse(raw) as LocalApiKeyStore
+    return parsed && typeof parsed === 'object' ? parsed : {}
+  } catch {
+    return {}
+  }
+}
+
+function scopeForToken(token: string) {
+  return token || DEFAULT_SCOPE
+}
+
+function maskSecret(value: string) {
+  const trimmed = value.trim()
+  if (!trimmed) return ''
+  if (trimmed.length <= 8) return '********'
+  return `${trimmed.slice(0, 4)}********${trimmed.slice(-4)}`
+}

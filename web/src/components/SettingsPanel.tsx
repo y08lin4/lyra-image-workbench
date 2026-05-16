@@ -50,7 +50,7 @@ export function SettingsPanel({ onReady, onConfig }: { onReady?: (ready: boolean
             <span>codex-key</span>
             <small>Image-2 / 提示词助手</small>
           </div>
-          <p className="muted">保存到 Go 后端当前个人空间。前端不直接请求上游，提示词助手也复用这个 Key。</p>
+          <p className="muted">Key 只保存在当前浏览器本地；提交任务或使用提示词助手时临时交给本机后端代理请求。</p>
           <div className={`status-line ${config?.apiKeySet ? 'ready' : 'missing'}`}>当前：{config?.apiKeySet ? `已设置 ${config.apiKeyPreview}` : '未设置'}</div>
           <input value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="填写 codex-key" />
         </section>
