@@ -97,29 +97,14 @@ func (m *Manager) Create(spaceToken string, req CreateRequest) (Job, error) {
 	if err != nil {
 		return Job{}, err
 	}
-	spaceCfg, err := m.spaceConfig.Get(spaceToken)
-	if err != nil {
+	if _, err := m.spaceConfig.Get(spaceToken); err != nil {
 		return Job{}, err
 	}
 	apiKey := runtimeAPIKey(req.RuntimeSecrets, provider)
-	spaceCfg.APIKey = ""
-	spaceCfg.BananaAPIKey = ""
-	if provider == config.BananaProvider {
-		spaceCfg.BananaAPIKey = apiKey
-	} else {
-		spaceCfg.APIKey = apiKey
-	}
 	if apiKey == "" {
 		if provider == config.BananaProvider {
 			return Job{}, errors.New("banana API key is saved only in the browser; save it locally and retry")
 		}
-		return Job{}, errors.New("codex-key is saved only in the browser; save it locally and retry")
-	}
-	if provider == config.BananaProvider {
-		if strings.TrimSpace(spaceCfg.BananaAPIKey) == "" {
-			return Job{}, errors.New("banana API key is saved only in the browser; save it locally and retry")
-		}
-	} else if strings.TrimSpace(spaceCfg.APIKey) == "" {
 		return Job{}, errors.New("codex-key is saved only in the browser; save it locally and retry")
 	}
 	if req.Mode == ModeImageToImage {

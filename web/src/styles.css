@@ -3751,6 +3751,25 @@ button:not(.primary) { background: var(--surface-soft); color: #1e3a8a; border: 
   background: #fff7ed;
   color: #9a3412;
 }
+.settings-key-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: 8px;
+}
+.settings-key-actions .status-line {
+  flex: 1 1 220px;
+}
+.settings-key-actions button {
+  width: auto;
+  min-height: 38px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--muted);
+  padding: 0 14px;
+  font-weight: 800;
+}
 .settings-submit-row {
   display: flex;
   flex-wrap: wrap;

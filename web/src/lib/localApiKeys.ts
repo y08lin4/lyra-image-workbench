@@ -38,6 +38,14 @@ export function saveLocalApiKeys(update: LocalApiKeyUpdate, token = getSpaceToke
   writeLocalApiKeys(token, next)
 }
 
+export function clearLocalApiKeys(update: { apiKey?: boolean; bananaApiKey?: boolean }, token = getSpaceToken()) {
+  const current = getLocalApiKeys(token)
+  const next = { ...current }
+  if (update.apiKey) delete next.apiKey
+  if (update.bananaApiKey) delete next.bananaApiKey
+  writeLocalApiKeys(token, next)
+}
+
 export function withLocalApiKeyHeaders(headers?: HeadersInit, token = getSpaceToken()) {
   const next = new Headers(headers)
   const keys = getLocalApiKeys(token)
@@ -53,11 +61,20 @@ function getLocalApiKeys(token = getSpaceToken()): LocalApiKeys {
 function writeLocalApiKeys(token: string, keys: LocalApiKeys) {
   const store = readLocalApiKeyStore()
   const scope = scopeForToken(token)
-  store[scope] = {
+  const next = {
     apiKey: keys.apiKey?.trim() || undefined,
     bananaApiKey: keys.bananaApiKey?.trim() || undefined,
   }
-  localStorage.setItem(LOCAL_API_KEYS_STORAGE_KEY, JSON.stringify(store))
+  if (next.apiKey || next.bananaApiKey) {
+    store[scope] = next
+  } else {
+    delete store[scope]
+  }
+  if (Object.keys(store).length) {
+    localStorage.setItem(LOCAL_API_KEYS_STORAGE_KEY, JSON.stringify(store))
+  } else {
+    localStorage.removeItem(LOCAL_API_KEYS_STORAGE_KEY)
+  }
 }
 
 function readLocalApiKeyStore(): LocalApiKeyStore {

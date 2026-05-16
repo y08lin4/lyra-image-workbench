@@ -1,6 +1,7 @@
 import { type FormEvent, useEffect, useState } from 'react'
 import { getUserConfig, saveUserConfig } from '../api/config'
 import type { UserConfig } from '../types'
+import { clearLocalApiKeys } from '../lib/localApiKeys'
 
 type NumericInputValue = number | ''
 
@@ -42,6 +43,16 @@ export function SettingsPanel({ onReady, onConfig }: { onReady?: (ready: boolean
     onReady?.(cfg.apiKeySet)
     onConfig?.(cfg)
   }
+  async function clearLocalKey(kind: 'apiKey' | 'bananaApiKey') {
+    clearLocalApiKeys(kind === 'apiKey' ? { apiKey: true } : { bananaApiKey: true })
+    const cfg = await getUserConfig()
+    setConfig(cfg)
+    setApiKey('')
+    setBananaApiKey('')
+    setMessage(kind === 'apiKey' ? 'codex-key 已从当前浏览器清除' : 'Banana Key 已从当前浏览器清除')
+    onReady?.(cfg.apiKeySet)
+    onConfig?.(cfg)
+  }
   return (
     <section className="settings-flow-panel">
       <form onSubmit={submit} className="settings-flow-form">
@@ -51,7 +62,10 @@ export function SettingsPanel({ onReady, onConfig }: { onReady?: (ready: boolean
             <small>Image-2 / 提示词助手</small>
           </div>
           <p className="muted">Key 只保存在当前浏览器本地；提交任务或使用提示词助手时临时交给本机后端代理请求。</p>
-          <div className={`status-line ${config?.apiKeySet ? 'ready' : 'missing'}`}>当前：{config?.apiKeySet ? `已设置 ${config.apiKeyPreview}` : '未设置'}</div>
+          <div className="settings-key-actions">
+            <div className={`status-line ${config?.apiKeySet ? 'ready' : 'missing'}`}>当前：{config?.apiKeySet ? `已设置 ${config.apiKeyPreview}` : '未设置'}</div>
+            <button type="button" disabled={!config?.apiKeySet} onClick={() => void clearLocalKey('apiKey')}>清除本地 Key</button>
+          </div>
           <input value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="填写 codex-key" />
         </section>
 
@@ -61,7 +75,10 @@ export function SettingsPanel({ onReady, onConfig }: { onReady?: (ready: boolean
             <small>单独 apikey</small>
           </div>
           <p className="muted">请在 NewAPI / CLIProxyAPI 里新建一个“banana”分组的 apikey，然后填到这里；URL 使用后端统一配置的 NewAPI URL。</p>
-          <div className={`status-line ${config?.bananaApiKeySet ? 'ready' : 'missing'}`}>当前：{config?.bananaApiKeySet ? `已设置 ${config.bananaApiKeyPreview}` : '未设置'}</div>
+          <div className="settings-key-actions">
+            <div className={`status-line ${config?.bananaApiKeySet ? 'ready' : 'missing'}`}>当前：{config?.bananaApiKeySet ? `已设置 ${config.bananaApiKeyPreview}` : '未设置'}</div>
+            <button type="button" disabled={!config?.bananaApiKeySet} onClick={() => void clearLocalKey('bananaApiKey')}>清除本地 Key</button>
+          </div>
           <input value={bananaApiKey} onChange={(e) => setBananaApiKey(e.target.value)} placeholder="填写 banana 分组 API Key" />
         </section>
 
