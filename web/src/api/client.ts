@@ -1,15 +1,17 @@
-﻿export const SPACE_TOKEN_KEY = 'image-workbench:space-token:v1'
+export const USER_SCOPE_KEY = 'image-workbench:user-scope:v1'
 
-export function getSpaceToken() {
-  return localStorage.getItem(SPACE_TOKEN_KEY) || ''
+export function getLocalKeyScope() {
+  return localStorage.getItem(USER_SCOPE_KEY) || ''
 }
 
-export function saveSpaceToken(token: string) {
-  localStorage.setItem(SPACE_TOKEN_KEY, token)
+export function saveLocalKeyScope(scope: string) {
+  const normalized = scope.trim().toLowerCase()
+  if (normalized) localStorage.setItem(USER_SCOPE_KEY, normalized)
+  else localStorage.removeItem(USER_SCOPE_KEY)
 }
 
-export function clearSpaceToken() {
-  localStorage.removeItem(SPACE_TOKEN_KEY)
+export function clearLocalKeyScope() {
+  localStorage.removeItem(USER_SCOPE_KEY)
 }
 
 export class ApiError extends Error {
@@ -31,13 +33,12 @@ export class ApiError extends Error {
   }
 }
 
-export async function requestJson<T>(path: string, options: RequestInit = {}, token = getSpaceToken()): Promise<T> {
+export async function requestJson<T>(path: string, options: RequestInit = {}, _legacyToken = ''): Promise<T> {
   const headers = new Headers(options.headers)
-  if (token) headers.set('X-Space-Token', token)
   if (options.body && !(options.body instanceof FormData) && !headers.has('Content-Type')) {
     headers.set('Content-Type', 'application/json')
   }
-  const response = await fetch(path, { ...options, headers, cache: 'no-store' })
+  const response = await fetch(path, { ...options, headers, cache: 'no-store', credentials: 'same-origin' })
   const data = await response.json().catch(() => null) as { message?: string; chinese?: string; code?: string; english?: string } | null
   if (!response.ok) throw new ApiError(response.status, data)
   return data as T

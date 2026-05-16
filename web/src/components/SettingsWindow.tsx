@@ -9,7 +9,7 @@ export function SettingsWindow({ onClose, onConfig }: { onClose: () => void; onC
           <div>
             <p className="eyebrow">Settings</p>
             <h2>设置</h2>
-            <p className="muted">codex-key 和 Banana 分组 API Key 保存在当前浏览器本地，个人默认配置仍随空间保存。</p>
+            <p className="muted">codex-key 和 Banana 分组 API Key 保存在当前浏览器本地，个人默认配置随账号保存。</p>
           </div>
           <button type="button" onClick={onClose}>关闭</button>
         </header>

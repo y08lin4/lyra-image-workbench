@@ -448,14 +448,21 @@ func (s *Service) resolveImageSource(spaceToken string, source Source) (string, 
 		}
 		for _, result := range job.Results {
 			if result.Index == source.Index && result.OK && result.ImageURL != "" {
-				path, mime, err := s.output.ResolveURL(result.ImageURL)
-				return path, mime, result.ImageURL, err
+				path, mime, err := s.resolveTaskResultImage(job, result)
+				return path, mime, publicSourceImageURL(source, result.ImageURL), err
 			}
 		}
 		return "", "", "", errors.New("任务图片不存在")
 	default:
 		return "", "", "", errors.New("图片来源无效")
 	}
+}
+
+func (s *Service) resolveTaskResultImage(job jobs.Job, result jobs.Result) (string, string, error) {
+	if result.OutputDate != "" && result.OutputFileName != "" {
+		return s.output.Resolve(job.SpaceToken, result.OutputDate, result.OutputFileName)
+	}
+	return s.output.ResolveURL(result.ImageURL)
 }
 
 func (s *Service) newRecord(spaceToken string, record Record) (Record, error) {

@@ -1,4 +1,4 @@
-import { getSpaceToken, requestJson } from './client'
+import { requestJson } from './client'
 import type { CreateTaskRequest, Task, TaskEvent } from '../types'
 import { withLocalApiKeyHeaders } from '../lib/localApiKeys'
 
@@ -54,8 +54,8 @@ export async function uploadTaskImageToPixhost(id: string, index: number) {
 
 export async function streamTaskEvents(id: string, onEvent: (event: TaskEvent) => void, signal: AbortSignal) {
   const response = await fetch(`/api/background-tasks/${encodeURIComponent(id)}/events`, {
-    headers: { 'X-Space-Token': getSpaceToken() },
     cache: 'no-store',
+    credentials: 'same-origin',
     signal,
   })
   if (!response.ok || !response.body) throw new Error(`SSE HTTP ${response.status}`)

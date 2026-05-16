@@ -12,11 +12,13 @@ import (
 	"github.com/y08lin4/image-Workbench-Localhost-Version/internal/spaceconfig"
 	"github.com/y08lin4/image-Workbench-Localhost-Version/internal/spaces"
 	"github.com/y08lin4/image-Workbench-Localhost-Version/internal/uploads"
+	"github.com/y08lin4/image-Workbench-Localhost-Version/internal/users"
 )
 
 type Dependencies struct {
 	Config      config.Config
 	AdminAuth   *adminauth.Store
+	Users       *users.Store
 	Settings    *settings.FileStore
 	Spaces      *spaces.FileStore
 	SpaceConfig *spaceconfig.Store
@@ -31,9 +33,9 @@ func NewRouter(deps Dependencies) http.Handler {
 	health := NewHealthHandler(deps.Config)
 	adminAuth := NewAdminAuthHandler(deps.AdminAuth)
 	adminConfig := NewAdminConfigHandler(deps.Settings, deps.AdminAuth)
+	userHandler := NewUserHandler(deps.Users, deps.Spaces)
 	userConfig := NewUserConfigHandler(deps.SpaceConfig)
 	statusMetadata := NewStatusMetadataHandler()
-	spaceHandler := NewSpaceHandler(deps.Spaces)
 	uploadHandler := NewUploadHandler(deps.Uploads)
 	taskHandler := NewTaskHandler(deps.Jobs, deps.Output)
 	promptToolsHandler := NewPromptToolsHandler(deps.PromptTools)
@@ -47,12 +49,13 @@ func NewRouter(deps Dependencies) http.Handler {
 	mux.HandleFunc("DELETE /api/admin/auth/session", adminAuth.Logout)
 	mux.HandleFunc("GET /api/admin/config", adminConfig.Get)
 	mux.HandleFunc("POST /api/admin/config", adminConfig.Update)
+	mux.HandleFunc("POST /api/users/register", userHandler.Register)
+	mux.HandleFunc("POST /api/users/session", userHandler.Login)
+	mux.HandleFunc("GET /api/users/session", userHandler.Current)
+	mux.HandleFunc("DELETE /api/users/session", userHandler.Logout)
 	mux.HandleFunc("GET /api/config", userConfig.Get)
 	mux.HandleFunc("POST /api/config", userConfig.Update)
 	mux.HandleFunc("GET /api/status-metadata", statusMetadata.ServeHTTP)
-	mux.HandleFunc("POST /api/spaces/session", spaceHandler.CreateSession)
-	mux.HandleFunc("GET /api/spaces/session", spaceHandler.CurrentSession)
-	mux.HandleFunc("DELETE /api/spaces/session", spaceHandler.DeleteSession)
 	mux.HandleFunc("POST /api/uploads/reference", uploadHandler.SaveReferenceImages)
 	mux.HandleFunc("GET /api/uploads/reference", uploadHandler.ListReferenceImages)
 	mux.HandleFunc("GET /api/uploads/reference/{id}/image", uploadHandler.ServeReferenceImage)
@@ -82,7 +85,7 @@ func NewRouter(deps Dependencies) http.Handler {
 	mux.HandleFunc("GET /outputs/{space}/{date}/{file}", outputHandler.Serve)
 	mux.HandleFunc("GET /", staticHandler.Serve)
 
-	return withCommonHeaders(mux)
+	return withCommonHeaders(withUserAuth(deps.Users, mux))
 }
 
 func withCommonHeaders(next http.Handler) http.Handler {

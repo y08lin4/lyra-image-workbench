@@ -22,6 +22,7 @@ import (
 	"github.com/y08lin4/image-Workbench-Localhost-Version/internal/spaceconfig"
 	"github.com/y08lin4/image-Workbench-Localhost-Version/internal/spaces"
 	"github.com/y08lin4/image-Workbench-Localhost-Version/internal/uploads"
+	"github.com/y08lin4/image-Workbench-Localhost-Version/internal/users"
 )
 
 func TestConfigAPIDoesNotPersistAPIKeys(t *testing.T) {
@@ -43,6 +44,33 @@ func TestConfigAPIDoesNotPersistAPIKeys(t *testing.T) {
 	}
 }
 
+func TestUserConfigRequiresLogin(t *testing.T) {
+	router := newTestRouter(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/config", nil)
+	res := httptest.NewRecorder()
+	router.ServeHTTP(res, req)
+	if res.Code != http.StatusUnauthorized {
+		t.Fatalf("GET /api/config without login code=%d body=%s", res.Code, res.Body.String())
+	}
+}
+
+func TestUserSessionDoesNotExposeStorageToken(t *testing.T) {
+	router := newTestRouter(t)
+	body, cookies := doJSONWithCookies(t, router, http.MethodPost, "/api/users/register", "", map[string]string{
+		"username": "private01",
+		"password": "R7!Private#Vault$2026",
+	})
+	if userSessionFromCookies(t, cookies) == "" {
+		t.Fatal("session cookie missing")
+	}
+	for _, forbidden := range []string{"storageToken", "tokenPreview", `"token"`} {
+		if strings.Contains(body, forbidden) {
+			t.Fatalf("user session response leaked %s: %s", forbidden, body)
+		}
+	}
+}
+
 func TestConfigAPISavesDefaultCountAndConcurrency(t *testing.T) {
 	router := newTestRouter(t)
 	token := createTestSession(t, router)
@@ -60,6 +88,29 @@ func TestConfigAPISavesDefaultCountAndConcurrency(t *testing.T) {
 	body = doJSON(t, router, http.MethodGet, "/api/config", token, nil)
 	if !strings.Contains(body, `"defaultCount":4`) || !strings.Contains(body, `"defaultConcurrency":3`) || !strings.Contains(body, `"autoUploadPixhost":true`) {
 		t.Fatalf("GET /api/config did not return default settings: %s", body)
+	}
+}
+
+func TestUserLoginReusesAccountStorage(t *testing.T) {
+	router := newTestRouter(t)
+	password := "R7!Blue#Vault$2026"
+	first := createNamedUserSession(t, router, "alice01", password, "")
+
+	body := doJSON(t, router, http.MethodPost, "/api/config", first, map[string]any{"defaultCount": 4, "defaultConcurrency": 3})
+	if !strings.Contains(body, `"defaultCount":4`) || !strings.Contains(body, `"defaultConcurrency":3`) {
+		t.Fatalf("POST /api/config did not save account defaults: %s", body)
+	}
+
+	second := loginTestSession(t, router, "alice01", password)
+	body = doJSON(t, router, http.MethodGet, "/api/config", second, nil)
+	if !strings.Contains(body, `"defaultCount":4`) || !strings.Contains(body, `"defaultConcurrency":3`) {
+		t.Fatalf("same user login did not reuse account storage: %s", body)
+	}
+
+	other := createNamedUserSession(t, router, "bob01", "R7!Green#Vault$2026", "")
+	body = doJSON(t, router, http.MethodGet, "/api/config", other, nil)
+	if strings.Contains(body, `"defaultCount":4`) || strings.Contains(body, `"defaultConcurrency":3`) {
+		t.Fatalf("different user should not see alice settings: %s", body)
 	}
 }
 
@@ -124,7 +175,55 @@ func TestStaticFallbackSkipsAPIPrefixes(t *testing.T) {
 	}
 }
 
+func TestOutputRouteRequiresAuthenticatedOwner(t *testing.T) {
+	env := newTestAPIEnv(t)
+	legacyPassword := "R7!Legacy#Vault$2026"
+	legacy, err := env.Spaces.CreateOrOpenByPassword(legacyPassword)
+	if err != nil {
+		t.Fatalf("CreateOrOpenByPassword() error = %v", err)
+	}
+	saved, err := env.Output.Save(legacy.Token, "img_owner", 0, []byte("owner-image"), "image/png")
+	if err != nil {
+		t.Fatalf("output.Save() error = %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, saved.URL, nil)
+	res := httptest.NewRecorder()
+	env.Router.ServeHTTP(res, req)
+	if res.Code != http.StatusUnauthorized {
+		t.Fatalf("unauthenticated output code=%d body=%s", res.Code, res.Body.String())
+	}
+
+	owner := createNamedUserSession(t, env.Router, "owner01", "R7!Owner#Vault$2026", legacyPassword)
+	req = httptest.NewRequest(http.MethodGet, saved.URL, nil)
+	req.AddCookie(&http.Cookie{Name: userSessionCookie, Value: owner})
+	res = httptest.NewRecorder()
+	env.Router.ServeHTTP(res, req)
+	if res.Code != http.StatusOK || res.Body.String() != "owner-image" {
+		t.Fatalf("owner output code=%d body=%s", res.Code, res.Body.String())
+	}
+
+	intruder := createNamedUserSession(t, env.Router, "intruder01", "R7!Intruder#Vault$2026", "")
+	req = httptest.NewRequest(http.MethodGet, saved.URL, nil)
+	req.AddCookie(&http.Cookie{Name: userSessionCookie, Value: intruder})
+	res = httptest.NewRecorder()
+	env.Router.ServeHTTP(res, req)
+	if res.Code != http.StatusForbidden {
+		t.Fatalf("intruder output code=%d body=%s", res.Code, res.Body.String())
+	}
+}
+
+type testAPIEnv struct {
+	Router http.Handler
+	Spaces *spaces.FileStore
+	Output *output.Store
+}
+
 func newTestRouter(t *testing.T) http.Handler {
+	return newTestAPIEnv(t).Router
+}
+
+func newTestAPIEnv(t *testing.T) testAPIEnv {
 	t.Helper()
 	root := t.TempDir()
 	webDir := filepath.Join(root, "web", "dist")
@@ -149,6 +248,10 @@ func newTestRouter(t *testing.T) http.Handler {
 	if err != nil {
 		t.Fatalf("adminauth.NewStore() error = %v", err)
 	}
+	userStore, err := users.NewStore(cfg.UsersPath())
+	if err != nil {
+		t.Fatalf("users.NewStore() error = %v", err)
+	}
 	spaceStore, err := spaces.NewFileStore(cfg.DataDir)
 	if err != nil {
 		t.Fatalf("spaces.NewFileStore() error = %v", err)
@@ -164,9 +267,10 @@ func newTestRouter(t *testing.T) http.Handler {
 	promptStore := prompttools.NewStore(spaceStore)
 	promptService := prompttools.NewService(promptStore, settingsStore, spaceConfigStore, uploadStore, jobManager, outputStore, llm.NewClient())
 
-	return NewRouter(Dependencies{
+	router := NewRouter(Dependencies{
 		Config:      cfg,
 		AdminAuth:   adminAuthStore,
+		Users:       userStore,
 		Settings:    settingsStore,
 		Spaces:      spaceStore,
 		SpaceConfig: spaceConfigStore,
@@ -175,6 +279,7 @@ func newTestRouter(t *testing.T) http.Handler {
 		Output:      outputStore,
 		PromptTools: promptService,
 	})
+	return testAPIEnv{Router: router, Spaces: spaceStore, Output: outputStore}
 }
 
 func createAdminToken(t *testing.T, router http.Handler) string {
@@ -196,22 +301,46 @@ func createAdminToken(t *testing.T, router http.Handler) string {
 
 func createTestSession(t *testing.T, router http.Handler) string {
 	t.Helper()
-	body := doJSON(t, router, http.MethodPost, "/api/spaces/session", "", map[string]string{"password": "R7!Blue#Vault$2026"})
-	var payload struct {
-		Session struct {
-			Token string `json:"token"`
-		} `json:"session"`
+	return createNamedUserSession(t, router, "testuser01", "R7!Blue#Vault$2026", "")
+}
+
+func createNamedUserSession(t *testing.T, router http.Handler, username string, password string, legacySpacePassword string) string {
+	t.Helper()
+	_, cookies := doJSONWithCookies(t, router, http.MethodPost, "/api/users/register", "", map[string]string{
+		"username":            username,
+		"password":            password,
+		"legacySpacePassword": legacySpacePassword,
+	})
+	return userSessionFromCookies(t, cookies)
+}
+
+func loginTestSession(t *testing.T, router http.Handler, username string, password string) string {
+	t.Helper()
+	_, cookies := doJSONWithCookies(t, router, http.MethodPost, "/api/users/session", "", map[string]string{
+		"username": username,
+		"password": password,
+	})
+	return userSessionFromCookies(t, cookies)
+}
+
+func userSessionFromCookies(t *testing.T, cookies []*http.Cookie) string {
+	t.Helper()
+	for _, cookie := range cookies {
+		if cookie.Name == userSessionCookie && cookie.Value != "" {
+			return cookie.Value
+		}
 	}
-	if err := json.Unmarshal([]byte(body), &payload); err != nil {
-		t.Fatalf("decode session response: %v body=%s", err, body)
-	}
-	if payload.Session.Token == "" {
-		t.Fatalf("session token missing: %s", body)
-	}
-	return payload.Session.Token
+	t.Fatalf("%s cookie missing", userSessionCookie)
+	return ""
 }
 
 func doJSON(t *testing.T, router http.Handler, method string, path string, token string, payload any) string {
+	t.Helper()
+	body, _ := doJSONWithCookies(t, router, method, path, token, payload)
+	return body
+}
+
+func doJSONWithCookies(t *testing.T, router http.Handler, method string, path string, token string, payload any) (string, []*http.Cookie) {
 	t.Helper()
 	var body bytes.Buffer
 	if payload != nil {
@@ -224,14 +353,14 @@ func doJSON(t *testing.T, router http.Handler, method string, path string, token
 		req.Header.Set("Content-Type", "application/json")
 	}
 	if token != "" {
-		req.Header.Set("X-Space-Token", token)
+		req.AddCookie(&http.Cookie{Name: userSessionCookie, Value: token})
 	}
 	res := httptest.NewRecorder()
 	router.ServeHTTP(res, req)
 	if res.Code < 200 || res.Code >= 300 {
 		t.Fatalf("%s %s failed: code=%d body=%s", method, path, res.Code, res.Body.String())
 	}
-	return res.Body.String()
+	return res.Body.String(), res.Result().Cookies()
 }
 
 func doAdminJSON(t *testing.T, router http.Handler, method string, path string, adminToken string, payload any) string {

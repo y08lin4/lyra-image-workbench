@@ -93,7 +93,7 @@ export function TaskGallery({
 
       <div className="gallery-summary">
         <strong>{filteredTasks.length ? `${filteredTasks.length} 个任务` : '暂无匹配任务'}</strong>
-        <span>{runningCount ? `${runningCount} 个任务仍在后台执行` : '后台空闲，结果会保存在本机空间'}</span>
+        <span>{runningCount ? `${runningCount} 个任务仍在后台执行` : '后台空闲，结果会保存在当前账号'}</span>
       </div>
 
       {selectedIds.size ? (

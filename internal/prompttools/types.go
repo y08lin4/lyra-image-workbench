@@ -1,6 +1,11 @@
 package prompttools
 
-import "time"
+import (
+	"fmt"
+	"net/url"
+	"strings"
+	"time"
+)
 
 type Mode string
 
@@ -149,4 +154,37 @@ type InspirationExpandRequest struct {
 	Target        string          `json:"target"`
 	Provider      string          `json:"provider"`
 	Model         string          `json:"model"`
+}
+
+func PublicRecord(record Record) Record {
+	record.SourceImageURL = publicSourceImageURL(record.Source, record.SourceImageURL)
+	return record
+}
+
+func PublicRecords(records []Record) []Record {
+	out := append([]Record{}, records...)
+	for i := range out {
+		out[i] = PublicRecord(out[i])
+	}
+	return out
+}
+
+func PublicSession(session PromptSession) PromptSession {
+	session.SourceImageURL = publicSourceImageURL(session.Source, session.SourceImageURL)
+	return session
+}
+
+func PublicSessions(sessions []PromptSession) []PromptSession {
+	out := append([]PromptSession{}, sessions...)
+	for i := range out {
+		out[i] = PublicSession(out[i])
+	}
+	return out
+}
+
+func publicSourceImageURL(source Source, current string) string {
+	if strings.TrimSpace(source.Type) == "result" && strings.TrimSpace(source.TaskID) != "" {
+		return fmt.Sprintf("/api/background-tasks/%s/images/%d", url.PathEscape(strings.TrimSpace(source.TaskID)), source.Index)
+	}
+	return current
 }

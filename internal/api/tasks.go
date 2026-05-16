@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/y08lin4/image-Workbench-Localhost-Version/internal/events"
@@ -35,7 +34,7 @@ func (h TaskHandler) Create(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "TASK_CREATE_FAILED", err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "job": job})
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "job": jobs.PublicJob(job)})
 }
 
 func (h TaskHandler) List(w http.ResponseWriter, r *http.Request) {
@@ -44,6 +43,9 @@ func (h TaskHandler) List(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeSpaceError(w, err)
 		return
+	}
+	for i := range items {
+		items[i] = jobs.PublicJob(items[i])
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "tasks": items})
 }
@@ -58,7 +60,7 @@ func (h TaskHandler) Get(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "TASK_NOT_FOUND", "任务不存在")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "task": job})
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "task": jobs.PublicJob(job)})
 }
 
 func (h TaskHandler) Retry(w http.ResponseWriter, r *http.Request) {
@@ -67,7 +69,7 @@ func (h TaskHandler) Retry(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "TASK_RETRY_FAILED", err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "job": job})
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "job": jobs.PublicJob(job)})
 }
 
 func (h TaskHandler) Cancel(w http.ResponseWriter, r *http.Request) {
@@ -76,7 +78,7 @@ func (h TaskHandler) Cancel(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "TASK_CANCEL_FAILED", err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "job": job})
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "job": jobs.PublicJob(job)})
 }
 
 func (h TaskHandler) Favorite(w http.ResponseWriter, r *http.Request) {
@@ -93,7 +95,7 @@ func (h TaskHandler) Favorite(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "TASK_FAVORITE_FAILED", err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "job": job})
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "job": jobs.PublicJob(job)})
 }
 
 func (h TaskHandler) Delete(w http.ResponseWriter, r *http.Request) {
@@ -102,7 +104,7 @@ func (h TaskHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "TASK_DELETE_FAILED", err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "job": job})
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "job": jobs.PublicJob(job)})
 }
 
 func (h TaskHandler) UploadPixhost(w http.ResponseWriter, r *http.Request) {
@@ -116,7 +118,7 @@ func (h TaskHandler) UploadPixhost(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "PIXHOST_UPLOAD_FAILED", err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "job": job, "result": result})
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "job": jobs.PublicJob(job), "result": publicResult(job, result)})
 }
 
 func (h TaskHandler) Events(w http.ResponseWriter, r *http.Request) {
@@ -136,7 +138,7 @@ func (h TaskHandler) Events(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Connection", "keep-alive")
 	w.Header().Set("X-Accel-Buffering", "no")
 	flusher, _ := w.(http.Flusher)
-	sendSSE(w, events.Event{Event: "snapshot", Code: "E100", English: "snapshot", Chinese: "任务快照", Data: map[string]any{"job": job}})
+	sendSSE(w, events.Event{Event: "snapshot", Code: "E100", English: "snapshot", Chinese: "任务快照", Data: map[string]any{"job": jobs.PublicJob(job)}})
 	if flusher != nil {
 		flusher.Flush()
 	}
@@ -184,7 +186,7 @@ func (h TaskHandler) Image(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "TASK_IMAGE_NOT_FOUND", "任务图片不存在")
 		return
 	}
-	serveOutputURL(w, r, h.output, job.Results[idx].ImageURL)
+	serveResultImage(w, r, h.output, job, job.Results[idx])
 }
 
 func (h TaskHandler) Stats(w http.ResponseWriter, r *http.Request) {
@@ -197,18 +199,40 @@ func (h TaskHandler) Stats(w http.ResponseWriter, r *http.Request) {
 }
 
 func sendSSE(w http.ResponseWriter, event events.Event) {
+	event.Data = publicEventData(event.Data)
 	payload, _ := json.Marshal(event)
 	fmt.Fprintf(w, "event: %s\n", event.Event)
 	fmt.Fprintf(w, "data: %s\n\n", payload)
 }
 
-func serveOutputURL(w http.ResponseWriter, r *http.Request, store *output.Store, url string) {
-	parts := strings.Split(strings.TrimPrefix(url, "/outputs/"), "/")
-	if len(parts) != 3 {
-		writeError(w, http.StatusNotFound, "OUTPUT_NOT_FOUND", "输出图片不存在")
-		return
+func publicEventData(data any) any {
+	payload, ok := data.(map[string]any)
+	if !ok {
+		return data
 	}
-	path, mime, err := store.Resolve(parts[0], parts[1], parts[2])
+	job, hasJob := payload["job"].(jobs.Job)
+	if !hasJob {
+		return data
+	}
+	next := make(map[string]any, len(payload))
+	for key, value := range payload {
+		next[key] = value
+	}
+	next["job"] = jobs.PublicJob(job)
+	if result, ok := payload["result"].(jobs.Result); ok {
+		next["result"] = publicResult(job, result)
+	}
+	return next
+}
+
+func serveResultImage(w http.ResponseWriter, r *http.Request, store *output.Store, job jobs.Job, result jobs.Result) {
+	var path, mime string
+	var err error
+	if result.OutputDate != "" && result.OutputFileName != "" {
+		path, mime, err = store.Resolve(job.SpaceToken, result.OutputDate, result.OutputFileName)
+	} else {
+		path, mime, err = store.ResolveURL(result.ImageURL)
+	}
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "OUTPUT_PATH_INVALID", err.Error())
 		return
@@ -216,4 +240,8 @@ func serveOutputURL(w http.ResponseWriter, r *http.Request, store *output.Store,
 	w.Header().Set("Content-Type", mime)
 	w.Header().Set("Cache-Control", "private, max-age=86400")
 	http.ServeFile(w, r, path)
+}
+
+func publicResult(job jobs.Job, result jobs.Result) jobs.Result {
+	return jobs.PublicResult(job.ID, result)
 }

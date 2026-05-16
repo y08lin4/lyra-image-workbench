@@ -1,4 +1,4 @@
-import { getSpaceToken } from '../api/client'
+import { getLocalKeyScope } from '../api/client'
 import type { UserConfig } from '../types'
 
 const LOCAL_API_KEYS_STORAGE_KEY = 'image-workbench:local-api-keys:v1'
@@ -19,8 +19,8 @@ type LocalApiKeys = {
 
 type LocalApiKeyStore = Record<string, LocalApiKeys>
 
-export function mergeLocalApiKeys(config: UserConfig, token = getSpaceToken()): UserConfig {
-  const keys = getLocalApiKeys(token)
+export function mergeLocalApiKeys(config: UserConfig, scope = getLocalKeyScope()): UserConfig {
+  const keys = getLocalApiKeys(scope)
   return {
     ...config,
     apiKeySet: Boolean(keys.apiKey),
@@ -30,37 +30,37 @@ export function mergeLocalApiKeys(config: UserConfig, token = getSpaceToken()): 
   }
 }
 
-export function saveLocalApiKeys(update: LocalApiKeyUpdate, token = getSpaceToken()) {
-  const current = getLocalApiKeys(token)
+export function saveLocalApiKeys(update: LocalApiKeyUpdate, scope = getLocalKeyScope()) {
+  const current = getLocalApiKeys(scope)
   const next = { ...current }
   if (update.apiKey !== undefined && update.apiKey.trim()) next.apiKey = update.apiKey.trim()
   if (update.bananaApiKey !== undefined && update.bananaApiKey.trim()) next.bananaApiKey = update.bananaApiKey.trim()
-  writeLocalApiKeys(token, next)
+  writeLocalApiKeys(scope, next)
 }
 
-export function clearLocalApiKeys(update: { apiKey?: boolean; bananaApiKey?: boolean }, token = getSpaceToken()) {
-  const current = getLocalApiKeys(token)
+export function clearLocalApiKeys(update: { apiKey?: boolean; bananaApiKey?: boolean }, scope = getLocalKeyScope()) {
+  const current = getLocalApiKeys(scope)
   const next = { ...current }
   if (update.apiKey) delete next.apiKey
   if (update.bananaApiKey) delete next.bananaApiKey
-  writeLocalApiKeys(token, next)
+  writeLocalApiKeys(scope, next)
 }
 
-export function withLocalApiKeyHeaders(headers?: HeadersInit, token = getSpaceToken()) {
+export function withLocalApiKeyHeaders(headers?: HeadersInit, scope = getLocalKeyScope()) {
   const next = new Headers(headers)
-  const keys = getLocalApiKeys(token)
+  const keys = getLocalApiKeys(scope)
   if (keys.apiKey) next.set(LOCAL_API_KEY_HEADER, keys.apiKey)
   if (keys.bananaApiKey) next.set(LOCAL_BANANA_API_KEY_HEADER, keys.bananaApiKey)
   return next
 }
 
-function getLocalApiKeys(token = getSpaceToken()): LocalApiKeys {
-  return readLocalApiKeyStore()[scopeForToken(token)] || {}
+function getLocalApiKeys(scope = getLocalKeyScope()): LocalApiKeys {
+  return readLocalApiKeyStore()[scopeForUser(scope)] || {}
 }
 
-function writeLocalApiKeys(token: string, keys: LocalApiKeys) {
+function writeLocalApiKeys(scopeValue: string, keys: LocalApiKeys) {
   const store = readLocalApiKeyStore()
-  const scope = scopeForToken(token)
+  const scope = scopeForUser(scopeValue)
   const next = {
     apiKey: keys.apiKey?.trim() || undefined,
     bananaApiKey: keys.bananaApiKey?.trim() || undefined,
@@ -88,8 +88,8 @@ function readLocalApiKeyStore(): LocalApiKeyStore {
   }
 }
 
-function scopeForToken(token: string) {
-  return token || DEFAULT_SCOPE
+function scopeForUser(scope: string) {
+  return scope.trim().toLowerCase() || DEFAULT_SCOPE
 }
 
 function maskSecret(value: string) {

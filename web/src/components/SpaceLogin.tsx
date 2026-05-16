@@ -1,20 +1,32 @@
 import { type FormEvent, useState } from 'react'
-import { openSpace } from '../api/spaces'
-import type { SpaceSession } from '../types'
+import { loginUser, registerUser } from '../api/users'
+import type { UserSession } from '../types'
 import { ThemeToggle, type ThemeMode } from './ThemeToggle'
 
-export function SpaceLogin({ onSession, theme, onToggleTheme }: { onSession: (session: SpaceSession) => void; theme: ThemeMode; onToggleTheme: () => void }) {
+type Mode = 'login' | 'register'
+
+export function SpaceLogin({ onSession, theme, onToggleTheme }: { onSession: (session: UserSession) => void; theme: ThemeMode; onToggleTheme: () => void }) {
+  const [mode, setMode] = useState<Mode>('login')
+  const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
+  const [legacySpacePassword, setLegacySpacePassword] = useState('')
+  const [importLegacy, setImportLegacy] = useState(false)
   const [error, setError] = useState('')
+  const isRegister = mode === 'register'
+
   async function submit(event: FormEvent) {
     event.preventDefault()
     setError('')
     try {
-      onSession(await openSpace(password))
+      const session = isRegister
+        ? await registerUser(username, password, importLegacy ? legacySpacePassword : '')
+        : await loginUser(username, password)
+      onSession(session)
     } catch (err) {
-      setError(err instanceof Error ? err.message : '进入空间失败')
+      setError(err instanceof Error ? err.message : (isRegister ? '注册失败' : '登录失败'))
     }
   }
+
   return (
     <main className="center-shell">
       <div className="center-theme-action">
@@ -24,26 +36,36 @@ export function SpaceLogin({ onSession, theme, onToggleTheme }: { onSession: (se
         <div className="brand login-brand">
           <div className="brand-mark">Ly</div>
           <div>
-            <p className="eyebrow">个人空间</p>
+            <p className="eyebrow">用户账号</p>
             <h1>LyAI生图工作台</h1>
           </div>
         </div>
-        <h2>进入个人空间</h2>
-        <p className="muted">请输入你自己设置的空间密码后进入工作台。</p>
+        <h2>{isRegister ? '注册账号' : '登录账号'}</h2>
+        <p className="muted">同一个账号在不同设备登录后，会同步任务历史、提示词历史、参考图和输出图。</p>
         <div className="identity-help">
-          <strong>空间密码说明</strong>
+          <strong>Key 与历史说明</strong>
           <ul>
-            <li>这个密码由你自行设置，不需要注册，也没有默认密码。</li>
-            <li>建议使用复杂密码，至少 10 位，最好包含大小写字母、数字和符号。</li>
-            <li>在这台电脑输入完全相同的密码，会进入同一个本机任务空间。</li>
-            <li>输入不同密码，会进入不同空间，任务互相隔离。</li>
-            <li>浏览器和后端只保存不可逆算法处理后的结果，不保存明文密码。</li>
-            <li>请自己保存好这个密码；忘记后无法找回原空间。</li>
+            <li>用户名和密码用于进入同一个服务器账号空间。</li>
+            <li>历史记录保存在服务器账号空间中，多设备登录可同步查看。</li>
+            <li>API Key 只保存在当前浏览器本地，不会随账号同步。</li>
+            <li>新设备登录后需要在设置页重新填写 Key 才能生成或重试任务。</li>
           </ul>
         </div>
-        <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="自行设置复杂密码，至少 10 位" autoFocus />
-        <small className="muted">只有输入完全相同的空间密码，才会进入同一个本机任务空间。</small>
-        <button className="primary" type="submit">进入这个空间</button>
+        <input value={username} onChange={(e) => setUsername(e.target.value)} placeholder="用户名，小写字母/数字/._-" autoFocus />
+        <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="复杂密码，至少 10 位" />
+        {isRegister ? (
+          <label className="check-row">
+            <input type="checkbox" checked={importLegacy} onChange={(e) => setImportLegacy(e.target.checked)} />
+            <span>导入旧空间历史</span>
+          </label>
+        ) : null}
+        {isRegister && importLegacy ? (
+          <input type="password" value={legacySpacePassword} onChange={(e) => setLegacySpacePassword(e.target.value)} placeholder="旧空间密码" />
+        ) : null}
+        <button className="primary" type="submit">{isRegister ? '注册并进入' : '登录'}</button>
+        <button type="button" onClick={() => { setMode(isRegister ? 'login' : 'register'); setError('') }}>
+          {isRegister ? '已有账号，去登录' : '没有账号，去注册'}
+        </button>
         {error ? <div className="error">{error}</div> : null}
       </form>
     </main>

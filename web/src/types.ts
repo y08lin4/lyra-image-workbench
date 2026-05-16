@@ -2,11 +2,14 @@
 export type ModelProvider = 'image-2' | 'banana'
 export type TaskStatus = 'queued' | 'running' | 'succeeded' | 'partial_failed' | 'failed' | 'cancelled' | 'interrupted'
 
-export interface SpaceSession {
-  space: { id: string; displayName: string; createdAt: string; lastOpenedAt: string }
-  token: string
-  tokenPreview: string
-  created: boolean
+export interface UserSession {
+  user: {
+    username: string
+    displayName: string
+    createdAt: string
+    lastLoginAt?: string
+  }
+  expiresAt: string
 }
 
 export interface UserConfig {

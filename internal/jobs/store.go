@@ -175,6 +175,9 @@ func (s *Store) loadLocked(spaceToken string) ([]Job, error) {
 	if err := json.Unmarshal(data, &payload); err != nil {
 		return nil, fmt.Errorf("读取任务状态失败：%w", err)
 	}
+	for i := range payload.Jobs {
+		payload.Jobs[i].SpaceToken = spaceToken
+	}
 	return payload.Jobs, nil
 }
 

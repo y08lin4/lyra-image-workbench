@@ -228,7 +228,7 @@ func (m *Manager) UploadResultToPixhost(ctx context.Context, spaceToken string, 
 	if current.RemoteURL != "" {
 		return job, current, nil
 	}
-	path, mime, err := m.output.ResolveURL(current.ImageURL)
+	path, mime, err := m.resolveResultOutput(job, current)
 	if err != nil {
 		return Job{}, Result{}, err
 	}
@@ -576,7 +576,9 @@ func (m *Manager) generateOne(ctx context.Context, spaceToken string, jobID stri
 		"bytes":    saved.Bytes,
 	})
 	result := withElapsed(NewResult(index, StatusSucceeded, ""), started)
-	result.ImageURL = saved.URL
+	result.ImageURL = fmt.Sprintf("/api/background-tasks/%s/images/%d", jobID, index)
+	result.OutputDate = saved.Date
+	result.OutputFileName = saved.FileName
 	result.Mime = saved.Mime
 	result.Bytes = saved.Bytes
 	result.RevisedPrompt = image.RevisedPrompt
@@ -592,6 +594,13 @@ func (m *Manager) generateOne(ctx context.Context, spaceToken string, jobID stri
 		}
 	}
 	return result
+}
+
+func (m *Manager) resolveResultOutput(job Job, result Result) (string, string, error) {
+	if result.OutputDate != "" && result.OutputFileName != "" {
+		return m.output.Resolve(job.SpaceToken, result.OutputDate, result.OutputFileName)
+	}
+	return m.output.ResolveURL(result.ImageURL)
 }
 
 func upsertResult(job *Job, result Result) {

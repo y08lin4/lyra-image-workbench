@@ -90,6 +90,10 @@ func (c Config) AdminAuthPath() string {
 	return filepath.Join(c.DataDir, "admin.auth.json")
 }
 
+func (c Config) UsersPath() string {
+	return filepath.Join(c.DataDir, "users.json")
+}
+
 func getenv(key string, fallback string) string {
 	value := os.Getenv(key)
 	if value == "" {

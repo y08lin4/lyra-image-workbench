@@ -19,6 +19,7 @@ import (
 	"github.com/y08lin4/image-Workbench-Localhost-Version/internal/spaceconfig"
 	"github.com/y08lin4/image-Workbench-Localhost-Version/internal/spaces"
 	"github.com/y08lin4/image-Workbench-Localhost-Version/internal/uploads"
+	"github.com/y08lin4/image-Workbench-Localhost-Version/internal/users"
 )
 
 func main() {
@@ -30,6 +31,10 @@ func main() {
 	adminAuthStore, err := adminauth.NewStore(cfg.AdminAuthPath())
 	if err != nil {
 		log.Fatalf("加载 Admin 鉴权配置失败：%v", err)
+	}
+	userStore, err := users.NewStore(cfg.UsersPath())
+	if err != nil {
+		log.Fatalf("加载用户配置失败：%v", err)
 	}
 	spaceStore, err := spaces.NewFileStore(cfg.DataDir)
 	if err != nil {
@@ -53,6 +58,7 @@ func main() {
 	router := api.NewRouter(api.Dependencies{
 		Config:      cfg,
 		AdminAuth:   adminAuthStore,
+		Users:       userStore,
 		Settings:    settingsStore,
 		Spaces:      spaceStore,
 		SpaceConfig: spaceConfigStore,

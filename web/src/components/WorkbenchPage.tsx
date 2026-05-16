@@ -1,10 +1,9 @@
 import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { cancelTask, createTask, deleteTask, listTasks, retryTask, setTaskFavorite, uploadTaskImageToPixhost } from '../api/tasks'
-import { clearSpaceToken, getSpaceToken } from '../api/client'
-import { getCurrentSpace, leaveSpace } from '../api/spaces'
+import { getCurrentUser, logoutUser } from '../api/users'
 import { deleteReferenceUpload, listReferenceUploads, uploadReferenceImages } from '../api/uploads'
 import { getUserConfig } from '../api/config'
-import type { CreateTaskRequest, Mode, ModelProvider, ReferenceUpload, SpaceSession, Task, TaskEvent, UserConfig } from '../types'
+import type { CreateTaskRequest, Mode, ModelProvider, ReferenceUpload, Task, TaskEvent, UserConfig, UserSession } from '../types'
 import { SpaceLogin } from './SpaceLogin'
 import { GenerationPanel } from './GenerationPanel'
 import { SettingsPanel } from './SettingsPanel'
@@ -36,7 +35,7 @@ const workflowTabs: WorkbenchTabItem[] = [
 ]
 
 export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onToggleTheme: () => void }) {
-  const [session, setSession] = useState<SpaceSession | null>(null)
+  const [session, setSession] = useState<UserSession | null>(null)
   const [spaceReady, setSpaceReady] = useState(false)
   const [activeTab, setActiveTab] = useState<WorkbenchTab>('generate')
   const [keyReady, setKeyReady] = useState(false)
@@ -158,9 +157,7 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
   }, [])
 
   useEffect(() => {
-    const token = getSpaceToken()
-    if (!token) return
-    void getCurrentSpace(token).then((next) => { setSession(next); setSpaceReady(true) }).catch(() => { clearSpaceToken(); setSpaceReady(false) })
+    void getCurrentUser().then((next) => { setSession(next); setSpaceReady(true) }).catch(() => { setSpaceReady(false) })
   }, [])
 
   useEffect(() => {
@@ -482,9 +479,14 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
   }
 
   async function logout() {
-    await leaveSpace()
+    await logoutUser()
     setSession(null)
     setSpaceReady(false)
+    setTasks([])
+    setUploads([])
+    setActiveId(null)
+    setDetailId(null)
+    setSelectedIds(new Set())
   }
 
   if (!session) return <SpaceLogin theme={theme} onToggleTheme={onToggleTheme} onSession={(next) => { setSession(next); setSpaceReady(true) }} />
@@ -496,7 +498,7 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
           <div className="brand-mark">Ly</div>
           <div>
             <h1>LyAI生图工作台</h1>
-            <p>{session.space.displayName} · {session.tokenPreview}</p>
+            <p>{session.user.displayName} · {session.user.username}</p>
           </div>
         </div>
         <div className="top-status" aria-label="当前状态">
@@ -506,7 +508,7 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
         </div>
         <nav className="top-actions">
           <ThemeToggle theme={theme} onToggle={onToggleTheme} />
-          <button onClick={logout}>退出空间</button>
+          <button onClick={logout}>退出登录</button>
         </nav>
       </header>
 
@@ -622,7 +624,7 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
 
         {activeTab === 'settings' ? (
           <section className="workflow-page settings-page-inline">
-            <PageHeader eyebrow="Settings" title="设置" description="Key 保存在当前浏览器本地；默认数量、默认并发和图床设置随空间保存。" />
+            <PageHeader eyebrow="Settings" title="设置" description="Key 保存在当前浏览器本地；默认数量、默认并发和图床设置随账号保存。" />
             <div className="settings-inline-grid settings-only-grid">
               <SettingsPanel onConfig={applyUserConfig} />
             </div>

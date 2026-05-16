@@ -46,7 +46,7 @@ type Meta struct {
 
 type Job struct {
 	ID           string     `json:"id"`
-	SpaceToken   string     `json:"spaceToken"`
+	SpaceToken   string     `json:"-"`
 	Provider     string     `json:"provider"`
 	Model        string     `json:"model"`
 	Mode         Mode       `json:"mode"`
@@ -93,6 +93,8 @@ type Result struct {
 	StatusText     string `json:"statusText"`
 	StatusCode     string `json:"statusCode"`
 	ImageURL       string `json:"imageUrl,omitempty"`
+	OutputDate     string `json:"outputDate,omitempty"`
+	OutputFileName string `json:"outputFileName,omitempty"`
 	RemoteURL      string `json:"remoteUrl,omitempty"`
 	RemoteThumbURL string `json:"remoteThumbUrl,omitempty"`
 	UploadError    string `json:"uploadError,omitempty"`
@@ -344,5 +346,23 @@ func (j Job) ElapsedMs() int64 {
 }
 
 func eventPayload(job Job) map[string]any {
-	return map[string]any{"job": job, "elapsedMs": job.ElapsedMs(), "label": fmt.Sprintf("%s / %s / %s", job.StageText, job.Stage, job.StageCode)}
+	public := PublicJob(job)
+	return map[string]any{"job": public, "elapsedMs": public.ElapsedMs(), "label": fmt.Sprintf("%s / %s / %s", public.StageText, public.Stage, public.StageCode)}
+}
+
+func PublicJob(job Job) Job {
+	job.SpaceToken = ""
+	for i := range job.Results {
+		job.Results[i] = PublicResult(job.ID, job.Results[i])
+	}
+	return job
+}
+
+func PublicResult(jobID string, result Result) Result {
+	if result.OK {
+		result.ImageURL = fmt.Sprintf("/api/background-tasks/%s/images/%d", jobID, result.Index)
+	}
+	result.OutputDate = ""
+	result.OutputFileName = ""
+	return result
 }

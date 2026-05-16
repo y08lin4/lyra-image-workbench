@@ -30,7 +30,7 @@ func (h PromptToolsHandler) TextToPrompt(w http.ResponseWriter, r *http.Request)
 		writePromptToolError(w, "text", err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "record": record})
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "record": prompttools.PublicRecord(record)})
 }
 
 func (h PromptToolsHandler) ImageToPrompt(w http.ResponseWriter, r *http.Request) {
@@ -46,7 +46,7 @@ func (h PromptToolsHandler) ImageToPrompt(w http.ResponseWriter, r *http.Request
 		writePromptToolError(w, "image", err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "record": record})
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "record": prompttools.PublicRecord(record)})
 }
 
 func decodePromptPayload[T any](w http.ResponseWriter, r *http.Request) (T, bool) {
@@ -133,7 +133,7 @@ func (h PromptToolsHandler) CreateSession(w http.ResponseWriter, r *http.Request
 		writePromptToolError(w, "session", err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "session": session})
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "session": prompttools.PublicSession(session)})
 }
 
 func (h PromptToolsHandler) Sessions(w http.ResponseWriter, r *http.Request) {
@@ -142,7 +142,7 @@ func (h PromptToolsHandler) Sessions(w http.ResponseWriter, r *http.Request) {
 		writeSpaceError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "sessions": sessions})
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "sessions": prompttools.PublicSessions(sessions)})
 }
 
 func (h PromptToolsHandler) Session(w http.ResponseWriter, r *http.Request) {
@@ -155,7 +155,7 @@ func (h PromptToolsHandler) Session(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "P_SESSION_NOT_FOUND", "提示词会话不存在")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "session": session})
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "session": prompttools.PublicSession(session)})
 }
 
 func (h PromptToolsHandler) RefineSession(w http.ResponseWriter, r *http.Request) {
@@ -169,7 +169,7 @@ func (h PromptToolsHandler) RefineSession(w http.ResponseWriter, r *http.Request
 		writePromptToolError(w, "refine", err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "session": session})
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "session": prompttools.PublicSession(session)})
 }
 
 func (h PromptToolsHandler) DeleteSession(w http.ResponseWriter, r *http.Request) {
@@ -182,7 +182,7 @@ func (h PromptToolsHandler) DeleteSession(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusNotFound, "P_SESSION_NOT_FOUND", "提示词会话不存在")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "session": session})
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "session": prompttools.PublicSession(session)})
 }
 
 func (h PromptToolsHandler) InspirationIdeas(w http.ResponseWriter, r *http.Request) {
@@ -210,7 +210,7 @@ func (h PromptToolsHandler) InspirationExpand(w http.ResponseWriter, r *http.Req
 		writePromptToolError(w, "inspiration", err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "session": session})
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "session": prompttools.PublicSession(session)})
 }
 
 func (h PromptToolsHandler) History(w http.ResponseWriter, r *http.Request) {
@@ -219,7 +219,7 @@ func (h PromptToolsHandler) History(w http.ResponseWriter, r *http.Request) {
 		writeSpaceError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "records": records})
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "records": prompttools.PublicRecords(records)})
 }
 
 func (h PromptToolsHandler) Delete(w http.ResponseWriter, r *http.Request) {
@@ -232,5 +232,5 @@ func (h PromptToolsHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "PROMPT_RECORD_NOT_FOUND", "提示词记录不存在")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "record": record})
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "record": prompttools.PublicRecord(record)})
 }
