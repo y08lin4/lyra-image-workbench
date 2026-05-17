@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { FIXED_RATIOS, getImageSize, getResolutionLabel, RESOLUTION_TIERS } from '../lib/ratios'
+import { getImageSize, getResolutionLabel, RATIOS, RESOLUTION_TIERS } from '../lib/ratios'
 
 type Props = {
   ratio: string
@@ -9,39 +9,29 @@ type Props = {
   onResolutionChange: (value: string) => void
 }
 
-const RESOLUTION_OPTIONS = RESOLUTION_TIERS.filter((item) => item !== 'auto')
-
 export function ImageSpecPicker({ ratio, resolution, onRatioChange, onResolutionChange }: Props) {
   const [open, setOpen] = useState(false)
-  const [mode, setMode] = useState<'auto' | 'ratio'>(() => ratio === 'auto' ? 'auto' : 'ratio')
-  const [draftRatio, setDraftRatio] = useState(() => ratio === 'auto' ? '1:1' : ratio)
-  const [draftResolution, setDraftResolution] = useState(() => resolution === 'auto' ? 'standard' : resolution)
+  const [draftRatio, setDraftRatio] = useState(() => ratio || 'auto')
+  const [draftResolution, setDraftResolution] = useState(() => resolution || 'auto')
 
   const currentLabel = useMemo(() => {
-    if (ratio === 'auto') return '自动尺寸'
-    const tier = resolution === 'auto' ? 'standard' : resolution
-    return `${resolutionTitle(tier)} · ${ratio} · ${getImageSize(ratio, tier)}`
+    return specLabel(ratio || 'auto', resolution || 'auto')
   }, [ratio, resolution])
 
   function openDialog() {
-    setMode(ratio === 'auto' ? 'auto' : 'ratio')
-    setDraftRatio(ratio === 'auto' ? '1:1' : ratio)
-    setDraftResolution(resolution === 'auto' ? 'standard' : resolution)
+    setDraftRatio(ratio || 'auto')
+    setDraftResolution(resolution || 'auto')
     setOpen(true)
   }
 
   function apply() {
-    if (mode === 'auto') {
-      onResolutionChange('auto')
-      onRatioChange('auto')
-    } else {
-      onResolutionChange(draftResolution)
-      onRatioChange(draftRatio)
-    }
+    onResolutionChange(draftResolution)
+    onRatioChange(draftRatio)
     setOpen(false)
   }
 
-  const previewSize = mode === 'auto' ? 'auto' : getImageSize(draftRatio, draftResolution)
+  const previewSize = previewSizeLabel(draftRatio, draftResolution)
+  const previewNote = previewSizeNote(draftRatio, draftResolution)
   const modal = open ? (
     <div className="size-modal-mask" onMouseDown={(event) => event.target === event.currentTarget && setOpen(false)}>
       <section className="size-modal image-spec-modal" role="dialog" aria-modal="true" aria-label="设置图像尺寸">
@@ -53,57 +43,42 @@ export function ImageSpecPicker({ ratio, resolution, onRatioChange, onResolution
           <button type="button" onClick={() => setOpen(false)} aria-label="关闭尺寸设置">×</button>
         </header>
 
-        <div className="size-tabs" role="tablist" aria-label="尺寸模式">
-          <button type="button" className={mode === 'auto' ? 'active' : ''} onClick={() => setMode('auto')}>自动</button>
-          <button type="button" className={mode === 'ratio' ? 'active' : ''} onClick={() => setMode('ratio')}>按比例</button>
-        </div>
-
-        {mode === 'auto' ? (
-          <div className="image-ratio-grid image-ratio-grid-auto">
-            <button type="button" className="image-ratio-card active">
-              <span className="image-ratio-preview auto-preview">
-                <i>AUTO</i>
-              </span>
-              <span className="image-ratio-text">
-                <strong>自动尺寸</strong>
-                <span>不传具体 size</span>
-                <small>由模型或上游自动决定</small>
-              </span>
-            </button>
-          </div>
-        ) : (
+        <div className="size-modal-body">
           <div className="size-option-groups">
             <section>
-              <span>基准分辨率</span>
-              <div className="size-choice-grid three">
-                {RESOLUTION_OPTIONS.map((item) => (
+              <span>图像比例</span>
+              <div className="image-ratio-grid">
+                {RATIOS.map((item) => (
+                  <button key={item} type="button" className={`image-ratio-card ${draftRatio === item ? 'active' : ''}`} onClick={() => setDraftRatio(item)}>
+                    <span className={`image-ratio-preview ${item === 'auto' ? 'auto-preview' : ''}`} style={ratioPreviewStyle(item)}>
+                      {item === 'auto' ? <i>AUTO</i> : null}
+                    </span>
+                    <span className="image-ratio-text">
+                      <strong>{ratioTitle(item)}</strong>
+                      <span>{ratioHint(item)}</span>
+                      <small>{ratioSmall(item, draftResolution)}</small>
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </section>
+            <section>
+              <span>分辨率</span>
+              <div className="size-choice-grid four">
+                {RESOLUTION_TIERS.map((item) => (
                   <button key={item} type="button" className={draftResolution === item ? 'active' : ''} onClick={() => setDraftResolution(item)}>
                     {resolutionTitle(item)}
                   </button>
                 ))}
               </div>
             </section>
-            <section>
-              <span>图像比例</span>
-              <div className="image-ratio-grid">
-                {FIXED_RATIOS.map((item) => (
-                  <button key={item} type="button" className={`image-ratio-card ${draftRatio === item ? 'active' : ''}`} onClick={() => setDraftRatio(item)}>
-                    <span className="image-ratio-preview" style={ratioPreviewStyle(item)} />
-                    <span className="image-ratio-text">
-                      <strong>{item}</strong>
-                      <span>{ratioHint(item)}</span>
-                      <small>{getImageSize(item, draftResolution)}</small>
-                    </span>
-                  </button>
-                ))}
-              </div>
-            </section>
           </div>
-        )}
 
-        <div className="size-preview">
-          <span>将使用</span>
-          <strong>{mode === 'auto' ? 'auto' : previewSize}</strong>
+          <div className="size-preview">
+            <span>将使用</span>
+            <strong>{previewSize}</strong>
+            <small>{previewNote}</small>
+          </div>
         </div>
 
         <footer>
@@ -129,16 +104,23 @@ export function ImageSpecPicker({ ratio, resolution, onRatioChange, onResolution
 }
 
 function resolutionTitle(value: string) {
+  if (value === 'auto') return '自动'
   if (value === 'standard') return '标准 / 1K'
   return getResolutionLabel(value)
 }
 
 function ratioPreviewStyle(ratio: string) {
+  if (ratio === 'auto') return undefined
   const [w, h] = ratio.split(':').map(Number)
   return { aspectRatio: `${w} / ${h}` }
 }
 
+function ratioTitle(ratio: string) {
+  return ratio === 'auto' ? '自动比例' : ratio
+}
+
 function ratioHint(ratio: string) {
+  if (ratio === 'auto') return '不固定画幅'
   const labels: Record<string, string> = {
     '1:1': '方图',
     '2:3': '竖版海报',
@@ -149,4 +131,30 @@ function ratioHint(ratio: string) {
     '16:9': '宽屏横图',
   }
   return labels[ratio] || '固定比例'
+}
+
+function ratioSmall(ratio: string, resolution: string) {
+  if (ratio === 'auto') return '由模型或上游决定'
+  if (resolution === 'auto') return `按标准 ${getImageSize(ratio, resolution)}`
+  return getImageSize(ratio, resolution)
+}
+
+function specLabel(ratio: string, resolution: string) {
+  if (ratio === 'auto' && resolution === 'auto') return '自动比例 · 自动分辨率 · 自动尺寸'
+  if (ratio === 'auto') return `${resolutionTitle(resolution)} · 自动比例 · 自动尺寸`
+  if (resolution === 'auto') return `自动分辨率 · ${ratio} · 标准 ${getImageSize(ratio, resolution)}`
+  return `${resolutionTitle(resolution)} · ${ratio} · ${getImageSize(ratio, resolution)}`
+}
+
+function previewSizeLabel(ratio: string, resolution: string) {
+  if (ratio === 'auto') return '自动尺寸'
+  if (resolution === 'auto') return `标准 ${getImageSize(ratio, resolution)}`
+  return getImageSize(ratio, resolution)
+}
+
+function previewSizeNote(ratio: string, resolution: string) {
+  if (ratio === 'auto' && resolution === 'auto') return '不传具体 size，由模型或上游自动决定'
+  if (ratio === 'auto') return `分辨率记录为${resolutionTitle(resolution)}，但比例自动时不传具体 size`
+  if (resolution === 'auto') return '分辨率自动时沿用当前后端逻辑，按标准尺寸提交'
+  return `${resolutionTitle(resolution)} + ${ratio}`
 }
