@@ -1,4 +1,5 @@
 import { type FormEvent, useEffect, useState } from 'react'
+import { QRCodeSVG } from 'qrcode.react'
 import { formatError } from '../api/client'
 import { getUserConfig, saveUserConfig, type SaveUserConfigPayload } from '../api/config'
 import { disableTwoFactor, enableTwoFactor, getCurrentUser, setupTwoFactor, type TwoFactorSetup } from '../api/users'
@@ -158,11 +159,17 @@ export function SettingsPanel({ onReady, onConfig }: { onReady?: (ready: boolean
           </div>
           {twoFactorSetup ? (
             <div className="two-factor-setup">
-              <span>手动录入密钥</span>
-              <code>{twoFactorSetup.secret}</code>
-              <a href={twoFactorSetup.otpauthUrl}>打开验证器链接</a>
-              <input inputMode="numeric" value={twoFactorCode} onChange={(e) => setTwoFactorCode(e.target.value)} placeholder="输入 6 位验证码" />
-              <button type="button" className="primary" onClick={() => void confirmTwoFactor()}>验证并开启</button>
+              <div className="two-factor-qr">
+                <QRCodeSVG value={twoFactorSetup.otpauthUrl} size={168} marginSize={2} level="M" title="2FA 二维码" />
+                <span>扫码添加到验证器</span>
+              </div>
+              <div className="two-factor-manual">
+                <span>手动录入密钥</span>
+                <code>{twoFactorSetup.secret}</code>
+                <a href={twoFactorSetup.otpauthUrl}>打开验证器链接</a>
+                <input inputMode="numeric" value={twoFactorCode} onChange={(e) => setTwoFactorCode(e.target.value)} placeholder="输入 6 位验证码" />
+                <button type="button" className="primary" onClick={() => void confirmTwoFactor()}>验证并开启</button>
+              </div>
             </div>
           ) : twoFactorEnabled ? (
             <div className="two-factor-setup compact">

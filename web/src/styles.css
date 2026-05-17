@@ -3801,6 +3801,8 @@ button:not(.primary) { background: var(--surface-soft); color: #1e3a8a; border: 
 }
 .two-factor-setup {
   display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
   gap: 10px;
   border: 1px dashed var(--border);
   border-radius: 12px;
@@ -3810,7 +3812,25 @@ button:not(.primary) { background: var(--surface-soft); color: #1e3a8a; border: 
 .two-factor-setup.compact {
   grid-template-columns: minmax(0, 1fr) auto;
 }
-.two-factor-setup span {
+.two-factor-qr,
+.two-factor-manual {
+  display: grid;
+  gap: 10px;
+}
+.two-factor-qr {
+  justify-items: center;
+  align-self: stretch;
+  border-radius: 12px;
+  background: #fff;
+  padding: 12px;
+}
+.two-factor-qr svg {
+  display: block;
+  width: min(168px, 100%);
+  height: auto;
+}
+.two-factor-setup span,
+.two-factor-qr span {
   color: var(--muted);
   font-size: 12px;
   font-weight: 900;
@@ -3827,6 +3847,14 @@ button:not(.primary) { background: var(--surface-soft); color: #1e3a8a; border: 
 .two-factor-setup a {
   color: var(--primary-2);
   font-weight: 800;
+}
+@media (max-width: 640px) {
+  .two-factor-setup {
+    grid-template-columns: 1fr;
+  }
+  .two-factor-setup.compact {
+    grid-template-columns: 1fr;
+  }
 }
 .cloud-warning-mask {
   position: fixed;
