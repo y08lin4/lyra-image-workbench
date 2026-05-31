@@ -2231,23 +2231,6 @@ button:not(.primary) { background: var(--surface-soft); color: #1e3a8a; border: 
 .upload-title-row {
   margin-bottom: 6px;
 }
-.merge-direction-box {
-  display: grid;
-  gap: 3px;
-  border: 1px solid #dbeafe;
-  border-radius: 12px;
-  background: #f8fbff;
-  padding: 8px 10px;
-}
-.merge-direction-box strong {
-  color: #1e3a8a;
-  font-size: 12px;
-}
-.merge-direction-box span {
-  color: var(--muted);
-  font-size: 11px;
-  line-height: 1.45;
-}
 .reference-grid {
   max-height: 132px;
   display: grid;
@@ -2263,10 +2246,6 @@ button:not(.primary) { background: var(--surface-soft); color: #1e3a8a; border: 
   border-radius: 12px;
   background: #ffffff;
   padding: 7px;
-}
-.reference-card.primary-ref {
-  border-color: #93c5fd;
-  background: #f8fbff;
 }
 .reference-thumb {
   width: 54px;
@@ -3397,10 +3376,6 @@ button:not(.primary) { background: var(--surface-soft); color: #1e3a8a; border: 
 .reference-step .upload-title-row {
   display: none;
 }
-.reference-step .merge-direction-box {
-  border-style: solid;
-  background: #f8fafc;
-}
 .execute-grid {
   display: grid;
   grid-template-columns: 140px 140px minmax(220px, 1fr) 148px;
@@ -4445,7 +4420,6 @@ button:not(.primary) { background: var(--surface-soft); color: #1e3a8a; border: 
 :root[data-theme='dark'] .queue-thumb,
 :root[data-theme='dark'] .size-preview,
 :root[data-theme='dark'] .result-page .result-prompt p,
-:root[data-theme='dark'] .merge-direction-box,
 :root[data-theme='dark'] .identity-help {
   background: #0b1220 !important;
   border-color: var(--border) !important;
@@ -4962,7 +4936,6 @@ button:not(.primary) { background: var(--surface-soft); color: #1e3a8a; border: 
   color: #9a3412 !important;
 }
 
-:root[data-theme='light'] .reference-step .merge-direction-box,
 :root[data-theme='light'] .result-image-frame,
 :root[data-theme='light'] .result-page .result-prompt p,
 :root[data-theme='light'] .result-page .result-revised-prompt p,
@@ -4977,8 +4950,7 @@ button:not(.primary) { background: var(--surface-soft); color: #1e3a8a; border: 
 :root[data-theme='light'] .timeline-item.active,
 :root[data-theme='light'] .queue-item.active,
 :root[data-theme='light'] .queue-item.selected,
-:root[data-theme='light'] .gallery-card.active,
-:root[data-theme='light'] .reference-card.primary-ref {
+:root[data-theme='light'] .gallery-card.active {
   background: #eef2ff !important;
   border-color: #c7d2fe !important;
 }

@@ -48,7 +48,6 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set())
   const [uploads, setUploads] = useState<ReferenceUpload[]>([])
-  const [primaryUploadId, setPrimaryUploadId] = useState('')
   const [mode, setMode] = useState<Mode>('text-to-image')
   const [provider, setProvider] = useState<ModelProvider>('image-2')
   const [bananaModel, setBananaModel] = useState(DEFAULT_BANANA_MODEL)
@@ -184,16 +183,6 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
   }, [tasks])
 
   useEffect(() => {
-    if (!uploads.length) {
-      setPrimaryUploadId('')
-      return
-    }
-    if (!primaryUploadId || !uploads.some((item) => item.id === primaryUploadId)) {
-      setPrimaryUploadId(uploads[0].id)
-    }
-  }, [uploads, primaryUploadId])
-
-  useEffect(() => {
     if (!toast) return
     const timer = window.setTimeout(() => setToast(''), 3600)
     return () => window.clearTimeout(timer)
@@ -233,19 +222,18 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
     }
     if (!prompt.trim()) { setError('请先输入提示词'); return }
     if (mode === 'image-to-image' && uploads.length === 0) { setError('图生图需要先上传参考图'); return }
-    const orderedUploadIds = orderedUploads(uploads, primaryUploadId).map((item) => item.id)
     const payload: CreateTaskRequest = {
       provider,
       model: provider === BANANA_PROVIDER ? bananaModel : DEFAULT_IMAGE2_MODEL,
       mode,
-      prompt: mode === 'image-to-image' ? withMergeDirectionPrompt(prompt, uploads, primaryUploadId) : prompt,
+      prompt,
       ratio: provider === BANANA_PROVIDER ? getBananaModelOption(bananaModel).ratio : ratio,
       resolution: provider === BANANA_PROVIDER ? getBananaModelOption(bananaModel).resolution : resolution,
       quality: provider === BANANA_PROVIDER ? 'auto' : quality,
       outputFormat: provider === BANANA_PROVIDER ? 'auto' : outputFormat,
       count: numericOrDefault(count, 1),
       concurrency: numericOrDefault(concurrency, 1),
-      uploadIds: mode === 'image-to-image' ? orderedUploadIds : [],
+      uploadIds: mode === 'image-to-image' ? uploads.map((item) => item.id) : [],
     }
     try {
       const job = await createTask(payload)
@@ -269,7 +257,6 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
     try {
       const created = await uploadReferenceImages(files)
       await refreshUploads()
-      if (!primaryUploadId && created[0]) setPrimaryUploadId(created[0].id)
       setToast(`已上传 ${created.length} 张参考图`)
     } catch (err) {
       setToast(formatReferenceUploadError(err))
@@ -286,9 +273,8 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
     if (!response.ok) throw new Error(`读取结果图失败：HTTP ${response.status}`)
     const blob = await response.blob()
     const file = new File([blob], `result-reference-${index + 1}.${extensionFromMime(blob.type)}`, { type: blob.type || 'image/png' })
-    const created = await uploadReferenceImages([file])
+    await uploadReferenceImages([file])
     await refreshUploads()
-    if (!primaryUploadId && created[0]) setPrimaryUploadId(created[0].id)
     setMode('image-to-image')
     goToTab('generate')
     setMessage('已作为图生图参考图')
@@ -544,7 +530,6 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
                   count={count}
                   concurrency={concurrency}
                   uploads={uploads}
-                  primaryUploadId={primaryUploadId}
                   keyReady={currentKeyReady}
                   keyPreview={currentKeyPreview}
                   message={message}
@@ -559,7 +544,6 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
                   onBananaModelChange={setBananaModel}
                   onCountChange={setCount}
                   onConcurrencyChange={setConcurrency}
-                  onPrimaryUploadChange={setPrimaryUploadId}
                   onOpenSettings={() => goToTab('settings')}
                   onUpload={handleUpload}
                   onDeleteUpload={handleDeleteUpload}
@@ -734,20 +718,6 @@ function formatReferenceUploadError(err: unknown) {
   if (message.includes('REFERENCE_IMAGE_TYPE_UNSUPPORTED')) return '格式错误：参考图仅支持 PNG、JPG、WEBP'
   if (message.includes('REFERENCE_IMAGE_TOO_MANY')) return `参考图最多 ${MAX_REFERENCE_IMAGES} 张，请先删除旧图`
   return message
-}
-
-function orderedUploads(uploads: ReferenceUpload[], primaryUploadId: string) {
-  if (!uploads.length) return []
-  const primary = uploads.find((item) => item.id === primaryUploadId) || uploads[0]
-  return [primary, ...uploads.filter((item) => item.id !== primary.id)]
-}
-
-function withMergeDirectionPrompt(prompt: string, uploads: ReferenceUpload[], primaryUploadId: string) {
-  const text = prompt.trim()
-  if (uploads.length <= 1) return text
-  const primary = orderedUploads(uploads, primaryUploadId)[0]
-  const prefix = `请以第一张参考图「${primary?.originalName || '主图'}」为主图，保留主图的主体、构图、姿态、光影方向和画面比例，将其他参考图中的风格、元素、服装、材质或背景自然融合进主图；不要反向把主图融合到其他图里。`
-  return `${prefix}\n\n${text}`
 }
 
 function isFinal(task: Task) {

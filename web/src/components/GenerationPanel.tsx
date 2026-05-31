@@ -21,7 +21,6 @@ type Props = {
   count: NumericInputValue
   concurrency: NumericInputValue
   uploads: ReferenceUpload[]
-  primaryUploadId: string
   keyReady: boolean
   keyPreview: string
   message: string
@@ -36,7 +35,6 @@ type Props = {
   onBananaModelChange: (value: string) => void
   onCountChange: (value: NumericInputValue) => void
   onConcurrencyChange: (value: NumericInputValue) => void
-  onPrimaryUploadChange: (id: string) => void
   onOpenSettings: () => void
   onUpload: (files: File[]) => void
   onDeleteUpload: (id: string) => void
@@ -55,7 +53,6 @@ export function GenerationPanel({
   count,
   concurrency,
   uploads,
-  primaryUploadId,
   keyReady,
   keyPreview,
   message,
@@ -70,7 +67,6 @@ export function GenerationPanel({
   onBananaModelChange,
   onCountChange,
   onConcurrencyChange,
-  onPrimaryUploadChange,
   onOpenSettings,
   onUpload,
   onDeleteUpload,
@@ -117,8 +113,8 @@ export function GenerationPanel({
 
         {isImageToImage ? (
           <section className="generate-step reference-step">
-            <StepTitle index="③" title="参考图 / 合一方向" note="多张图时可以指定主图，系统会把主图排在请求第一位。" />
-            <UploadPanel uploads={uploads} primaryUploadId={primaryUploadId} onPrimaryChange={onPrimaryUploadChange} onUpload={onUpload} onDelete={onDeleteUpload} />
+            <StepTitle index="③" title="参考图" note="上传一张或多张参考图；提示词会按你输入的内容原样提交。" />
+            <UploadPanel uploads={uploads} onUpload={onUpload} onDelete={onDeleteUpload} />
           </section>
         ) : null}
 

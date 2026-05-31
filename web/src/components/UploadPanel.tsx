@@ -5,13 +5,11 @@ import { getReferenceUploadBlob } from '../api/uploads'
 
 type Props = {
   uploads: ReferenceUpload[]
-  primaryUploadId: string
-  onPrimaryChange: (id: string) => void
   onUpload: (files: File[]) => void
   onDelete: (id: string) => void
 }
 
-export function UploadPanel({ uploads, primaryUploadId, onPrimaryChange, onUpload, onDelete }: Props) {
+export function UploadPanel({ uploads, onUpload, onDelete }: Props) {
   const [previews, setPreviews] = useState<Record<string, string>>({})
 
   useEffect(() => {
@@ -41,8 +39,6 @@ export function UploadPanel({ uploads, primaryUploadId, onPrimaryChange, onUploa
     }
   }, [uploads])
 
-  const primary = uploads.find((item) => item.id === primaryUploadId) || uploads[0]
-
   return (
     <section className="form-section upload-section">
       <div className="section-title upload-title-row">
@@ -55,18 +51,10 @@ export function UploadPanel({ uploads, primaryUploadId, onPrimaryChange, onUploa
         <small>PNG / JPG / WEBP，单张不超过 12MB</small>
       </label>
 
-      {uploads.length ? (
-        <div className="merge-direction-box">
-          <strong>合一方向：{uploads.length > 1 ? `以「${primary?.originalName || '第 1 张'}」为主，融合其他参考图` : '当前参考图作为主图'}</strong>
-          <span>点击「设为主图」可以指定往哪张图上融合；主图会排在请求图片第一位。</span>
-        </div>
-      ) : null}
-
       <div className="upload-list reference-grid">
         {uploads.map((item, index) => {
-          const isPrimary = item.id === (primary?.id || primaryUploadId)
           return (
-            <article className={`reference-card ${isPrimary ? 'primary-ref' : ''}`} key={item.id}>
+            <article className="reference-card" key={item.id}>
               <div className="reference-thumb">
                 {previews[item.id] ? <img src={previews[item.id]} alt={item.originalName} /> : <span>{extensionLabel(item.mime)}</span>}
               </div>
@@ -74,8 +62,7 @@ export function UploadPanel({ uploads, primaryUploadId, onPrimaryChange, onUploa
                 <strong>{item.originalName}</strong>
                 <small>{item.mime} · {formatBytes(item.size)}</small>
                 <div className="reference-role-row">
-                  <span>{isPrimary ? '主图 / 被融合目标' : `参考图 ${index + 1}`}</span>
-                  {!isPrimary ? <button type="button" onClick={() => onPrimaryChange(item.id)}>设为主图</button> : null}
+                  <span>参考图 {index + 1}</span>
                   <button type="button" className="danger-text" onClick={() => onDelete(item.id)}>删除</button>
                 </div>
               </div>
