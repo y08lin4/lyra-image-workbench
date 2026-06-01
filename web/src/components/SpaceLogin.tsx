@@ -66,7 +66,7 @@ export function SpaceLogin({ onSession, theme, onToggleTheme }: { onSession: (se
             <li>新设备登录后可重新填写本地 Key，或使用已授权保存的云端 Key。</li>
           </ul>
         </div>
-        <input value={username} onChange={(e) => setUsername(e.target.value)} placeholder="用户名，小写字母/数字/._-" autoFocus />
+        <input value={username} onChange={(e) => setUsername(e.target.value)} placeholder="用户名，大小写字母/数字/._-" autoFocus />
         <PasswordField
           value={password}
           onChange={setPassword}

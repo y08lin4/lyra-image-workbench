@@ -32,3 +32,23 @@ func TestLoginRequiresTOTPWhenEnabled(t *testing.T) {
 		t.Fatalf("Login with TOTP code error = %v", err)
 	}
 }
+
+func TestRegisterAllowsUppercaseUsername(t *testing.T) {
+	store, err := NewStore(filepath.Join(t.TempDir(), "users.json"))
+	if err != nil {
+		t.Fatalf("NewStore() error = %v", err)
+	}
+	session, err := store.Register("Alice_01", "R7!Blue#Vault$2026", "")
+	if err != nil {
+		t.Fatalf("Register() uppercase error = %v", err)
+	}
+	if session.User.Username != "Alice_01" || session.User.DisplayName != "Alice_01" {
+		t.Fatalf("uppercase username was not preserved: %+v", session.User)
+	}
+	if _, err := store.Login("alice_01", "R7!Blue#Vault$2026", ""); err != nil {
+		t.Fatalf("Login() should remain case-insensitive, got %v", err)
+	}
+	if _, err := store.Register("ALICE_01", "R7!Blue#Vault$2026", ""); err == nil {
+		t.Fatal("Register() should reject case-insensitive duplicate username")
+	}
+}

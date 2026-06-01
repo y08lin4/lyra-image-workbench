@@ -111,7 +111,7 @@ func (s *Store) Register(username string, password string, storageToken string) 
 	}
 	now := time.Now().Format(time.RFC3339)
 	s.current.Users = append(s.current.Users, record{
-		Username:     normalized,
+		Username:     displayName,
 		DisplayName:  displayName,
 		StorageToken: storageToken,
 		SaltHex:      salt,
@@ -321,8 +321,8 @@ func sessionFromRecord(user record, token string, expires time.Time) Session {
 func normalizeUsername(username string) (string, string, error) {
 	displayName := strings.TrimSpace(username)
 	normalized := normalizeUsernameKey(displayName)
-	if !usernamePattern.MatchString(displayName) || displayName != normalized {
-		return "", "", NewError("USERNAME_INVALID", "用户名只能使用 3-32 位小写字母、数字、下划线、点或短横线，并且必须以字母或数字开头")
+	if !usernamePattern.MatchString(displayName) {
+		return "", "", NewError("USERNAME_INVALID", "用户名只能使用 3-32 位大小写字母、数字、下划线、点或短横线，并且必须以字母或数字开头")
 	}
 	return normalized, displayName, nil
 }
