@@ -133,6 +133,7 @@ cmd/local-server              Go 服务入口
 | --- | --- | --- |
 | 部署总索引 | [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) | 想先判断本机、Linux、宝塔、更新分别该看哪份文档 |
 | 本机体验 / 开发 | [快速开始](#快速开始) | 想先跑起来看功能，或本地开发调试 |
+| Release 一键安装 | [`docs/RELEASE.md`](docs/RELEASE.md) | Linux 服务器想自动识别 amd64/arm64/armv7 并安装 systemd 服务 |
 | Docker 镜像部署 | [`docs/DOCKER.md`](docs/DOCKER.md) | 想用 GHCR 镜像、Docker Compose 或容器反代部署 |
 | Linux 服务器正式部署 | [`docs/DEPLOY_LINUX.md`](docs/DEPLOY_LINUX.md) | 熟悉 SSH、systemd、Nginx/Caddy 的用户 |
 | 宝塔面板部署 | [`docs/DEPLOY_BAOTA.md`](docs/DEPLOY_BAOTA.md) | 使用宝塔 Go 项目管理器和 Nginx 反代的用户 |
@@ -216,6 +217,25 @@ Vite 会把 `/api` 和 `/outputs` 代理到 `127.0.0.1:8787`。
 ## 生产部署
 
 如果只是想快速跑起来，请先看 [快速开始](#快速开始)。如果要放到服务器长期运行，建议先看 [部署教程索引](#部署教程索引) 选择对应教程。
+
+### Linux 一键安装（Release 包）
+
+推送 `v*.*.*` tag 后，GitHub Release 会自动生成 Linux `amd64` / `arm64` / `armv7`、macOS、Windows 包。Linux 服务器可直接一键安装最新版本：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/y08lin4/lyra-image-workbench/master/scripts/install.sh | sudo bash
+```
+
+指定版本和 NewAPI 地址：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/y08lin4/lyra-image-workbench/master/scripts/install.sh | sudo env \
+  VERSION=v0.1.0 \
+  NEWAPI_BASE_URL=http://127.0.0.1:3000/v1 \
+  bash
+```
+
+默认安装到 `/opt/lyra-image-workbench`，运行时数据在 `/var/lib/lyra-image-workbench`，systemd 服务名为 `lyra-image-workbench`。更多说明见 [`docs/RELEASE.md`](docs/RELEASE.md)。
 
 ### Docker 镜像部署
 
@@ -310,6 +330,7 @@ Active: active (running)
 更完整的部署说明：
 
 - [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md)：部署教程总索引，按本机、Linux、宝塔、更新场景选择入口。
+- [`docs/RELEASE.md`](docs/RELEASE.md)：多架构 Release 包、Linux 一键安装脚本和发版流程。
 - [`docs/DOCKER.md`](docs/DOCKER.md)：Docker 镜像、Docker Compose、GHCR 拉取和数据卷说明。
 - [`docs/DEPLOY_LINUX.md`](docs/DEPLOY_LINUX.md)：Linux、systemd、Nginx/Caddy、备份恢复。
 - [`docs/DEPLOY_BAOTA.md`](docs/DEPLOY_BAOTA.md)：宝塔 Go 项目、Nginx 反代、常见问题。
@@ -412,6 +433,7 @@ CI 会在 push 和 PR 时运行：
 ## 更多文档
 
 - [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md)：部署教程总索引，按本机、Linux、宝塔、更新场景选择入口。
+- [`docs/RELEASE.md`](docs/RELEASE.md)：多架构 Release 包、Linux 一键安装脚本和发版流程。
 - [`docs/DOCKER.md`](docs/DOCKER.md)：Docker 镜像、Docker Compose、GHCR 拉取和数据卷说明。
 - [`docs/DEPLOY_LINUX.md`](docs/DEPLOY_LINUX.md)：Linux 服务器部署、systemd、Nginx/Caddy、升级和备份。
 - [`docs/DEPLOY_BAOTA.md`](docs/DEPLOY_BAOTA.md)：宝塔面板 Go 项目部署教程。

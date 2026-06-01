@@ -9,6 +9,14 @@
 - NewAPI / CLIProxyAPI 也尽量只监听内网或本机地址。
 - 图片和空间数据放到 `/var/lib/image-workbench`，方便备份迁移。
 
+如果你只想使用 GitHub Release 包快速安装，可以直接用一键脚本：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/y08lin4/lyra-image-workbench/master/scripts/install.sh | sudo bash
+```
+
+脚本会自动识别 Linux `amd64` / `arm64` / `armv7`，安装到 `/opt/lyra-image-workbench`，并创建 `lyra-image-workbench` systemd 服务。手动部署细节继续看下文。
+
 ---
 
 ## 1. 部署结构

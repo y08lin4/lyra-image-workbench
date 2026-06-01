@@ -7,6 +7,7 @@
 | 目标 | 推荐入口 | 说明 |
 | --- | --- | --- |
 | 本机体验 / 二次开发 | [`README.md#快速开始`](../README.md#快速开始) | 最短路径跑起前后端，适合先看功能或本地开发。 |
+| Release 一键安装 | [`RELEASE.md`](RELEASE.md) | Linux 服务器自动识别 amd64/arm64/armv7，下载 Release 包并安装 systemd 服务。 |
 | Docker 镜像部署 | [`DOCKER.md`](DOCKER.md) | 使用 GHCR 镜像、Docker Compose、容器数据卷和反代部署。 |
 | Linux 服务器正式部署 | [`DEPLOY_LINUX.md`](DEPLOY_LINUX.md) | 推荐生产方案：systemd 托管 Go 服务，Nginx/Caddy 做 HTTPS 反代。 |
 | 宝塔面板部署 | [`DEPLOY_BAOTA.md`](DEPLOY_BAOTA.md) | 适合使用宝塔 Go 项目管理器和宝塔 Nginx 的服务器。 |
@@ -41,6 +42,12 @@
 ```
 
 Docker 部署可以跳过本地构建步骤，直接拉取 `ghcr.io/y08lin4/lyra-image-workbench:latest`，然后挂载 `/app/data` 和 `/app/outputs`。
+
+Release 一键安装也可以跳过本地构建步骤，直接运行：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/y08lin4/lyra-image-workbench/master/scripts/install.sh | sudo bash
+```
 
 ## 推荐生产结构
 

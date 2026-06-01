@@ -1,0 +1,187 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+
+env:
+  APP_NAME: lyra-image-workbench
+
+jobs:
+  web:
+    name: Build web assets
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Build web
+        working-directory: web
+        run: |
+          npm ci
+          npm run build
+
+      - name: Upload web dist
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-dist
+          path: web/dist
+          if-no-files-found: error
+
+  build:
+    name: Build ${{ matrix.asset_os }}/${{ matrix.asset_arch }}
+    runs-on: ubuntu-latest
+    needs: web
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+            goarm: ''
+            asset_os: linux
+            asset_arch: amd64
+            archive: tar.gz
+            ext: ''
+          - goos: linux
+            goarch: arm64
+            goarm: ''
+            asset_os: linux
+            asset_arch: arm64
+            archive: tar.gz
+            ext: ''
+          - goos: linux
+            goarch: arm
+            goarm: '7'
+            asset_os: linux
+            asset_arch: armv7
+            archive: tar.gz
+            ext: ''
+          - goos: darwin
+            goarch: amd64
+            goarm: ''
+            asset_os: darwin
+            asset_arch: amd64
+            archive: tar.gz
+            ext: ''
+          - goos: darwin
+            goarch: arm64
+            goarm: ''
+            asset_os: darwin
+            asset_arch: arm64
+            archive: tar.gz
+            ext: ''
+          - goos: windows
+            goarch: amd64
+            goarm: ''
+            asset_os: windows
+            asset_arch: amd64
+            archive: zip
+            ext: .exe
+          - goos: windows
+            goarch: arm64
+            goarm: ''
+            asset_os: windows
+            asset_arch: arm64
+            archive: zip
+            ext: .exe
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22.x'
+
+      - name: Download web dist
+        uses: actions/download-artifact@v4
+        with:
+          name: web-dist
+          path: web-dist
+
+      - name: Build backend
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          GOARM: ${{ matrix.goarm }}
+          CGO_ENABLED: 0
+        run: |
+          mkdir -p build/package
+          go build -trimpath -ldflags="-s -w" -o "build/package/${APP_NAME}${{ matrix.ext }}" ./cmd/local-server
+
+      - name: Assemble package
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p build/package/web build/package/docs build/package/scripts
+          if [ -f web-dist/index.html ]; then
+            cp -r web-dist build/package/web/dist
+          elif [ -f web-dist/dist/index.html ]; then
+            cp -r web-dist/dist build/package/web/dist
+          else
+            echo "Cannot find downloaded web dist" >&2
+            find web-dist -maxdepth 3 -type f >&2 || true
+            exit 1
+          fi
+          cp README.md LICENSE .env.example build/package/
+          cp docs/DEPLOYMENT.md docs/RELEASE.md docs/DOCKER.md docs/DEPLOY_LINUX.md docs/DEPLOY_BAOTA.md build/package/docs/
+          cp scripts/install.sh build/package/scripts/
+
+      - name: Create archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME}"
+          name="${APP_NAME}-${version}-${{ matrix.asset_os }}-${{ matrix.asset_arch }}"
+          mkdir -p dist
+          if [ "${{ matrix.archive }}" = "zip" ]; then
+            if ! command -v zip >/dev/null 2>&1; then
+              sudo apt-get update
+              sudo apt-get install -y zip
+            fi
+            (cd build/package && zip -r "../../dist/${name}.zip" .)
+          else
+            tar -czf "dist/${name}.tar.gz" -C build/package .
+          fi
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.APP_NAME }}-${{ github.ref_name }}-${{ matrix.asset_os }}-${{ matrix.asset_arch }}
+          path: dist/*
+          if-no-files-found: error
+
+  release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Generate checksums
+        run: |
+          cd dist
+          sha256sum * > checksums.txt
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
