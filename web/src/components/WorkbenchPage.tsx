@@ -496,7 +496,7 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
         <div className="brand">
           <div className="brand-mark">Ly</div>
           <div>
-            <h1>LyAI生图工作台</h1>
+            <h1>Lyra Image Workbench</h1>
             <p>{session.user.displayName} · {session.user.username}</p>
           </div>
         </div>
@@ -511,10 +511,10 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
         </nav>
       </header>
 
-      <a className="api-service-banner" href="https://ai-cf.ailinyu.de" target="_blank" rel="noreferrer">
+      <div className="api-service-banner">
         <strong>API 服务</strong>
-        <span>访问 https://ai-cf.ailinyu.de</span>
-      </a>
+        <span>当前前端通过同源 /api 访问本机后端；对外域名可在 Admin 页记录。</span>
+      </div>
 
       <WorkbenchTabs tabs={tabItems} activeTab={activeTab} onChange={goToTab} className="workflow-tabs desktop-tabs" />
 

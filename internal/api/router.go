@@ -3,16 +3,16 @@ package api
 import (
 	"net/http"
 
-	"github.com/y08lin4/image-Workbench-Localhost-Version/internal/adminauth"
-	"github.com/y08lin4/image-Workbench-Localhost-Version/internal/config"
-	"github.com/y08lin4/image-Workbench-Localhost-Version/internal/jobs"
-	"github.com/y08lin4/image-Workbench-Localhost-Version/internal/output"
-	"github.com/y08lin4/image-Workbench-Localhost-Version/internal/prompttools"
-	"github.com/y08lin4/image-Workbench-Localhost-Version/internal/settings"
-	"github.com/y08lin4/image-Workbench-Localhost-Version/internal/spaceconfig"
-	"github.com/y08lin4/image-Workbench-Localhost-Version/internal/spaces"
-	"github.com/y08lin4/image-Workbench-Localhost-Version/internal/uploads"
-	"github.com/y08lin4/image-Workbench-Localhost-Version/internal/users"
+	"github.com/y08lin4/lyra-image-workbench/internal/adminauth"
+	"github.com/y08lin4/lyra-image-workbench/internal/config"
+	"github.com/y08lin4/lyra-image-workbench/internal/jobs"
+	"github.com/y08lin4/lyra-image-workbench/internal/output"
+	"github.com/y08lin4/lyra-image-workbench/internal/prompttools"
+	"github.com/y08lin4/lyra-image-workbench/internal/settings"
+	"github.com/y08lin4/lyra-image-workbench/internal/spaceconfig"
+	"github.com/y08lin4/lyra-image-workbench/internal/spaces"
+	"github.com/y08lin4/lyra-image-workbench/internal/uploads"
+	"github.com/y08lin4/lyra-image-workbench/internal/users"
 )
 
 type Dependencies struct {

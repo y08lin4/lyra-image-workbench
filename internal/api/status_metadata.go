@@ -3,7 +3,7 @@ package api
 import (
 	"net/http"
 
-	"github.com/y08lin4/image-Workbench-Localhost-Version/internal/statusmeta"
+	"github.com/y08lin4/lyra-image-workbench/internal/statusmeta"
 )
 
 type StatusMetadataHandler struct{}

@@ -7,9 +7,9 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/y08lin4/image-Workbench-Localhost-Version/internal/events"
-	"github.com/y08lin4/image-Workbench-Localhost-Version/internal/jobs"
-	"github.com/y08lin4/image-Workbench-Localhost-Version/internal/output"
+	"github.com/y08lin4/lyra-image-workbench/internal/events"
+	"github.com/y08lin4/lyra-image-workbench/internal/jobs"
+	"github.com/y08lin4/lyra-image-workbench/internal/output"
 )
 
 type TaskHandler struct {

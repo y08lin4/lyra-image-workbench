@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/y08lin4/image-Workbench-Localhost-Version/internal/spaces"
+	"github.com/y08lin4/lyra-image-workbench/internal/spaces"
 )
 
 func TestStoreDoesNotPersistAPIKey(t *testing.T) {

@@ -6,8 +6,8 @@ import (
 	"os"
 	"time"
 
-	"github.com/y08lin4/image-Workbench-Localhost-Version/internal/spaces"
-	"github.com/y08lin4/image-Workbench-Localhost-Version/internal/users"
+	"github.com/y08lin4/lyra-image-workbench/internal/spaces"
+	"github.com/y08lin4/lyra-image-workbench/internal/users"
 )
 
 const userSessionCookie = "image_workbench_user_session"

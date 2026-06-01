@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/y08lin4/image-Workbench-Localhost-Version/internal/adminauth"
-	"github.com/y08lin4/image-Workbench-Localhost-Version/internal/spaces"
+	"github.com/y08lin4/lyra-image-workbench/internal/adminauth"
+	"github.com/y08lin4/lyra-image-workbench/internal/spaces"
 )
 
 type AdminAuthHandler struct {

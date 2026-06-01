@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/y08lin4/image-Workbench-Localhost-Version/internal/jobs"
-	"github.com/y08lin4/image-Workbench-Localhost-Version/internal/prompttools"
+	"github.com/y08lin4/lyra-image-workbench/internal/jobs"
+	"github.com/y08lin4/lyra-image-workbench/internal/prompttools"
 )
 
 type PromptToolsHandler struct {

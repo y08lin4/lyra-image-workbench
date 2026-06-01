@@ -14,12 +14,12 @@ import (
 )
 
 const (
-	totpIssuer = "Image Workbench"
+	totpIssuer = "Lyra Image Workbench"
 	totpPeriod = int64(30)
 )
 
 type TOTPSetup struct {
-	Secret    string `json:"secret"`
+	Secret     string `json:"secret"`
 	OtpauthURL string `json:"otpauthUrl"`
 }
 
@@ -40,7 +40,7 @@ func setupFromSecret(username string, secret string) TOTPSetup {
 	values.Set("digits", "6")
 	values.Set("period", strconv.FormatInt(totpPeriod, 10))
 	return TOTPSetup{
-		Secret:    secret,
+		Secret:     secret,
 		OtpauthURL: "otpauth://totp/" + url.PathEscape(label) + "?" + values.Encode(),
 	}
 }

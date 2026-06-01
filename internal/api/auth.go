@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/y08lin4/image-Workbench-Localhost-Version/internal/users"
+	"github.com/y08lin4/lyra-image-workbench/internal/users"
 )
 
 const userStorageTokenHeader = "X-Space-Token"

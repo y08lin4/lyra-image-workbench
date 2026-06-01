@@ -3,7 +3,7 @@
 本文对比对象：
 
 - 原项目：[`y08lin4/AI-Image-generate`](https://github.com/y08lin4/AI-Image-generate)，检查提交 `207d10c`。
-- 当前项目：[`y08lin4/image-Workbench-Localhost-Version`](https://github.com/y08lin4/image-Workbench-Localhost-Version)，检查提交 `4cf3afa`。
+- 当前项目：[`y08lin4/lyra-image-workbench`](https://github.com/y08lin4/lyra-image-workbench)，检查提交 `4cf3afa`。
 
 当前项目不是对原项目的简单换皮，而是把原来偏 **Cloudflare Worker / 浏览器侧配置** 的生图工具，重构成偏 **本机或私有服务器稳定运行** 的生图工作台。核心变化是：前端只负责提交任务和观察状态，所有上游请求、Key 保存、任务恢复、图片落盘都交给 Go 后端处理。
 
@@ -11,7 +11,7 @@
 
 ## 1. 总体定位变化
 
-| 维度 | AI-Image-generate | image-Workbench-Localhost-Version |
+| 维度 | AI-Image-generate | lyra-image-workbench |
 | --- | --- | --- |
 | 部署目标 | Cloudflare Worker + 前端静态站点 | 本机 / VPS / 宝塔 / Linux systemd 私有部署 |
 | 后端形态 | Cloudflare Worker，配合 D1 / Workflows | Go 后端，托管前端和同源 `/api` |
@@ -389,4 +389,4 @@ outputs/    # 生成结果图片
 
 ## 14. 一句话总结
 
-`AI-Image-generate` 更像一个 Cloudflare Worker 生态下的轻量生图页面；`image-Workbench-Localhost-Version` 则升级成一个可在本机或私有服务器长期运行的生图工作台：后端接管上游请求、任务队列、Key 管理、图片落盘和恢复能力，目标是让 10 分钟级别的文生图 / 图生图任务稳定完成。
+`AI-Image-generate` 更像一个 Cloudflare Worker 生态下的轻量生图页面；`lyra-image-workbench` 则升级成一个可在本机或私有服务器长期运行的生图工作台：后端接管上游请求、任务队列、Key 管理、图片落盘和恢复能力，目标是让 10 分钟级别的文生图 / 图生图任务稳定完成。

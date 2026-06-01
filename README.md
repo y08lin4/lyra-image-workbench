@@ -1,6 +1,10 @@
-# LyAI生图工作台
+# Lyra Image Workbench
 
-一个面向本机 / 私有服务器部署的 LyAI 生图工作台。项目由 Go 后端统一托管前端页面和同源 `/api`，前端不直连 NewAPI，也不保存上游地址；API Key 默认只保存在当前浏览器本地，也可以在风险确认后主动上传到云端账号空间，多设备共用时建议开启 2FA；图片生成、任务队列、结果落盘、SSE 状态推送都由后端负责。
+Lyra Image Workbench（LyAI 生图工作台）是一个面向本机 / 私有服务器部署的生图工作台。项目由 Go 后端统一托管前端页面和同源 `/api`，前端不直连 NewAPI，也不保存上游地址；API Key 默认只保存在当前浏览器本地，也可以在风险确认后主动上传到云端账号空间，多设备共用时建议开启 2FA；图片生成、任务队列、结果落盘、SSE 状态推送都由后端负责。
+
+- 开源地址：[`y08lin4/lyra-image-workbench`](https://github.com/y08lin4/lyra-image-workbench)
+- 在线演示：[https://ai-image.ailinyu.de/](https://ai-image.ailinyu.de/)
+- API 服务入口广告：[https://ai-cf.ailinyu.de/](https://ai-cf.ailinyu.de/) —— 如果你不想自建 OpenAI 兼容网关，可以从这里了解可用服务。
 
 ---
 
@@ -31,7 +35,7 @@
 
 ### 1. 多标签工作流
 
-顶部横幅会提示 API 服务入口：`https://ai-cf.ailinyu.de`。
+顶部横幅会提示当前前端通过同源 `/api` 访问本机后端；对外访问域名可在 Admin 页记录。
 
 主界面固定为：
 
@@ -330,7 +334,7 @@ go run ./cmd/local-server
 
 # 前端开发服务器，仅开发期使用 Vite 代理 /api 到 Go 后端
 cd web
-npm install
+npm ci
 npm run dev
 
 # 前端生产构建
@@ -345,12 +349,29 @@ go test ./...
 
 ---
 
+## 环境变量
+
+复制 `.env.example` 后按部署环境调整；不要提交真实 `.env`。
+
+| 变量 | 默认值 | 说明 |
+| --- | --- | --- |
+| `LOCAL_IMAGE_HOST` | `0.0.0.0` | 服务监听地址；反代部署建议 `127.0.0.1`。 |
+| `LOCAL_IMAGE_PORT` | `8787` | 服务监听端口。 |
+| `LOCAL_IMAGE_DATA_DIR` | `data` | 用户、任务、配置等运行时数据目录。 |
+| `LOCAL_IMAGE_WEB_DIR` | `web/dist` | 前端生产构建目录。 |
+| `NEWAPI_BASE_URL` | `http://127.0.0.1:3000/v1` | OpenAI 兼容图片网关地址。 |
+| `NEWAPI_TIMEOUT_SEC` | `600` | 单张图片请求超时，允许范围 60-3600 秒。 |
+
+运行时数据、上传参考图、生成结果、日志和 `.env` 均已在 `.gitignore` 中排除。
+
+---
+
 ## Linux / 宝塔部署更新命令
 
 服务器已部署后，一键更新：
 
 ```bash
-git config --global --add safe.directory /www/wwwroot/image-workbench && cd /www/wwwroot/image-workbench && git pull --ff-only && cd web && npm ci && npm run build && cd .. && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o image-workbench.new ./cmd/local-server && chmod +x image-workbench.new && chown www:www image-workbench.new && mv -f image-workbench.new image-workbench && chown -R www:www /www/wwwroot/image-workbench && systemctl restart image-workbench && systemctl status image-workbench --no-pager
+git config --global --add safe.directory /www/wwwroot/image-workbench && cd /www/wwwroot/image-workbench && git pull --ff-only origin master && cd web && npm ci && npm run build && cd .. && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o image-workbench-local-server.new ./cmd/local-server && chmod +x image-workbench-local-server.new && mv -f image-workbench-local-server.new image-workbench-local-server && chown -R www:www /www/wwwroot/image-workbench && systemctl restart image-workbench && systemctl status image-workbench --no-pager
 ```
 
 看到：
@@ -374,3 +395,13 @@ Active: active (running)
 - `docs/REFERENCE_PROJECT_ANALYSIS.md`：参考项目路由、后台任务和稳定性缺口分析。
 - `docs/CLOSED_LOOP_DESIGN.md`：闭环设计和实现顺序。
 - `docs/SPACE_DESIGN.md`：早期个人空间、空间密码、固定模型和图生图设计记录。
+- `docs/OPEN_SOURCE_CHECKLIST.md`：开源发布前检查清单。
+
+---
+
+## 开源协作
+
+- 许可证：MIT，见 `LICENSE`。
+- 贡献说明：见 `CONTRIBUTING.md`。
+- 安全问题报告：见 `SECURITY.md`。
+- CI：GitHub Actions 会运行 `go test ./...` 和 `web` 生产构建。

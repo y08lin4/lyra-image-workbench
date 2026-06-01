@@ -1,8 +1,12 @@
 {
-  "name": "image-workbench-web",
+  "name": "lyra-image-workbench-web",
   "private": true,
   "version": "0.1.0",
+  "license": "MIT",
   "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "dev": "vite --host 127.0.0.1",
     "build": "tsc -b && vite build",

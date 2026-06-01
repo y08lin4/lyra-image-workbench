@@ -3,7 +3,7 @@ package server
 import (
 	"net/http"
 
-	"github.com/y08lin4/image-Workbench-Localhost-Version/internal/config"
+	"github.com/y08lin4/lyra-image-workbench/internal/config"
 )
 
 func New(cfg config.Config, handler http.Handler) *http.Server {

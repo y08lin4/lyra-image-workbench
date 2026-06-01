@@ -4,7 +4,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/y08lin4/image-Workbench-Localhost-Version/internal/config"
+	"github.com/y08lin4/lyra-image-workbench/internal/config"
 )
 
 func TestFileStoreUpdatePersistsAdminConfig(t *testing.T) {

@@ -2,7 +2,7 @@
 set -euo pipefail
 
 APP_DIR="${APP_DIR:-/www/wwwroot/image-workbench}"
-REPO_URL="${REPO_URL:-git@github.com:y08lin4/image-Workbench-Localhost-Version.git}"
+REPO_URL="${REPO_URL:-git@github.com:y08lin4/lyra-image-workbench.git}"
 BRANCH="${BRANCH:-master}"
 RUN_USER="${RUN_USER:-www}"
 LOCAL_IMAGE_HOST="${LOCAL_IMAGE_HOST:-127.0.0.1}"

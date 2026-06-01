@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/y08lin4/image-Workbench-Localhost-Version/internal/config"
+	"github.com/y08lin4/lyra-image-workbench/internal/config"
 )
 
 type HealthHandler struct {

@@ -15,14 +15,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/y08lin4/image-Workbench-Localhost-Version/internal/config"
-	"github.com/y08lin4/image-Workbench-Localhost-Version/internal/events"
-	"github.com/y08lin4/image-Workbench-Localhost-Version/internal/newapi"
-	"github.com/y08lin4/image-Workbench-Localhost-Version/internal/output"
-	"github.com/y08lin4/image-Workbench-Localhost-Version/internal/settings"
-	"github.com/y08lin4/image-Workbench-Localhost-Version/internal/spaceconfig"
-	"github.com/y08lin4/image-Workbench-Localhost-Version/internal/spaces"
-	"github.com/y08lin4/image-Workbench-Localhost-Version/internal/uploads"
+	"github.com/y08lin4/lyra-image-workbench/internal/config"
+	"github.com/y08lin4/lyra-image-workbench/internal/events"
+	"github.com/y08lin4/lyra-image-workbench/internal/newapi"
+	"github.com/y08lin4/lyra-image-workbench/internal/output"
+	"github.com/y08lin4/lyra-image-workbench/internal/settings"
+	"github.com/y08lin4/lyra-image-workbench/internal/spaceconfig"
+	"github.com/y08lin4/lyra-image-workbench/internal/spaces"
+	"github.com/y08lin4/lyra-image-workbench/internal/uploads"
 )
 
 func TestManagerCreateReturnsQueuedAndCompletesInBackground(t *testing.T) {

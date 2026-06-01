@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/y08lin4/image-Workbench-Localhost-Version/internal/adminauth"
-	"github.com/y08lin4/image-Workbench-Localhost-Version/internal/settings"
+	"github.com/y08lin4/lyra-image-workbench/internal/adminauth"
+	"github.com/y08lin4/lyra-image-workbench/internal/settings"
 )
 
 type AdminConfigHandler struct {

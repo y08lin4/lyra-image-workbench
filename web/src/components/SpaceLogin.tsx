@@ -52,7 +52,7 @@ export function SpaceLogin({ onSession, theme, onToggleTheme }: { onSession: (se
           <div className="brand-mark">Ly</div>
           <div>
             <p className="eyebrow">用户账号</p>
-            <h1>LyAI生图工作台</h1>
+            <h1>Lyra Image Workbench</h1>
           </div>
         </div>
         <h2>{isRegister ? '注册账号' : '登录账号'}</h2>

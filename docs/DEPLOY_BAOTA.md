@@ -98,7 +98,7 @@ ssh -T github-image-workbench
 私有仓库 clone 地址用这个：
 
 ```bash
-git clone git@github-image-workbench:y08lin4/image-Workbench-Localhost-Version.git /www/wwwroot/image-workbench
+git clone git@github-image-workbench:y08lin4/lyra-image-workbench.git /www/wwwroot/image-workbench
 ```
 
 > 不推荐把 GitHub Token 直接写到 `https://token@github.com/...` 里，因为容易留在 shell 历史、宝塔日志或 `.git/config`。
@@ -109,7 +109,7 @@ git clone git@github-image-workbench:y08lin4/image-Workbench-Localhost-Version.g
 
 ```bash
 cd /www/wwwroot
-git clone git@github-image-workbench:y08lin4/image-Workbench-Localhost-Version.git image-workbench
+git clone git@github-image-workbench:y08lin4/lyra-image-workbench.git image-workbench
 cd /www/wwwroot/image-workbench
 bash scripts/deploy-baota.sh
 ```
@@ -118,7 +118,7 @@ bash scripts/deploy-baota.sh
 
 ```bash
 cd /www/wwwroot
-git clone https://github.com/y08lin4/image-Workbench-Localhost-Version.git image-workbench
+git clone https://github.com/y08lin4/lyra-image-workbench.git image-workbench
 cd /www/wwwroot/image-workbench
 bash scripts/deploy-baota.sh
 ```
@@ -150,7 +150,7 @@ SKIP_TEST=1 bash scripts/deploy-baota.sh
 
 ```bash
 cd /www/wwwroot
-git clone git@github-image-workbench:y08lin4/image-Workbench-Localhost-Version.git image-workbench
+git clone git@github-image-workbench:y08lin4/lyra-image-workbench.git image-workbench
 cd /www/wwwroot/image-workbench
 ```
 
@@ -207,7 +207,7 @@ chown -R www:www /www/wwwroot/image-workbench
 | 环境变量 | 选择「指定变量」 |
 | 运行用户 | `www` |
 | 开机启动 | 勾选 |
-| 项目备注 | `本机生图工作台` |
+| 项目备注 | `Lyra Image Workbench` |
 | 绑定域名 | 你的域名，例如 `img.example.com` |
 
 ### 4.1 环境变量

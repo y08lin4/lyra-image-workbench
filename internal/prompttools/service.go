@@ -13,13 +13,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/y08lin4/image-Workbench-Localhost-Version/internal/config"
-	"github.com/y08lin4/image-Workbench-Localhost-Version/internal/jobs"
-	"github.com/y08lin4/image-Workbench-Localhost-Version/internal/llm"
-	"github.com/y08lin4/image-Workbench-Localhost-Version/internal/output"
-	"github.com/y08lin4/image-Workbench-Localhost-Version/internal/settings"
-	"github.com/y08lin4/image-Workbench-Localhost-Version/internal/spaceconfig"
-	"github.com/y08lin4/image-Workbench-Localhost-Version/internal/uploads"
+	"github.com/y08lin4/lyra-image-workbench/internal/config"
+	"github.com/y08lin4/lyra-image-workbench/internal/jobs"
+	"github.com/y08lin4/lyra-image-workbench/internal/llm"
+	"github.com/y08lin4/lyra-image-workbench/internal/output"
+	"github.com/y08lin4/lyra-image-workbench/internal/settings"
+	"github.com/y08lin4/lyra-image-workbench/internal/spaceconfig"
+	"github.com/y08lin4/lyra-image-workbench/internal/uploads"
 )
 
 type Service struct {

@@ -15,7 +15,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/y08lin4/image-Workbench-Localhost-Version/internal/spaces"
+	"github.com/y08lin4/lyra-image-workbench/internal/spaces"
 )
 
 const SessionTTL = 30 * 24 * time.Hour

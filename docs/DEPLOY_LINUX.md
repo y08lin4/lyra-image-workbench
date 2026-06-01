@@ -99,7 +99,7 @@ sudo chown -R imagewb:imagewb /var/lib/image-workbench
 
 ```bash
 cd /opt
-sudo git clone https://github.com/y08lin4/image-Workbench-Localhost-Version.git image-workbench
+sudo git clone https://github.com/y08lin4/lyra-image-workbench.git image-workbench
 cd /opt/image-workbench
 ```
 
@@ -178,7 +178,7 @@ sudo ln -s /var/lib/image-workbench/outputs outputs
 ```bash
 sudo tee /etc/systemd/system/image-workbench.service >/dev/null <<'EOF'
 [Unit]
-Description=Image Workbench Localhost Version
+Description=Lyra Image Workbench
 After=network-online.target
 Wants=network-online.target
 
