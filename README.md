@@ -1,351 +1,249 @@
 # Lyra Image Workbench
 
-Lyra Image Workbench（LyAI 生图工作台）是一个面向本机 / 私有服务器部署的生图工作台。项目由 Go 后端统一托管前端页面和同源 `/api`，前端不直连 NewAPI，也不保存上游地址；API Key 默认只保存在当前浏览器本地，也可以在风险确认后主动上传到云端账号空间，多设备共用时建议开启 2FA；图片生成、任务队列、结果落盘、SSE 状态推送都由后端负责。
+[![CI](https://github.com/y08lin4/lyra-image-workbench/actions/workflows/ci.yml/badge.svg)](https://github.com/y08lin4/lyra-image-workbench/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
+Lyra Image Workbench（LyAI 生图工作台）是一个可本机运行、也可私有服务器部署的 AI 生图工作台。它把前端页面、用户账号、任务队列、上游图片接口请求、结果落盘和状态推送都收拢到一个 Go 后端里，前端只访问同源 `/api`。
 
 - 开源地址：[`y08lin4/lyra-image-workbench`](https://github.com/y08lin4/lyra-image-workbench)
 - 在线演示：[https://ai-image.ailinyu.de/](https://ai-image.ailinyu.de/)
-- API 服务入口广告：[https://ai-cf.ailinyu.de/](https://ai-cf.ailinyu.de/) —— 如果你不想自建 OpenAI 兼容网关，可以从这里了解可用服务。
+- API 服务入口广告：[https://ai-cf.ailinyu.de/](https://ai-cf.ailinyu.de/) —— 不想自建 OpenAI 兼容网关时，可以从这里了解可用服务。
+
+> 在线演示是公开环境，不建议上传敏感图片或长期保存高权限 API Key。生产使用建议自部署。
 
 ---
 
-## 核心定位
+## 目录
 
-本项目相较原始纯前端 / Worker 类生图页面，重点解决三个问题：
-
-1. **开放服务可控**：普通用户通过用户名 + 密码进入自己的账号空间，Admin 独立管理上游 URL、超时、域名和 Debug。
-2. **长任务稳定**：提交任务后后端后台执行，前端刷新、断开、手机锁屏不影响任务继续跑。
-3. **结果可沉淀**：生成图保存到本机 `outputs/`，任务状态保存到 `data/`，可选再上传 PiXhost 图床。
-
----
-
-## 技术栈
-
-- 后端：Go
-  - 托管 `web/dist`
-  - 提供同源 `/api`
-  - 管理用户账号、个人空间、Admin、任务队列、SSE、NewAPI 请求、图片落盘
-- 前端：React + TypeScript + Vite
-  - 多标签工作台
-  - 响应式桌面 / 手机 UI
-  - 暗色模式
+- [这个项目解决什么问题](#这个项目解决什么问题)
+- [功能总览](#功能总览)
+- [核心工作流](#核心工作流)
+- [架构和数据流](#架构和数据流)
+- [部署教程索引](#部署教程索引)
+- [快速开始](#快速开始)
+- [生产部署](#生产部署)
+- [环境变量](#环境变量)
+- [安全和 Key 策略](#安全和-key-策略)
+- [项目结构](#项目结构)
+- [开发和测试](#开发和测试)
+- [更多文档](#更多文档)
+- [开源协作](#开源协作)
 
 ---
 
-## 工作台功能
+## 这个项目解决什么问题
 
-### 1. 多标签工作流
+很多生图页面是纯前端或 Worker 形态：浏览器直接处理 Key、请求容易被刷新/锁屏打断、历史和结果依赖本地浏览器状态。Lyra Image Workbench 的目标是把它变成一个长期运行的私有工作台：
 
-顶部横幅会提示当前前端通过同源 `/api` 访问本机后端；对外访问域名可在 Admin 页记录。
+1. **上游请求由后端接管**：浏览器只请求同源 `/api`，NewAPI / OpenAI 兼容网关地址由 Admin 管理。
+2. **长任务不怕前端断开**：提交后后端后台执行，前端刷新、断网、手机锁屏都不影响已创建任务继续跑。
+3. **结果和历史可沉淀**：任务、配置、参考图和生成结果落到服务器目录，账号多设备登录后可继续查看。
+4. **开放服务更可控**：普通用户账号与 Admin 管理分离，支持 2FA、云端 Key 风险确认、Debug 脱敏日志。
 
-主界面固定为：
+---
+
+## 功能总览
+
+| 模块 | 功能 |
+| --- | --- |
+| 生成 | 文生图、图生图、多参考图、数量/并发、比例/清晰度/质量/格式配置 |
+| 模型 | Image-2（`gpt-image-2`）、Banana Nano 分组模型、模型 ID 路由规格 |
+| 图生图 | 支持 1-8 张参考图；提示词原样提交；提交后自动清空当前参考图上传区；任务内部保留参考图快照 |
+| 任务队列 | 后台执行、SSE 状态推送、轮询兜底、取消、重试、部分成功、重启恢复/中断标记 |
+| 结果管理 | 本机落盘、预览、下载、复制图片/链接、作为参考图、PiXhost 自动/手动上传 |
+| 用户系统 | 用户名密码注册登录、大小写用户名展示、2FA、每用户独立空间、旧空间导入 |
+| Key 管理 | API Key 默认只保存在当前浏览器；可选风险确认后保存到账号空间；接口不返回明文 Key |
+| 提示词助手 | 文字扩写、图片还原、灵感模式、多版本会话、继续对话修改、应用到生成表单 |
+| Admin | NewAPI Base URL、公开访问域名、超时时间、Debug 日志开关 |
+| 开源部署 | Go 单进程托管 API + 静态前端；支持本机、Linux systemd、宝塔/Nginx 反代 |
+
+---
+
+## 核心工作流
 
 ```text
-生成 / 结果 / 队列 / 设置
+注册/登录账号
+  ↓
+设置本地 Key 或确认后保存云端 Key
+  ↓
+写提示词 / 使用提示词助手
+  ↓
+选择文生图或图生图，设置模型和规格
+  ↓
+提交任务，后端立即返回任务并后台执行
+  ↓
+结果页通过 SSE/轮询更新进度
+  ↓
+预览、下载、复制、上传图床、作为下一次图生图参考
 ```
 
-工作流闭环：
+### 图生图行为
 
-```text
-写提示词 → 选模型/规格 → 提交 → 看结果 → 下载/复制/复用/图生图 → 必要时用助手继续优化
-```
+- 多参考图按上传列表顺序传给后端。
+- 系统不会自动追加“主图”“融合方向”等内置提示词。
+- 点击生成成功后，生成页参考图上传区会自动清空。
+- 后端会先复制参考图快照到任务目录，所以清空上传区不会影响后台生成或后续重试。
 
-关键交互：
+### 模型返回提示词
 
-- 提交任务成功后自动跳到“结果”。
-- 点击队列任务自动跳到“结果”。
-- 结果图点“作为参考图”后自动回到“生成”，并切到图生图。
-- 复用参数会把历史任务的提示词、模型、规格、数量、并发带回生成页。
-
-### 2. 生成页
-
-生成页左侧是请求表单，右侧内嵌提示词助手。
-
-请求表单分区：
-
-```text
-提示词
-模型与模式
-图生图参考图
-图片规格
-数量与执行
-```
-
-当前默认值：
-
-- 图片尺寸：`自动`
-- 质量：`高`
-- 输出格式：`PNG`
-- 数量：读取当前账号默认数量，未设置时为 `1`
-- 并发：读取当前账号默认并发，未设置时为 `1`
-
-说明：
-
-- `自动尺寸` 表示不向上游传具体 `size`，让模型或上游自行决定尺寸。
-- Image-2 支持质量选择：自动 / 低 / 中 / 高，默认高。
-- Banana 的比例、清晰度不是普通参数，而是通过模型 ID 路由。
-
-### 3. 图生图 / 多参考图
-
-图生图可以上传一张或多张参考图。
-
-提交时提示词按输入框内容原样发送，不会自动追加任何内置提示词。多张参考图按上传列表顺序传给后端。
-
-### 4. 结果页
-
-结果页以当前任务为中心显示：
-
-- 任务状态
-- 原始提示词
-- 模型 / 比例 / 清晰度 / 质量 / 格式 / 数量 / 并发
-- 每张图片的实际尺寸、实际质量、输出格式、耗时、图床状态
-
-每张结果图下方提供常驻操作按钮：
-
-- 预览
-- 下载
-- 复制图片
-- 复制链接
-- 上传图床 / 重试图床
-- 作为参考图
-
-全屏预览只显示：
-
-- 图片
-- 真实像素尺寸
-- 实际宽高比
-- 文件大小
-- 底部操作按钮
-
-全屏预览不显示提示词和参数，避免遮挡图片。
-
-### 5. 模型返回提示词逻辑
-
-结果页的原始提示词下方可能出现“模型返回提示词”。这不是本项目主动改写，也不是提示词助手生成。
-
-逻辑是：
-
-1. 本项目把你的提示词发给 NewAPI / 上游模型。
-2. 如果上游返回 JSON 中包含：
-
-```json
-{
-  "revised_prompt": "..."
-}
-```
-
-或：
-
-```json
-{
-  "data": [
-    { "revised_prompt": "..." }
-  ]
-}
-```
-
-3. 后端会把它保存为 `result.revisedPrompt`。
-4. 前端只负责展示这个上游返回值。
-
-它表示“上游返回的实际处理提示词 / 改写提示词”。它不会覆盖原始提示词，只作为结果信息保留。
-
-### 6. 队列页
-
-队列页是历史和异常处理中心：
-
-- 任务统计：全部 / 进行中 / 成功 / 异常
-- 筛选：全部 / 进行中 / 成功 / 失败 / 收藏
-- 搜索：提示词、模型、错误码
-- 缩略图预览
-- 批量收藏、下载、删除
-- 单任务复用、重试、详情、删除
-
-失败任务会尽量显示：
-
-```text
-中文原因 / 错误码 / 英文标识
-```
-
-### 7. 提示词助手
-
-提示词助手内嵌在生成页右侧，使用 `gpt-5.5`。
-
-支持：
-
-- 文字生成图片提示词
-- 图片还原提示词
-- 灵感模式
-- 历史 / 会话
-- 继续对话修改提示词
-- 复制提示词
-- 填入并使用指定模型
-
-填入逻辑：
-
-- 点击“应用此提示词”后，会填回生成页主输入框。
-- 如果助手里选择了 Image-2 / Banana，会同步主表单的模型选择。
-
-### 8. 设置页
-
-普通设置页属于当前登录账号，主要管理：
-
-- 账号安全：开启或关闭 2FA，一次性验证码用于保护登录。
-- `codex-key`：默认保存在当前浏览器本地；可选上传到云端账号空间，供 Image-2 与提示词助手使用。
-- Banana 分组 Key：默认保存在当前浏览器本地；可选上传到云端账号空间，供 Banana Nano 使用。
-- 默认数量：按当前账号保存到后端
-- 默认并发：按当前账号保存到后端
-- PiXhost 自动上传开关：按当前账号保存到后端
-
-默认情况下 Key 不写入服务器 `data/spaces/{storageToken}/config.json`，`GET /api/config` 也不会返回明文 Key。勾选“同时上传到云端”时，前端会弹窗提示：如果账号密码泄露，云端 Key 可能被使用或窃取，并推荐先开启 2FA。云端 Key 只返回“是否已设置”和脱敏预览，不返回明文。
-
-### 9. Admin 页面
-
-Admin 独立路径：
-
-```text
-/admin
-```
-
-普通工作台页面不再展示 Admin 入口；管理员需要自己在域名后拼接 `/admin` 进入，避免普通用户误触管理配置。
-
-首次访问需要设置 Admin 密码，后续登录后可以配置：
-
-- NewAPI Base URL
-- 对外访问域名
-- 请求超时时间，默认 `600s`
-- Debug 日志开关
-
-Debug 开启后，只对新创建任务生效。前端结果页会显示脱敏后的请求、响应、保存等关键日志，不显示 API Key 明文。
+结果页可能展示“模型返回提示词”。这不是本项目主动改写，也不是提示词助手生成，而是上游响应里的 `revised_prompt`。它只作为结果信息保留，不会覆盖原始提示词。
 
 ---
 
-## 模型与 Key 逻辑
-
-当前 Key 保存策略：
-
-- 浏览器按当前登录用户名在 `localStorage` 保存 `codex-key` 与 Banana 分组 Key，这是默认策略。
-- 如果用户明确勾选“同时上传到云端”并确认风险，后端会把对应 Key 保存到当前账号空间，用于多设备登录后继续生成。
-- `GET /api/config` 只返回 Key 状态和脱敏预览，不返回明文 Key。
-- 创建任务、重试任务、提示词助手调用时，后端优先使用当前浏览器通过临时请求头传入的本地 Key；没有本地 Key 时，再尝试使用已授权保存的云端 Key。
-- 清除本地 Key 只影响当前浏览器；清除云端 Key 会从服务器账号空间删除对应 Key。
-- 服务器重启后，运行中任务会标记为 `interrupted`，避免重复请求导致重复扣费；重试时可以使用当前浏览器本地 Key，或已授权保存的云端 Key。
-
-### Image-2
-
-- 模型 ID：`gpt-image-2`
-- Key 名称：`codex-key`
-- 支持文生图和图生图
-- 支持自动尺寸、固定比例、清晰度、质量、输出格式
-
-### Banana Nano
-
-- 使用单独 Banana 分组 Key
-- URL 仍走后端统一配置的 NewAPI Base URL
-- 规格通过模型 ID 决定，而不是通过普通参数传递
-
-内置 Banana 模型 ID 包括：
+## 架构和数据流
 
 ```text
-gemini-3.1-flash-image-preview
-gemini-3.1-flash-image-preview-16x9-4k
-gemini-3.1-flash-image-preview-9x16-4k
-gemini-3.1-flash-image-preview-16x9-2k
-gemini-3.1-flash-image-preview-9x16-2k
-gemini-3.1-flash-image-preview-2k
-gemini-3.1-flash-image-preview-4k
-gemini-3.1-flash-image-preview-4x3-4k
-gemini-3.1-flash-image-preview-4x3-2k
-gemini-3.1-flash-image-preview-1x1-4k
-gemini-3.1-flash-image-preview-3x4-2k
-gemini-3.1-flash-image-preview-3x4-4k
-gemini-3.1-flash-image-preview-1x1-2k
+Browser / React UI
+  │  same-origin /api
+  ▼
+Go local-server
+  ├─ 用户账号 / Session / 2FA
+  ├─ Admin 配置 / NewAPI Base URL / Debug
+  ├─ 任务队列 / SSE / 重试 / 取消
+  ├─ 上传参考图 / 图生图任务快照
+  ├─ outputs 本机结果落盘
+  └─ NewAPI / OpenAI-compatible image API
+```
+
+默认目录：
+
+```text
+data/                         用户、空间、任务、配置、参考图
+outputs/                      生成图片
+web/dist/                     前端生产构建产物
+cmd/local-server              Go 服务入口
+```
+
+生产形态下 Go 后端同时负责：
+
+- 托管 `web/dist` 静态前端；
+- 提供 `/api/*`；
+- 调用上游 NewAPI / OpenAI 兼容网关；
+- 保存任务状态和图片结果；
+- 对结果图片做登录鉴权。
+
+---
+
+## 部署教程索引
+
+如果你不知道该从哪里开始，先看这一段。更完整的一页式导航见 [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md)。
+
+| 场景 | 入口 | 适合谁 |
+| --- | --- | --- |
+| 部署总索引 | [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) | 想先判断本机、Linux、宝塔、更新分别该看哪份文档 |
+| 本机体验 / 开发 | [快速开始](#快速开始) | 想先跑起来看功能，或本地开发调试 |
+| Linux 服务器正式部署 | [`docs/DEPLOY_LINUX.md`](docs/DEPLOY_LINUX.md) | 熟悉 SSH、systemd、Nginx/Caddy 的用户 |
+| 宝塔面板部署 | [`docs/DEPLOY_BAOTA.md`](docs/DEPLOY_BAOTA.md) | 使用宝塔 Go 项目管理器和 Nginx 反代的用户 |
+| 已部署后更新 | [已部署服务器一键更新](#已部署服务器一键更新) | 服务器已跑起来，只需要拉新代码、重构建、重启 |
+| 开源发布检查 | [`docs/OPEN_SOURCE_CHECKLIST.md`](docs/OPEN_SOURCE_CHECKLIST.md) | 准备 fork、二次发布或公开部署文档前自查 |
+
+推荐生产路径：
+
+```text
+准备域名和服务器
+  → 按 Linux / 宝塔教程部署 Go 服务
+  → 配置 Nginx / Caddy / 宝塔反代到 127.0.0.1:8787
+  → 访问 /admin 配置 NewAPI Base URL
+  → 注册普通账号并设置本地 Key 或云端 Key
+  → 开始生成
 ```
 
 ---
 
-## 后端任务逻辑
+## 快速开始
 
-任务创建后：
+### 依赖
 
-1. 前端提交 `/api/background-tasks`。
-2. 后端创建任务并立刻返回任务对象。
-3. 后端优先把本次请求带来的浏览器本地 Key 暂存到内存；如果本地 Key 不存在，则读取已授权保存的云端 Key。
-4. 每张图保存到 `outputs/`，前端通过 `/api/background-tasks/{taskId}/images/{index}` 鉴权读取。
-5. 任务状态写入 `data/`。
-6. 前端通过 SSE 或轮询刷新状态。
+- Go 1.22+
+- Node.js 20+
+- npm
 
-多图任务逻辑：
-
-- 前端可以填数量 `n`。
-- 后端按单图请求拆分执行。
-- 单张失败不会强制整单失败。
-- 部分成功时任务状态为 `partial_failed`。
-
-程序重启逻辑：
-
-- 已完成任务保留。
-- 排队任务可恢复。
-- 运行中任务会标记为 `interrupted`，避免重复请求导致重复扣费；重试时需要当前浏览器重新提供本地 Key，或使用已授权保存的云端 Key。
-
----
-
-## 安全与用户系统
-
-当前版本已经改为“用户名 + 密码”注册和登录：
-
-- 同一个账号在多设备登录后共享任务历史、提示词历史、参考图和输出图。
-- 服务器为每个用户绑定内部 `storageToken` 作为数据目录 ID，这个 token 不会通过登录接口返回给前端。
-- 支持 2FA：开启后，登录时除了用户名和密码，还需要验证器 App 的一次性验证码。
-- API Key 默认只保存在当前浏览器本地；也可以在风险确认后主动保存到云端账号空间，用于多设备同步。
-- 保存云端 Key 前会提示泄露风险：如果账号密码泄露，攻击者可能使用或窃取云端 Key，因此强烈建议同时开启 2FA。
-- 输出图优先通过 `/api/background-tasks/{taskId}/images/{index}` 读取，并校验当前登录用户是否拥有该任务。
-- 旧 `/outputs/{storageToken}/...` 地址已经要求登录，并且只能由绑定该内部空间的账号访问；匿名访问或其他账号访问会被拒绝。
-- 注册新账号时可以选择“导入旧空间历史”，输入旧空间密码后把旧空间绑定到新账号，避免丢失已有历史。
-
-用户数据保存在 `data/users.json`，任务、配置、参考图仍按内部 `storageToken` 落到 `data/spaces/`。服务重启后需要重新登录；已经完成的历史记录不会丢失。
-
----
-
-## 目录说明
-
-```text
-cmd/local-server        Go 服务入口
-internal/api            HTTP 路由
-internal/jobs           任务队列、状态机、执行逻辑
-internal/newapi         NewAPI 图片接口客户端
-internal/output         图片落盘与读取
-internal/uploads        图生图参考图保存
-internal/events         SSE 事件中心
-internal/settings       Admin 全局配置
-internal/spaceconfig    个人空间配置
-internal/users          用户注册、登录和会话
-internal/adminauth      Admin 初始密码和登录
-web/                    React + Vite 前端
-data/                   本机配置、用户、空间和任务状态
-outputs/                本机生成图片
-```
-
----
-
-## 开发命令
+### 本机生产形态运行
 
 ```bash
-# 后端开发
-go run ./cmd/local-server
+git clone https://github.com/y08lin4/lyra-image-workbench.git
+cd lyra-image-workbench
 
-# 前端开发服务器，仅开发期使用 Vite 代理 /api 到 Go 后端
+cd web
+npm ci
+npm run build
+cd ..
+
+go run ./cmd/local-server
+```
+
+打开：
+
+```text
+http://127.0.0.1:8787
+```
+
+首次进入：
+
+1. 注册普通用户账号。
+2. 访问 `/admin` 设置 Admin 密码。
+3. 在 Admin 中配置 `NewAPI Base URL`。
+4. 回到工作台设置页保存本地 `codex-key` / Banana Key。
+
+### 前后端开发模式
+
+终端 A：
+
+```bash
+go run ./cmd/local-server
+```
+
+终端 B：
+
+```bash
 cd web
 npm ci
 npm run dev
-
-# 前端生产构建
-cd web
-npm run build
-
-# 后端测试
-go test ./...
 ```
 
-生产形态下由 Go 后端直接托管 `web/dist`，访问 `/api/...` 即可。
+访问：
+
+```text
+http://127.0.0.1:5173
+```
+
+Vite 会把 `/api` 和 `/outputs` 代理到 `127.0.0.1:8787`。
+
+---
+
+## 生产部署
+
+如果只是想快速跑起来，请先看 [快速开始](#快速开始)。如果要放到服务器长期运行，建议先看 [部署教程索引](#部署教程索引) 选择对应教程。
+
+### Linux 构建
+
+```bash
+cd /opt/lyra-image-workbench
+cd web && npm ci && npm run build && cd ..
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o image-workbench-local-server ./cmd/local-server
+```
+
+### 已部署服务器一键更新
+
+适用于默认宝塔/systemd 路径 `/www/wwwroot/image-workbench`：
+
+```bash
+git config --global --add safe.directory /www/wwwroot/image-workbench && cd /www/wwwroot/image-workbench && git pull --ff-only origin master && cd web && npm ci && npm run build && cd .. && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o image-workbench-local-server.new ./cmd/local-server && chmod +x image-workbench-local-server.new && mv -f image-workbench-local-server.new image-workbench-local-server && chown -R www:www /www/wwwroot/image-workbench && systemctl restart image-workbench && systemctl status image-workbench --no-pager
+```
+
+看到下面状态说明服务正常：
+
+```text
+Active: active (running)
+```
+
+如果使用宝塔 Go 项目托管而不是 systemd，构建完成后在宝塔面板里重启 Go 项目即可。
+
+更完整的部署说明：
+
+- [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md)：部署教程总索引，按本机、Linux、宝塔、更新场景选择入口。
+- [`docs/DEPLOY_LINUX.md`](docs/DEPLOY_LINUX.md)：Linux、systemd、Nginx/Caddy、备份恢复。
+- [`docs/DEPLOY_BAOTA.md`](docs/DEPLOY_BAOTA.md)：宝塔 Go 项目、Nginx 反代、常见问题。
 
 ---
 
@@ -366,42 +264,98 @@ go test ./...
 
 ---
 
-## Linux / 宝塔部署更新命令
+## 安全和 Key 策略
 
-服务器已部署后，一键更新：
+### 用户和空间
 
-```bash
-git config --global --add safe.directory /www/wwwroot/image-workbench && cd /www/wwwroot/image-workbench && git pull --ff-only origin master && cd web && npm ci && npm run build && cd .. && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o image-workbench-local-server.new ./cmd/local-server && chmod +x image-workbench-local-server.new && mv -f image-workbench-local-server.new image-workbench-local-server && chown -R www:www /www/wwwroot/image-workbench && systemctl restart image-workbench && systemctl status image-workbench --no-pager
-```
+- 普通用户通过用户名 + 密码登录。
+- 用户名支持大小写展示；登录和重复判断大小写不敏感。
+- 每个用户绑定内部 `storageToken`，不通过登录接口暴露给前端。
+- 支持 2FA：开启后登录需要验证器 App 的一次性验证码。
+- 新账号可导入旧空间历史，避免迁移时丢失任务和结果。
 
-看到：
+### API Key
 
-```text
-Active: active (running)
-```
+默认策略是**浏览器本地保存 Key**：
 
-说明服务正常。
+- `codex-key` 和 Banana Key 默认保存在当前浏览器 `localStorage`。
+- 后端创建任务时通过临时请求头拿到本次 Key，并只在内存里为该任务暂存。
+- `GET /api/config` 只返回是否已设置和脱敏预览，不返回明文。
+
+可选策略是**确认风险后保存到云端账号空间**：
+
+- 适合多设备登录后继续生成。
+- 如果账号密码泄露，云端 Key 可能被使用或窃取。
+- 保存云端 Key 前建议先开启 2FA。
+
+### 输出图片
+
+- 结果优先通过 `/api/background-tasks/{taskId}/images/{index}` 读取，并校验当前登录用户是否拥有该任务。
+- 旧 `/outputs/{storageToken}/...` 地址也要求登录并校验空间归属。
+
+### Debug 日志
+
+Admin 开启 Debug 后，只对新任务生效。日志会显示请求阶段、上游状态、保存路径等信息，但会对 API Key 和长提示词做脱敏处理。
 
 ---
 
-## 设计文档
+## 项目结构
 
-- `docs/DEPLOY_LINUX.md`：Linux 服务器部署、systemd、Nginx/Caddy、升级和备份教程。
-- `docs/DEPLOY_BAOTA.md`：宝塔面板 Go 项目部署教程，包含字段填写、Nginx 反代和常见问题。
-- `docs/CHANGES_FROM_AI_IMAGE_GENERATE.md`：相较 `AI-Image-generate` 的架构、功能和部署更新说明。
-- `docs/ROUTES.md`：参考项目路由与本地化调整。
-- `docs/STACK.md`：Go 后端与 React/Vite 前端选型。
-- `docs/PROJECT_REQUIREMENTS.md`：项目模块化和稳定性要求。
-- `docs/REFERENCE_PROJECT_ANALYSIS.md`：参考项目路由、后台任务和稳定性缺口分析。
-- `docs/CLOSED_LOOP_DESIGN.md`：闭环设计和实现顺序。
-- `docs/SPACE_DESIGN.md`：早期个人空间、空间密码、固定模型和图生图设计记录。
-- `docs/OPEN_SOURCE_CHECKLIST.md`：开源发布前检查清单。
+```text
+cmd/local-server        Go 服务入口
+internal/api            HTTP 路由和鉴权
+internal/jobs           任务队列、状态机、执行、重试、取消
+internal/newapi         NewAPI / OpenAI 兼容图片接口客户端
+internal/output         图片落盘与读取
+internal/uploads        图生图参考图保存
+internal/events         SSE 事件中心
+internal/settings       Admin 全局配置
+internal/spaceconfig    用户空间配置和 Key 状态
+internal/users          用户注册、登录、2FA、会话
+internal/adminauth      Admin 初始密码和登录
+internal/prompttools    提示词助手服务和历史
+web/                    React + TypeScript + Vite 前端
+docs/                   部署、设计和迁移说明
+scripts/                部署和本地重启脚本
+```
+
+---
+
+## 开发和测试
+
+```bash
+# Go 测试
+go test ./...
+
+# 前端依赖和构建
+cd web
+npm ci
+npm run build
+```
+
+CI 会在 push 和 PR 时运行：
+
+- `go test ./...`
+- `cd web && npm ci && npm run build`
+
+---
+
+## 更多文档
+
+- [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md)：部署教程总索引，按本机、Linux、宝塔、更新场景选择入口。
+- [`docs/DEPLOY_LINUX.md`](docs/DEPLOY_LINUX.md)：Linux 服务器部署、systemd、Nginx/Caddy、升级和备份。
+- [`docs/DEPLOY_BAOTA.md`](docs/DEPLOY_BAOTA.md)：宝塔面板 Go 项目部署教程。
+- [`docs/CHANGES_FROM_AI_IMAGE_GENERATE.md`](docs/CHANGES_FROM_AI_IMAGE_GENERATE.md)：相较参考项目的架构和功能更新。
+- [`docs/STACK.md`](docs/STACK.md)：Go 后端与 React/Vite 前端选型。
+- [`docs/PROJECT_REQUIREMENTS.md`](docs/PROJECT_REQUIREMENTS.md)：项目模块化和稳定性要求。
+- [`docs/OPEN_SOURCE_CHECKLIST.md`](docs/OPEN_SOURCE_CHECKLIST.md)：开源发布前检查清单。
 
 ---
 
 ## 开源协作
 
-- 许可证：MIT，见 `LICENSE`。
-- 贡献说明：见 `CONTRIBUTING.md`。
-- 安全问题报告：见 `SECURITY.md`。
-- CI：GitHub Actions 会运行 `go test ./...` 和 `web` 生产构建。
+- 许可证：MIT，见 [`LICENSE`](LICENSE)。
+- 贡献说明：见 [`CONTRIBUTING.md`](CONTRIBUTING.md)。
+- 安全问题报告：见 [`SECURITY.md`](SECURITY.md)。
+
+欢迎提交 issue / PR。提交前请确认没有包含 `data/`、`outputs/`、`.env`、日志、API Key、用户数据或生成图片隐私内容。
