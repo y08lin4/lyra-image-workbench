@@ -7,6 +7,7 @@
 | 目标 | 推荐入口 | 说明 |
 | --- | --- | --- |
 | 本机体验 / 二次开发 | [`README.md#快速开始`](../README.md#快速开始) | 最短路径跑起前后端，适合先看功能或本地开发。 |
+| Docker 镜像部署 | [`DOCKER.md`](DOCKER.md) | 使用 GHCR 镜像、Docker Compose、容器数据卷和反代部署。 |
 | Linux 服务器正式部署 | [`DEPLOY_LINUX.md`](DEPLOY_LINUX.md) | 推荐生产方案：systemd 托管 Go 服务，Nginx/Caddy 做 HTTPS 反代。 |
 | 宝塔面板部署 | [`DEPLOY_BAOTA.md`](DEPLOY_BAOTA.md) | 适合使用宝塔 Go 项目管理器和宝塔 Nginx 的服务器。 |
 | 已部署后更新 | [`README.md#已部署服务器一键更新`](../README.md#已部署服务器一键更新) | 服务器已跑起来，只需要拉新代码、重新构建并重启服务。 |
@@ -17,6 +18,7 @@
 - 一台 Linux 服务器，或已安装宝塔面板的服务器。
 - 一个域名，建议开启 HTTPS。
 - Go `1.22+`、Node.js `20+`、npm、Git。
+  - 如果直接使用 Docker 镜像，不需要在宿主机安装 Go 和 Node.js。
 - 可用的 OpenAI 兼容图片接口 / NewAPI Base URL。
   - 不想自建网关时，可查看 API 服务入口：[https://ai-cf.ailinyu.de/](https://ai-cf.ailinyu.de/)。
 - 明确运行时数据目录，至少包含：
@@ -37,6 +39,8 @@
   → 访问 /admin 配置 NewAPI Base URL
   → 注册普通账号并设置本地 Key 或云端 Key
 ```
+
+Docker 部署可以跳过本地构建步骤，直接拉取 `ghcr.io/y08lin4/lyra-image-workbench:latest`，然后挂载 `/app/data` 和 `/app/outputs`。
 
 ## 推荐生产结构
 
@@ -61,4 +65,3 @@ Browser
 4. 更新后能访问 `/admin` 和普通工作台页面。
 
 默认宝塔/systemd 路径的一键更新命令见 [`README.md#已部署服务器一键更新`](../README.md#已部署服务器一键更新)。如果你的目录或 systemd 服务名不同，请先替换命令里的路径和服务名。
-
