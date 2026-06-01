@@ -17,6 +17,7 @@ import (
 	"github.com/y08lin4/lyra-image-workbench/internal/llm"
 	"github.com/y08lin4/lyra-image-workbench/internal/newapi"
 	"github.com/y08lin4/lyra-image-workbench/internal/output"
+	"github.com/y08lin4/lyra-image-workbench/internal/promptsquare"
 	"github.com/y08lin4/lyra-image-workbench/internal/prompttools"
 	"github.com/y08lin4/lyra-image-workbench/internal/settings"
 	"github.com/y08lin4/lyra-image-workbench/internal/spaceconfig"
@@ -289,18 +290,23 @@ func newTestAPIEnv(t *testing.T) testAPIEnv {
 	jobManager := jobs.NewManager(jobStore, events.NewHub(), settingsStore, spaceConfigStore, uploadStore, outputStore, newapi.NewClient())
 	promptStore := prompttools.NewStore(spaceStore)
 	promptService := prompttools.NewService(promptStore, settingsStore, spaceConfigStore, uploadStore, jobManager, outputStore, llm.NewClient())
+	promptSquareStore, err := promptsquare.NewStore(cfg.DataDir)
+	if err != nil {
+		t.Fatalf("promptsquare.NewStore() error = %v", err)
+	}
 
 	router := NewRouter(Dependencies{
-		Config:      cfg,
-		AdminAuth:   adminAuthStore,
-		Users:       userStore,
-		Settings:    settingsStore,
-		Spaces:      spaceStore,
-		SpaceConfig: spaceConfigStore,
-		Uploads:     uploadStore,
-		Jobs:        jobManager,
-		Output:      outputStore,
-		PromptTools: promptService,
+		Config:       cfg,
+		AdminAuth:    adminAuthStore,
+		Users:        userStore,
+		Settings:     settingsStore,
+		Spaces:       spaceStore,
+		SpaceConfig:  spaceConfigStore,
+		Uploads:      uploadStore,
+		Jobs:         jobManager,
+		Output:       outputStore,
+		PromptSquare: promptSquareStore,
+		PromptTools:  promptService,
 	})
 	return testAPIEnv{Router: router, Spaces: spaceStore, Output: outputStore}
 }

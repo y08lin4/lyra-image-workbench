@@ -7,6 +7,7 @@ import (
 	"github.com/y08lin4/lyra-image-workbench/internal/config"
 	"github.com/y08lin4/lyra-image-workbench/internal/jobs"
 	"github.com/y08lin4/lyra-image-workbench/internal/output"
+	"github.com/y08lin4/lyra-image-workbench/internal/promptsquare"
 	"github.com/y08lin4/lyra-image-workbench/internal/prompttools"
 	"github.com/y08lin4/lyra-image-workbench/internal/settings"
 	"github.com/y08lin4/lyra-image-workbench/internal/spaceconfig"
@@ -16,16 +17,17 @@ import (
 )
 
 type Dependencies struct {
-	Config      config.Config
-	AdminAuth   *adminauth.Store
-	Users       *users.Store
-	Settings    *settings.FileStore
-	Spaces      *spaces.FileStore
-	SpaceConfig *spaceconfig.Store
-	Uploads     *uploads.Store
-	Jobs        *jobs.Manager
-	Output      *output.Store
-	PromptTools *prompttools.Service
+	Config       config.Config
+	AdminAuth    *adminauth.Store
+	Users        *users.Store
+	Settings     *settings.FileStore
+	Spaces       *spaces.FileStore
+	SpaceConfig  *spaceconfig.Store
+	Uploads      *uploads.Store
+	Jobs         *jobs.Manager
+	Output       *output.Store
+	PromptSquare *promptsquare.Store
+	PromptTools  *prompttools.Service
 }
 
 func NewRouter(deps Dependencies) http.Handler {
@@ -40,6 +42,7 @@ func NewRouter(deps Dependencies) http.Handler {
 	taskHandler := NewTaskHandler(deps.Jobs, deps.Output)
 	promptToolsHandler := NewPromptToolsHandler(deps.PromptTools)
 	outputHandler := NewOutputHandler(deps.Output)
+	promptSquareHandler := NewPromptSquareHandler(deps.PromptSquare)
 	staticHandler := NewStaticHandler(deps.Config.WebDir)
 
 	mux.HandleFunc("GET /api/health", health.ServeHTTP)
@@ -85,6 +88,9 @@ func NewRouter(deps Dependencies) http.Handler {
 	mux.HandleFunc("POST /api/prompt-tools/inspiration/expand", promptToolsHandler.InspirationExpand)
 	mux.HandleFunc("GET /api/prompt-tools/history", promptToolsHandler.History)
 	mux.HandleFunc("DELETE /api/prompt-tools/history/{id}", promptToolsHandler.Delete)
+	mux.HandleFunc("GET /api/prompt-square/items", promptSquareHandler.List)
+	mux.HandleFunc("POST /api/prompt-square/items", promptSquareHandler.Create)
+	mux.HandleFunc("GET /api/prompt-square/images/{file}", promptSquareHandler.Image)
 	mux.HandleFunc("GET /outputs/{space}/{date}/{file}", outputHandler.Serve)
 	mux.HandleFunc("GET /", staticHandler.Serve)
 

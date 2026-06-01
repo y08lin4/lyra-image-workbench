@@ -10,6 +10,7 @@ import { SettingsPanel } from './SettingsPanel'
 import { TaskDetailModal } from './TaskDetailModal'
 import { TaskSidebar } from './TaskSidebar'
 import { PromptAssistantModal } from './PromptAssistantModal'
+import { PromptSquarePanel } from './PromptSquarePanel'
 import { ResultCanvas } from './ResultCanvas'
 import { ThemeToggle, type ThemeMode } from './ThemeToggle'
 import { useTaskEvents } from '../hooks/useTaskEvents'
@@ -19,7 +20,7 @@ import { nativeExitApp, nativeSaveImage } from '../lib/nativeBridge'
 import { ensureAppBackBridge, installEdgeBackGesture, registerAppBackHandler } from '../lib/appBack'
 
 type NumericInputValue = number | ''
-type WorkbenchTab = 'generate' | 'result' | 'queue' | 'settings'
+type WorkbenchTab = 'generate' | 'square' | 'result' | 'queue' | 'settings'
 type WorkbenchTabItem = { id: WorkbenchTab; label: string; hint: string; badge?: string; tone?: 'normal' | 'danger' | 'active' }
 
 const MAX_REFERENCE_IMAGES = 8
@@ -29,6 +30,7 @@ const ALLOWED_REFERENCE_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp'
 
 const workflowTabs: WorkbenchTabItem[] = [
   { id: 'generate', label: '生成', hint: '请求' },
+  { id: 'square', label: '广场', hint: 'Prompt' },
   { id: 'result', label: '结果', hint: '图片' },
   { id: 'queue', label: '队列', hint: '历史' },
   { id: 'settings', label: '设置', hint: 'Key' },
@@ -78,6 +80,7 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
   const missingKeyCount = (keyReady ? 0 : 1) + (bananaKeyReady ? 0 : 1)
   const tabItems = useMemo<WorkbenchTabItem[]>(() => workflowTabs.map((tab) => {
     if (tab.id === 'generate') return { ...tab, hint: currentKeyReady ? '可提交' : '缺 Key', tone: currentKeyReady ? 'normal' : 'danger' }
+    if (tab.id === 'square') return { ...tab, hint: '试验版' }
     if (tab.id === 'result') return { ...tab, hint: activeTask ? activeTask.statusText : '图片', badge: activeTask ? `${activeTask.progress}%` : undefined, tone: activeTask && !isFinal(activeTask) ? 'active' : 'normal' }
     if (tab.id === 'queue') return { ...tab, hint: activeCount ? `${activeCount} 进行中` : '历史', badge: activeCount ? String(activeCount) : undefined, tone: activeCount ? 'active' : 'normal' }
     if (tab.id === 'settings') return { ...tab, hint: missingKeyCount ? `${missingKeyCount} 个未设` : '已配置', badge: missingKeyCount ? '!' : undefined, tone: missingKeyCount ? 'danger' : 'normal' }
@@ -309,6 +312,15 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
     }
     goToTab('generate')
     setMessage(options ? '提示词助手已填入主输入框，并同步模型选择' : '提示词助手已填入主输入框')
+    window.setTimeout(() => {
+      document.querySelector('[data-generation-composer] textarea')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }, 0)
+  }
+
+  function handleUseSquarePrompt(nextPrompt: string) {
+    setPrompt(nextPrompt)
+    goToTab('generate')
+    setMessage('已从提示词广场填入主输入框')
     window.setTimeout(() => {
       document.querySelector('[data-generation-composer] textarea')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
     }, 0)
@@ -590,6 +602,12 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
               onReuse={handleReuseTask}
               onRetry={(id) => void handleRetry(id)}
             />
+          </section>
+        ) : null}
+
+        {activeTab === 'square' ? (
+          <section className="workflow-page prompt-square-page">
+            <PromptSquarePanel onUsePrompt={handleUseSquarePrompt} />
           </section>
         ) : null}
 

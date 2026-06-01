@@ -152,6 +152,50 @@ export interface CreateTaskRequest {
   uploadIds: string[]
 }
 
+export interface PromptSquareItem {
+  id: string
+  title: string
+  prompt: string
+  negativePrompt?: string
+  model?: string
+  params?: Record<string, string>
+  imageUrl?: string
+  thumbnailUrl?: string
+  tags?: string[]
+  author: {
+    name: string
+    url?: string
+  }
+  source: {
+    type: string
+    name?: string
+    url?: string
+    license?: string
+  }
+  status: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface CreatePromptSquareItemRequest {
+  title: string
+  prompt: string
+  negativePrompt?: string
+  model?: string
+  tags?: string
+  imageUrl?: string
+  sourceName?: string
+  sourceUrl?: string
+  license?: string
+  authorName?: string
+  authorUrl?: string
+  ratio?: string
+  resolution?: string
+  quality?: string
+  outputFormat?: string
+  image?: File | null
+}
+
 export type PromptToolMode = 'text-to-prompt' | 'image-to-prompt'
 
 export interface PromptRecord {
