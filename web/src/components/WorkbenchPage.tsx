@@ -222,6 +222,7 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
     }
     if (!prompt.trim()) { setError('请先输入提示词'); return }
     if (mode === 'image-to-image' && uploads.length === 0) { setError('图生图需要先上传参考图'); return }
+    const submittedUploads = mode === 'image-to-image' ? [...uploads] : []
     const payload: CreateTaskRequest = {
       provider,
       model: provider === BANANA_PROVIDER ? bananaModel : DEFAULT_IMAGE2_MODEL,
@@ -233,17 +234,29 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
       outputFormat: provider === BANANA_PROVIDER ? 'auto' : outputFormat,
       count: numericOrDefault(count, 1),
       concurrency: numericOrDefault(concurrency, 1),
-      uploadIds: mode === 'image-to-image' ? uploads.map((item) => item.id) : [],
+      uploadIds: submittedUploads.map((item) => item.id),
     }
     try {
       const job = await createTask(payload)
       upsertTask(job)
       setActiveId(job.id)
       setPrompt('')
+      if (submittedUploads.length) {
+        setUploads((current) => current.filter((item) => !submittedUploads.some((submitted) => submitted.id === item.id)))
+        void clearSubmittedReferenceUploads(submittedUploads)
+      }
       goToTab('result')
       setMessage('任务已提交，后端会继续执行，前端可刷新或断开')
     } catch (err) {
       setError(err instanceof Error ? err.message : '提交失败')
+    }
+  }
+
+  async function clearSubmittedReferenceUploads(items: ReferenceUpload[]) {
+    const results = await Promise.allSettled(items.map((item) => deleteReferenceUpload(item.id)))
+    await refreshUploads()
+    if (results.some((result) => result.status === 'rejected')) {
+      setToast('任务已提交，部分参考图自动移除失败，可手动删除')
     }
   }
 

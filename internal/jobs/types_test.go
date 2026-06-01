@@ -6,6 +6,10 @@ func TestPublicJobHidesInternalStorageFields(t *testing.T) {
 	job := Job{
 		ID:         "img_public",
 		SpaceToken: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+		References: []ReferenceSnapshot{{
+			FileName: "job_refs/img_public/01-ref.png",
+			Mime:     "image/png",
+		}},
 		Results: []Result{{
 			Index:          0,
 			OK:             true,
@@ -18,6 +22,9 @@ func TestPublicJobHidesInternalStorageFields(t *testing.T) {
 	public := PublicJob(job)
 	if public.SpaceToken != "" {
 		t.Fatalf("PublicJob leaked space token: %+v", public)
+	}
+	if len(public.References) != 0 {
+		t.Fatalf("PublicJob leaked reference snapshots: %+v", public.References)
 	}
 	if public.Results[0].OutputDate != "" || public.Results[0].OutputFileName != "" {
 		t.Fatalf("PublicJob leaked output metadata: %+v", public.Results[0])

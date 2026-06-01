@@ -1,9 +1,12 @@
 package jobs
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"io"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -52,13 +55,13 @@ func TestManagerCreateReturnsQueuedAndCompletesInBackground(t *testing.T) {
 
 	created, err := env.manager.Create(env.token, CreateRequest{
 		RuntimeSecrets: RuntimeSecrets{APIKey: "sk-test"},
-		Mode:         ModeTextToImage,
-		Prompt:       "cat",
-		Ratio:        "1:1",
-		Resolution:   "standard",
-		OutputFormat: "jpg",
-		Count:        2,
-		Concurrency:  1,
+		Mode:           ModeTextToImage,
+		Prompt:         "cat",
+		Ratio:          "1:1",
+		Resolution:     "standard",
+		OutputFormat:   "jpg",
+		Count:          2,
+		Concurrency:    1,
 	})
 	if err != nil {
 		t.Fatalf("Create() error = %v", err)
@@ -133,11 +136,11 @@ func TestManagerRecordsDebugLogsWhenEnabled(t *testing.T) {
 
 	created, err := env.manager.Create(env.token, CreateRequest{
 		RuntimeSecrets: RuntimeSecrets{APIKey: "sk-test"},
-		Mode:       ModeTextToImage,
-		Prompt:     "debug cat",
-		Ratio:      "1:1",
-		Resolution: "standard",
-		Count:      1,
+		Mode:           ModeTextToImage,
+		Prompt:         "debug cat",
+		Ratio:          "1:1",
+		Resolution:     "standard",
+		Count:          1,
 	})
 	if err != nil {
 		t.Fatalf("Create() error = %v", err)
@@ -173,12 +176,12 @@ func TestManagerAllowsPartialFailed(t *testing.T) {
 
 	created, err := env.manager.Create(env.token, CreateRequest{
 		RuntimeSecrets: RuntimeSecrets{APIKey: "sk-test"},
-		Mode:        ModeTextToImage,
-		Prompt:      "cat",
-		Ratio:       "1:1",
-		Resolution:  "standard",
-		Count:       2,
-		Concurrency: 1,
+		Mode:           ModeTextToImage,
+		Prompt:         "cat",
+		Ratio:          "1:1",
+		Resolution:     "standard",
+		Count:          2,
+		Concurrency:    1,
 	})
 	if err != nil {
 		t.Fatalf("Create() error = %v", err)
@@ -218,15 +221,15 @@ func TestManagerRoutesBananaModelWithSeparateKey(t *testing.T) {
 	env := newManagerTestEnv(t, server.URL)
 	created, err := env.manager.Create(env.token, CreateRequest{
 		RuntimeSecrets: RuntimeSecrets{BananaAPIKey: "sk-banana"},
-		Provider:    config.BananaProvider,
-		Model:       "gemini-3.1-flash-image-preview-16x9-4k",
-		Mode:        ModeTextToImage,
-		Prompt:      "banana",
-		Ratio:       "1:1",
-		Resolution:  "standard",
-		Quality:     "high",
-		Count:       1,
-		Concurrency: 1,
+		Provider:       config.BananaProvider,
+		Model:          "gemini-3.1-flash-image-preview-16x9-4k",
+		Mode:           ModeTextToImage,
+		Prompt:         "banana",
+		Ratio:          "1:1",
+		Resolution:     "standard",
+		Quality:        "high",
+		Count:          1,
+		Concurrency:    1,
 	})
 	if err != nil {
 		t.Fatalf("Create() error = %v", err)
@@ -240,6 +243,70 @@ func TestManagerRoutesBananaModelWithSeparateKey(t *testing.T) {
 	final := waitForJobStatus(t, env.store, env.token, created.ID, StatusSucceeded, 3*time.Second)
 	if len(final.Results) != 1 || !final.Results[0].OK {
 		t.Fatalf("unexpected final banana result: %+v", final.Results)
+	}
+}
+
+func TestManagerSnapshotsImageReferencesForSubmittedTask(t *testing.T) {
+	var editCalls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		editCalls.Add(1)
+		if r.URL.Path != "/images/edits" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		if err := r.ParseMultipartForm(20 << 20); err != nil {
+			t.Fatalf("ParseMultipartForm() error = %v", err)
+		}
+		if got := r.FormValue("prompt"); got != "edit cat" {
+			t.Fatalf("prompt = %q", got)
+		}
+		files := r.MultipartForm.File["image[]"]
+		if len(files) != 1 {
+			t.Fatalf("expected one reference image, got %d", len(files))
+		}
+		file, err := files[0].Open()
+		if err != nil {
+			t.Fatalf("open multipart image: %v", err)
+		}
+		defer file.Close()
+		data, err := io.ReadAll(file)
+		if err != nil {
+			t.Fatalf("read multipart image: %v", err)
+		}
+		if !bytes.HasPrefix(data, pngHeader()) {
+			t.Fatalf("reference image was not sent from snapshot, got %x", data)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": []map[string]string{{"b64_json": base64.StdEncoding.EncodeToString([]byte("edited"))}}})
+	}))
+	defer server.Close()
+	env := newManagerTestEnv(t, server.URL)
+	reference := savePNGReference(t, env.uploads, env.token)
+
+	created, err := env.manager.Create(env.token, CreateRequest{
+		RuntimeSecrets: RuntimeSecrets{APIKey: "sk-test"},
+		Mode:           ModeImageToImage,
+		Prompt:         "edit cat",
+		Ratio:          "1:1",
+		Resolution:     "standard",
+		Count:          1,
+		Concurrency:    1,
+		UploadIDs:      []string{reference.ID},
+	})
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	if len(created.References) != 1 {
+		t.Fatalf("created job should snapshot references: %+v", created)
+	}
+	if err := env.uploads.DeleteReferenceImage(env.token, reference.ID); err != nil {
+		t.Fatalf("DeleteReferenceImage() error = %v", err)
+	}
+
+	final := waitForJobStatus(t, env.store, env.token, created.ID, StatusSucceeded, 3*time.Second)
+	if len(final.Results) != 1 || !final.Results[0].OK {
+		t.Fatalf("unexpected final image-to-image result: %+v", final.Results)
+	}
+	if editCalls.Load() != 1 {
+		t.Fatalf("expected one edit call, got %d", editCalls.Load())
 	}
 }
 
@@ -491,6 +558,39 @@ func newPersistedJob(token string, id string, status Status, stage Stage) Job {
 	ApplyStatus(&job, status)
 	ApplyStage(&job, stage)
 	return job
+}
+
+func savePNGReference(t *testing.T, store *uploads.Store, token string) uploads.ReferenceImage {
+	t.Helper()
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	part, err := writer.CreateFormFile("image", "Reference.PNG")
+	if err != nil {
+		t.Fatalf("CreateFormFile() error = %v", err)
+	}
+	if _, err := part.Write(append(pngHeader(), []byte("reference")...)); err != nil {
+		t.Fatalf("write reference image: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("multipart close: %v", err)
+	}
+	request := httptest.NewRequest(http.MethodPost, "/upload", &body)
+	request.Header.Set("Content-Type", writer.FormDataContentType())
+	if err := request.ParseMultipartForm(uploads.MaxReferenceUploadBytes); err != nil {
+		t.Fatalf("ParseMultipartForm() error = %v", err)
+	}
+	saved, err := store.SaveReferenceImages(token, request.MultipartForm.File["image"])
+	if err != nil {
+		t.Fatalf("SaveReferenceImages() error = %v", err)
+	}
+	if len(saved) != 1 {
+		t.Fatalf("expected one saved reference, got %+v", saved)
+	}
+	return saved[0]
+}
+
+func pngHeader() []byte {
+	return []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'}
 }
 
 func closeOnce(ch chan struct{}) {

@@ -6,6 +6,9 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -112,12 +115,14 @@ func (m *Manager) Create(spaceToken string, req CreateRequest) (Job, error) {
 		return Job{}, errors.New("codex-key is not configured; save it locally or upload it to cloud after enabling account protection")
 	}
 	if req.Mode == ModeImageToImage {
-		if len(req.UploadIDs) == 0 {
+		if len(req.UploadIDs) == 0 && len(req.References) == 0 {
 			return Job{}, errors.New("图生图需要先上传参考图")
 		}
-		for _, id := range req.UploadIDs {
-			if _, _, err := m.uploads.GetReferenceImage(spaceToken, id); err != nil {
-				return Job{}, err
+		if len(req.References) == 0 {
+			for _, id := range req.UploadIDs {
+				if _, _, err := m.uploads.GetReferenceImage(spaceToken, id); err != nil {
+					return Job{}, err
+				}
 			}
 		}
 	}
@@ -125,6 +130,17 @@ func (m *Manager) Create(spaceToken string, req CreateRequest) (Job, error) {
 	id, err := newJobID()
 	if err != nil {
 		return Job{}, err
+	}
+	var references []ReferenceSnapshot
+	if req.Mode == ModeImageToImage {
+		if len(req.References) > 0 {
+			references, err = m.copyReferenceSnapshots(spaceToken, id, req.References)
+		} else {
+			references, err = m.snapshotReferenceImages(spaceToken, id, req.UploadIDs)
+		}
+		if err != nil {
+			return Job{}, err
+		}
 	}
 	adminCfg := m.settings.Get()
 	ratio := normalizeRatio(req.Ratio)
@@ -155,6 +171,7 @@ func (m *Manager) Create(spaceToken string, req CreateRequest) (Job, error) {
 		Count:        clamp(req.Count, 1, 12, 1),
 		Concurrency:  clamp(req.Concurrency, 1, 0, 1),
 		UploadIDs:    append([]string{}, req.UploadIDs...),
+		References:   references,
 		Progress:     0,
 		Results:      []Result{},
 		DebugEnabled: adminCfg.DebugEnabled,
@@ -295,6 +312,7 @@ func (m *Manager) Retry(spaceToken string, id string, secrets RuntimeSecrets) (J
 		Count:          old.Count,
 		Concurrency:    old.Concurrency,
 		UploadIDs:      old.UploadIDs,
+		References:     old.References,
 	})
 }
 
@@ -343,6 +361,7 @@ func (m *Manager) Delete(spaceToken string, id string) (Job, error) {
 	if !ok {
 		return Job{}, errors.New("任务不存在")
 	}
+	m.deleteReferenceSnapshots(spaceToken, job)
 	m.publish(id, "done", map[string]any{"deleted": true, "job": job})
 	return job, nil
 }
@@ -505,13 +524,9 @@ func (m *Manager) generateOne(ctx context.Context, spaceToken string, jobID stri
 		}
 		return NewResult(index, StatusFailed, "codex-key is not configured; save it locally or upload it to cloud after enabling account protection")
 	}
-	inputs := make([]newapi.InputImage, 0, len(job.UploadIDs))
-	for _, id := range job.UploadIDs {
-		item, path, err := m.uploads.GetReferenceImage(spaceToken, id)
-		if err != nil {
-			return NewResult(index, StatusFailed, err.Error())
-		}
-		inputs = append(inputs, newapi.InputImage{Name: item.OriginalName, Path: path, Mime: item.Mime})
+	inputs, err := m.inputImagesForJob(spaceToken, job)
+	if err != nil {
+		return NewResult(index, StatusFailed, err.Error())
 	}
 	job, _, _ = m.store.Update(spaceToken, jobID, func(j *Job) {
 		ApplyStage(j, StageWaitingUpstream)
@@ -604,6 +619,203 @@ func (m *Manager) generateOne(ctx context.Context, spaceToken string, jobID stri
 		}
 	}
 	return result
+}
+
+func (m *Manager) snapshotReferenceImages(spaceToken string, jobID string, uploadIDs []string) ([]ReferenceSnapshot, error) {
+	snapshots := make([]ReferenceSnapshot, 0, len(uploadIDs))
+	for index, id := range uploadIDs {
+		item, sourcePath, err := m.uploads.GetReferenceImage(spaceToken, id)
+		if err != nil {
+			return nil, err
+		}
+		uploadDir := filepath.Dir(sourcePath)
+		spaceDir := filepath.Dir(uploadDir)
+		relDir := filepath.Join("job_refs", jobID)
+		absDir := filepath.Join(spaceDir, relDir)
+		if err := os.MkdirAll(absDir, 0o700); err != nil {
+			return nil, err
+		}
+		ext := filepath.Ext(item.FileName)
+		if ext == "" {
+			ext = "." + referenceExtension(item.Mime)
+		}
+		fileName := fmt.Sprintf("%02d-%s%s", index+1, item.ID, ext)
+		relPath := filepath.Join(relDir, fileName)
+		destPath := filepath.Join(absDir, fileName)
+		if err := copyFileAtomic(sourcePath, destPath, 0o600); err != nil {
+			return nil, err
+		}
+		snapshots = append(snapshots, ReferenceSnapshot{
+			UploadID:     item.ID,
+			OriginalName: item.OriginalName,
+			FileName:     filepath.ToSlash(relPath),
+			Mime:         item.Mime,
+			Size:         item.Size,
+		})
+	}
+	return snapshots, nil
+}
+
+func (m *Manager) copyReferenceSnapshots(spaceToken string, jobID string, refs []ReferenceSnapshot) ([]ReferenceSnapshot, error) {
+	spaceDir, err := m.store.spaces.SpaceDir(spaceToken)
+	if err != nil {
+		return nil, err
+	}
+	relDir := filepath.Join("job_refs", jobID)
+	absDir := filepath.Join(spaceDir, relDir)
+	if err := os.MkdirAll(absDir, 0o700); err != nil {
+		return nil, err
+	}
+	copied := make([]ReferenceSnapshot, 0, len(refs))
+	for index, ref := range refs {
+		relSource, err := cleanReferenceSnapshotPath(ref.FileName)
+		if err != nil {
+			return nil, err
+		}
+		sourcePath := filepath.Join(spaceDir, relSource)
+		ext := filepath.Ext(ref.FileName)
+		if ext == "" {
+			ext = "." + referenceExtension(ref.Mime)
+		}
+		fileName := fmt.Sprintf("%02d%s", index+1, ext)
+		relPath := filepath.Join(relDir, fileName)
+		destPath := filepath.Join(absDir, fileName)
+		if err := copyFileAtomic(sourcePath, destPath, 0o600); err != nil {
+			return nil, err
+		}
+		size := ref.Size
+		if info, err := os.Stat(destPath); err == nil {
+			size = info.Size()
+		}
+		copied = append(copied, ReferenceSnapshot{
+			UploadID:     ref.UploadID,
+			OriginalName: ref.OriginalName,
+			FileName:     filepath.ToSlash(relPath),
+			Mime:         ref.Mime,
+			Size:         size,
+		})
+	}
+	return copied, nil
+}
+
+func (m *Manager) inputImagesForJob(spaceToken string, job Job) ([]newapi.InputImage, error) {
+	if len(job.References) > 0 {
+		spaceDir, err := m.store.spaces.SpaceDir(spaceToken)
+		if err != nil {
+			return nil, err
+		}
+		inputs := make([]newapi.InputImage, 0, len(job.References))
+		for _, ref := range job.References {
+			rel, err := cleanJobReferencePath(job.ID, ref.FileName)
+			if err != nil {
+				return nil, err
+			}
+			inputs = append(inputs, newapi.InputImage{Name: ref.OriginalName, Path: filepath.Join(spaceDir, rel), Mime: ref.Mime})
+		}
+		return inputs, nil
+	}
+
+	inputs := make([]newapi.InputImage, 0, len(job.UploadIDs))
+	for _, id := range job.UploadIDs {
+		item, path, err := m.uploads.GetReferenceImage(spaceToken, id)
+		if err != nil {
+			return nil, err
+		}
+		inputs = append(inputs, newapi.InputImage{Name: item.OriginalName, Path: path, Mime: item.Mime})
+	}
+	return inputs, nil
+}
+
+func cleanRelativePath(value string) (string, error) {
+	rel := filepath.Clean(filepath.FromSlash(strings.TrimSpace(value)))
+	if rel == "." || rel == "" || filepath.IsAbs(rel) || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", errors.New("参考图快照路径无效")
+	}
+	return rel, nil
+}
+
+func cleanReferenceSnapshotPath(value string) (string, error) {
+	rel, err := cleanRelativePath(value)
+	if err != nil {
+		return "", err
+	}
+	prefix := "job_refs" + string(filepath.Separator)
+	if !strings.HasPrefix(rel, prefix) {
+		return "", errors.New("参考图快照路径无效")
+	}
+	return rel, nil
+}
+
+func cleanJobReferencePath(jobID string, value string) (string, error) {
+	rel, err := cleanRelativePath(value)
+	if err != nil {
+		return "", err
+	}
+	prefix := filepath.Join("job_refs", jobID)
+	if rel != prefix && !strings.HasPrefix(rel, prefix+string(filepath.Separator)) {
+		return "", errors.New("参考图快照路径无效")
+	}
+	return rel, nil
+}
+
+func copyFileAtomic(sourcePath string, destPath string, perm os.FileMode) error {
+	source, err := os.Open(sourcePath)
+	if err != nil {
+		return err
+	}
+	defer source.Close()
+	tmp := fmt.Sprintf("%s.%d.tmp", destPath, time.Now().UnixNano())
+	dest, err := os.OpenFile(tmp, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, perm)
+	if err != nil {
+		return err
+	}
+	_, copyErr := io.Copy(dest, source)
+	closeErr := dest.Close()
+	if copyErr != nil {
+		_ = os.Remove(tmp)
+		return copyErr
+	}
+	if closeErr != nil {
+		_ = os.Remove(tmp)
+		return closeErr
+	}
+	return os.Rename(tmp, destPath)
+}
+
+func referenceExtension(mime string) string {
+	switch strings.ToLower(strings.TrimSpace(mime)) {
+	case "image/jpeg":
+		return "jpg"
+	case "image/webp":
+		return "webp"
+	default:
+		return "png"
+	}
+}
+
+func (m *Manager) deleteReferenceSnapshots(spaceToken string, job Job) {
+	if len(job.References) == 0 {
+		return
+	}
+	spaceDir, err := m.store.spaces.SpaceDir(spaceToken)
+	if err != nil {
+		return
+	}
+	dirs := make(map[string]struct{})
+	for _, ref := range job.References {
+		rel, err := cleanJobReferencePath(job.ID, ref.FileName)
+		if err != nil {
+			continue
+		}
+		dir := filepath.Dir(rel)
+		if dir == "." || dir == "" {
+			continue
+		}
+		dirs[dir] = struct{}{}
+	}
+	for dir := range dirs {
+		_ = os.RemoveAll(filepath.Join(spaceDir, dir))
+	}
 }
 
 func (m *Manager) resolveResultOutput(job Job, result Result) (string, string, error) {
@@ -870,6 +1082,9 @@ func validateCreate(req CreateRequest) error {
 		return errors.New("任务模式无效")
 	}
 	if req.Mode == ModeImageToImage && len(req.UploadIDs) > uploads.MaxReferenceImages {
+		return fmt.Errorf("图生图参考图最多 %d 张", uploads.MaxReferenceImages)
+	}
+	if req.Mode == ModeImageToImage && len(req.References) > uploads.MaxReferenceImages {
 		return fmt.Errorf("图生图参考图最多 %d 张", uploads.MaxReferenceImages)
 	}
 	return nil
