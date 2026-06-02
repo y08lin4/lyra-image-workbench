@@ -1712,6 +1712,60 @@ button:not(.primary) { background: var(--surface-soft); color: #1e3a8a; border: 
   font-size: 12px;
   font-weight: 800;
 }
+.prompt-inspector {
+  border: 1px solid #dbeafe;
+  border-radius: 14px;
+  background: #f8fbff;
+  overflow: hidden;
+}
+.prompt-inspector summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  cursor: pointer;
+  padding: 10px 12px;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 900;
+}
+.prompt-inspector summary small {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+.prompt-inspector-grid {
+  display: grid;
+  gap: 0;
+  border-top: 1px solid #dbeafe;
+}
+.prompt-inspector-row {
+  display: grid;
+  grid-template-columns: 104px minmax(0, 1fr);
+  gap: 10px;
+  padding: 9px 12px;
+  border-top: 1px solid rgba(219, 234, 254, .75);
+}
+.prompt-inspector-row:first-child {
+  border-top: 0;
+}
+.prompt-inspector-key {
+  color: #475569;
+  font-size: 12px;
+  font-weight: 900;
+}
+.prompt-inspector-value {
+  min-width: 0;
+  max-height: 180px;
+  margin: 0;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1.55;
+}
 .prompt-apply-model {
   display: grid;
   gap: 10px;

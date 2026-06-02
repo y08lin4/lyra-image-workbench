@@ -220,6 +220,7 @@ export interface PromptRecord {
   mustKeep?: string[]
   avoid?: string[]
   jsonDescription?: Record<string, unknown>
+  metadata?: Record<string, unknown>
   raw?: string
   model: string
   elapsedMs: number
@@ -260,6 +261,7 @@ export interface PromptVersion {
   index: number
   prompt: string
   negativePrompt?: string
+  ratio?: string
   mustKeep?: string[]
   avoid?: string[]
   notes?: string
@@ -277,6 +279,7 @@ export interface PromptSession {
   source?: PromptRecord['source']
   sourceImageUrl?: string
   target?: string
+  ratio?: string
   provider?: ModelProvider | string
   model?: string
   messages: PromptMessage[]
@@ -290,6 +293,7 @@ export interface CreatePromptSessionRequest {
   title?: string
   initialPrompt: string
   negativePrompt?: string
+  ratio?: string
   mustKeep?: string[]
   target?: string
   provider?: ModelProvider

@@ -39,23 +39,29 @@ func imageSystemPrompt() string {
 要求：
 1. 输出必须是一个 JSON 对象，不要 Markdown，不要代码块。
 2. 只描述图中可见内容，不能编造看不见的细节。
-3. 重点分析主体、构图、镜头/画风、环境、光线、颜色、材质、氛围。
-4. flatPrompt 控制在一段中文内，适合直接填入生图输入框。
-5. jsonDescription 保留结构化观察信息。
-6. negativePrompt 写会破坏还原效果的反向词。
-7. mustKeep 写 4-6 个必须保留的视觉锚点，avoid 写 2-4 个需要避免的偏差。
-8. 不进行真人身份识别，不猜测真实姓名、隐私或敏感身份。
+3. 必须识别并输出 ratio。ratio 只能取 auto、1:1、2:3、3:2、3:4、4:3、9:16、16:9 中最接近源图画幅的一个；如果用户提示里给了源图尺寸，优先按尺寸判断。
+4. 重点分析主体、动作/姿态、构图与景别、镜头视角/焦段感、画风或媒介、环境、光线方向、色彩与色调、材质纹理、景深/清晰度、氛围、画面中的文字/标识/边框等。
+5. flatPrompt 控制在一段中文内，适合直接填入生图输入框；必须显式写出画面比例，例如“画面比例为 9:16”。
+6. jsonDescription 保留结构化观察信息，字段尽量具体。
+7. negativePrompt 写会破坏还原效果的反向词。
+8. mustKeep 写 6-8 个必须保留的视觉锚点，avoid 写 3-5 个需要避免的偏差。
+9. 不进行真人身份识别，不猜测真实姓名、隐私或敏感身份。
 
 JSON Schema：
 {
+  "ratio": "1:1 | 2:3 | 3:2 | 3:4 | 4:3 | 9:16 | 16:9 | auto",
   "jsonDescription": {
     "subject": "主体与动作",
     "composition": "构图与景别",
-    "style": "摄影/绘画/渲染风格",
-    "lighting": "光线",
+    "camera": "镜头视角、焦段感、透视",
+    "style": "摄影/绘画/渲染/设计风格",
+    "lighting": "光源方向、软硬、明暗关系",
     "background": "背景",
-    "colors": "色彩",
-    "mood": "氛围"
+    "colors": "主色、辅色、色调",
+    "materials": "材质与纹理",
+    "depth": "景深、清晰度、层次",
+    "mood": "氛围",
+    "textOrGraphics": "可见文字、图形、标识或边框；没有则写无"
   },
   "flatPrompt": "一段可直接复刻画面感觉的中文提示词",
   "negativePrompt": "负面提示词",
@@ -64,8 +70,15 @@ JSON Schema：
 }`
 }
 
-func imageUserPrompt(target string) string {
-	return fmt.Sprintf(`请分析这张图片，并生成适用于 %s 的图片还原提示词。`, valueOr(target, "gpt-image-2"))
+func imageUserPrompt(target string, metrics ImageMetrics, metadata map[string]any) string {
+	return fmt.Sprintf(`请分析这张图片，并生成适用于 %s 的图片还原提示词。
+
+源图尺寸参考：%s
+
+图片 metadata / 原始提示词参考：
+%s
+
+请优先把源图画幅换算成最接近的受支持比例，写入 ratio 字段，并在 flatPrompt 末尾明确写出“画面比例为 ratio”。如果 metadata 里有原始提示词，只把它当作辅助证据；最终仍以图片可见内容为准。`, valueOr(target, "gpt-image-2"), metricsPrompt(metrics), metadataPrompt(metadata))
 }
 
 func refineSystemPrompt() string {
@@ -83,6 +96,7 @@ JSON Schema：
 {
   "flatPrompt": "修改后的可直接生图提示词",
   "negativePrompt": "负面提示词",
+  "ratio": "比例；如果没有变化则沿用当前比例",
   "mustKeep": ["必须保留的关键元素"],
   "avoid": ["需要避免的偏差"],
   "notes": "这次主要改了什么"
@@ -108,6 +122,8 @@ func refineUserPrompt(session PromptSession, current PromptVersion, message stri
 当前负面提示词：
 %s
 
+当前比例：%s
+
 当前必须保留元素：%v
 
 最近对话：
@@ -116,7 +132,7 @@ func refineUserPrompt(session PromptSession, current PromptVersion, message stri
 用户本轮修改要求：
 %s
 
-请返回新的提示词版本。`, valueOr(session.Title, "提示词会话"), valueOr(provider, session.Provider), valueOr(model, session.Model), current.Prompt, valueOr(current.NegativePrompt, "无"), current.MustKeep, recent, message)
+请返回新的提示词版本。`, valueOr(session.Title, "提示词会话"), valueOr(provider, session.Provider), valueOr(model, session.Model), current.Prompt, valueOr(current.NegativePrompt, "无"), valueOr(current.Ratio, valueOr(session.Ratio, "auto")), current.MustKeep, recent, message)
 }
 
 func inspirationSystemPrompt() string {

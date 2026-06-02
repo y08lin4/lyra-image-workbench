@@ -54,6 +54,7 @@ type Record struct {
 	MustKeep        []string       `json:"mustKeep,omitempty"`
 	Avoid           []string       `json:"avoid,omitempty"`
 	JSONDescription map[string]any `json:"jsonDescription,omitempty"`
+	Metadata        map[string]any `json:"metadata,omitempty"`
 	Raw             string         `json:"raw,omitempty"`
 	Model           string         `json:"model"`
 	ElapsedMs       int64          `json:"elapsedMs"`
@@ -77,6 +78,7 @@ type PromptSession struct {
 	Source          Source          `json:"source,omitempty"`
 	SourceImageURL  string          `json:"sourceImageUrl,omitempty"`
 	Target          string          `json:"target,omitempty"`
+	Ratio           string          `json:"ratio,omitempty"`
 	Provider        string          `json:"provider,omitempty"`
 	Model           string          `json:"model,omitempty"`
 	Messages        []PromptMessage `json:"messages"`
@@ -99,6 +101,7 @@ type PromptVersion struct {
 	Index          int       `json:"index"`
 	Prompt         string    `json:"prompt"`
 	NegativePrompt string    `json:"negativePrompt,omitempty"`
+	Ratio          string    `json:"ratio,omitempty"`
 	MustKeep       []string  `json:"mustKeep,omitempty"`
 	Avoid          []string  `json:"avoid,omitempty"`
 	Notes          string    `json:"notes,omitempty"`
@@ -112,6 +115,7 @@ type CreateSessionRequest struct {
 	Title          string   `json:"title"`
 	InitialPrompt  string   `json:"initialPrompt"`
 	NegativePrompt string   `json:"negativePrompt"`
+	Ratio          string   `json:"ratio"`
 	MustKeep       []string `json:"mustKeep"`
 	Target         string   `json:"target"`
 	Provider       string   `json:"provider"`

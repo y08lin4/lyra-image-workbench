@@ -14,7 +14,7 @@ import { PromptSquarePanel } from './PromptSquarePanel'
 import { ResultCanvas } from './ResultCanvas'
 import { ThemeToggle, type ThemeMode } from './ThemeToggle'
 import { useTaskEvents } from '../hooks/useTaskEvents'
-import { BANANA_PROVIDER, DEFAULT_BANANA_MODEL, DEFAULT_IMAGE2_MODEL, getBananaModelOption } from '../lib/models'
+import { BANANA_PROVIDER, DEFAULT_BANANA_MODEL, DEFAULT_IMAGE2_MODEL, getBananaModelForRatio, getBananaModelOption } from '../lib/models'
 import { formatBytes } from '../lib/format'
 import { nativeExitApp, nativeSaveImage } from '../lib/nativeBridge'
 import { ensureAppBackBridge, installEdgeBackGesture, registerAppBackHandler } from '../lib/appBack'
@@ -302,12 +302,18 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
     setMessage(data.result.remoteUrl ? 'PiXhost 图床上传成功' : 'PiXhost 图床上传完成')
   }
 
-  function handleUseAssistantPrompt(nextPrompt: string, options?: { provider: ModelProvider; model: string }) {
+  function handleUseAssistantPrompt(nextPrompt: string, options?: { provider: ModelProvider; model: string; ratio?: string }) {
     setPrompt(nextPrompt)
     if (options) {
       setProvider(options.provider)
       if (options.provider === BANANA_PROVIDER) {
-        setBananaModel(getBananaModelOption(options.model).id)
+        const preferredResolution = getBananaModelOption(options.model).resolution
+        const nextBanana = options.ratio && options.ratio !== 'auto'
+          ? getBananaModelForRatio(options.ratio, preferredResolution === 'auto' ? '2k' : preferredResolution)
+          : getBananaModelOption(options.model)
+        setBananaModel(nextBanana.id)
+      } else if (options.ratio && options.ratio !== 'auto') {
+        setRatio(options.ratio)
       }
     }
     goToTab('generate')
