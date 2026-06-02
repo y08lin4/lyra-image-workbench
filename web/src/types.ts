@@ -34,6 +34,15 @@ export interface UserConfig {
   updatedAt: string
 }
 
+export interface AdminUser {
+  username: string
+  displayName: string
+  twoFactorEnabled: boolean
+  videoQuota: number
+  createdAt: string
+  lastLoginAt?: string
+}
+
 export interface AdminConfig {
   newApiBaseUrl: string
   publicBaseUrl: string
@@ -41,6 +50,8 @@ export interface AdminConfig {
   timeoutSec: number
   model: string
   modelLocked: boolean
+  minimaxApiKeySet: boolean
+  minimaxApiKeyPreview: string
   timeoutCode: string
   updatedAt: string
   limits: { minTimeoutSec: number; maxTimeoutSec: number }
@@ -194,6 +205,12 @@ export interface MiniMaxFileResult {
   }
   base: MiniMaxBase
   raw?: unknown
+}
+
+export interface MiniMaxVideoQuota {
+  remaining: number
+  costPerVideo: number
+  minimaxApiKeySet: boolean
 }
 
 export type PromptToolMode = 'text-to-prompt' | 'image-to-prompt'

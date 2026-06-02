@@ -141,10 +141,12 @@ func TestUserLoginReusesAccountStorage(t *testing.T) {
 func TestAdminConfigAPIUpdatesURLAndTimeout(t *testing.T) {
 	router := newTestRouter(t)
 	adminToken := createAdminToken(t, router)
+	minimaxKey := "minimax-secret-1234567890"
 	body := doAdminJSON(t, router, http.MethodPost, "/api/admin/config", adminToken, map[string]any{
 		"newApiBaseUrl": "http://127.0.0.1:3010/v1/images/edits",
 		"timeoutSec":    600,
 		"debugEnabled":  true,
+		"minimaxApiKey": minimaxKey,
 	})
 	if !strings.Contains(body, `"newApiBaseUrl":"http://127.0.0.1:3010/v1"`) {
 		t.Fatalf("admin URL was not normalized: %s", body)
@@ -154,6 +156,31 @@ func TestAdminConfigAPIUpdatesURLAndTimeout(t *testing.T) {
 	}
 	if !strings.Contains(body, `"debugEnabled":true`) {
 		t.Fatalf("admin response missing debug flag: %s", body)
+	}
+	if strings.Contains(body, minimaxKey) || !strings.Contains(body, `"minimaxApiKeySet":true`) {
+		t.Fatalf("admin response should only expose MiniMax key status: %s", body)
+	}
+}
+
+func TestAdminUsersCanAddVideoQuota(t *testing.T) {
+	router := newTestRouter(t)
+	userToken := createNamedUserSession(t, router, "videoUser01", "R7!Video#Vault$2026", "")
+	adminToken := createAdminToken(t, router)
+
+	body := doAdminJSON(t, router, http.MethodPost, "/api/admin/users/video-quota", adminToken, map[string]any{
+		"username": "VIDEOUSER01",
+		"delta":    4,
+	})
+	if strings.Contains(body, "storageToken") {
+		t.Fatalf("admin users response leaked storage token: %s", body)
+	}
+	if !strings.Contains(body, `"videoQuota":4`) {
+		t.Fatalf("admin users response missing updated quota: %s", body)
+	}
+
+	body = doJSON(t, router, http.MethodGet, "/api/minimax/video-quota", userToken, nil)
+	if !strings.Contains(body, `"remaining":4`) || !strings.Contains(body, `"costPerVideo":1`) {
+		t.Fatalf("video quota response missing remaining quota: %s", body)
 	}
 }
 

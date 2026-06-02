@@ -2,6 +2,7 @@ package settings
 
 import (
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/y08lin4/lyra-image-workbench/internal/config"
@@ -52,6 +53,30 @@ func TestFileStoreUpdatePersistsAdminConfig(t *testing.T) {
 	}
 	if !public.ModelLocked || public.Model != config.DefaultModel {
 		t.Fatalf("model should be locked to %s, got %+v", config.DefaultModel, public)
+	}
+
+	minimaxKey := "  minimax-secret-1234567890  "
+	updated, err = reopened.Update(Update{MiniMaxAPIKey: &minimaxKey})
+	if err != nil {
+		t.Fatalf("Update(minimax key) error = %v", err)
+	}
+	if updated.MiniMaxAPIKey != "minimax-secret-1234567890" {
+		t.Fatalf("MiniMaxAPIKey was not trimmed: %q", updated.MiniMaxAPIKey)
+	}
+	public = reopened.Public()
+	if !public.MiniMaxAPIKeySet || public.MiniMaxAPIKeyPreview == "" {
+		t.Fatalf("public MiniMax key status missing: %+v", public)
+	}
+	if strings.Contains(public.MiniMaxAPIKeyPreview, "secret") || strings.Contains(public.MiniMaxAPIKeyPreview, updated.MiniMaxAPIKey) {
+		t.Fatalf("public MiniMax key preview leaked raw key: %q", public.MiniMaxAPIKeyPreview)
+	}
+	clearMiniMax := true
+	updated, err = reopened.Update(Update{ClearMiniMaxAPIKey: &clearMiniMax})
+	if err != nil {
+		t.Fatalf("Update(clear minimax key) error = %v", err)
+	}
+	if updated.MiniMaxAPIKey != "" || reopened.Public().MiniMaxAPIKeySet {
+		t.Fatalf("MiniMax key should be cleared: updated=%+v public=%+v", updated, reopened.Public())
 	}
 }
 

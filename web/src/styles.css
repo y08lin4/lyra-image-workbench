@@ -880,8 +880,53 @@ progress { width: 100%; height: 8px; accent-color: var(--primary-2); }
   stroke-linecap: round;
   stroke-linejoin: round;
 }
+.admin-panel { width: min(760px, 100%); }
 .admin-panel label { display: grid; gap: 8px; font-weight: 700; color: #334155; }
 .admin-actions { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.admin-quota-box {
+  display: grid;
+  gap: 12px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--surface-soft);
+  padding: 14px;
+}
+.admin-quota-box p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+.admin-quota-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 120px auto auto;
+  gap: 8px;
+}
+.admin-user-list {
+  display: grid;
+  gap: 8px;
+  max-height: 240px;
+  overflow: auto;
+}
+.admin-user-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 10px;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  padding: 10px 12px;
+}
+.admin-user-row span,
+.admin-user-row strong {
+  color: var(--text);
+  font-weight: 900;
+}
+.admin-user-row small {
+  color: var(--muted);
+  font-size: 12px;
+}
 .settings-overlay {
   position: fixed;
   inset: 0;
@@ -934,6 +979,8 @@ button:not(.primary) { background: var(--surface-soft); color: #1e3a8a; border: 
   .top-actions { width: 100%; justify-content: space-between; }
   .grid-2 { grid-template-columns: 1fr; }
   .canvas-header { flex-direction: column; }
+  .admin-quota-form,
+  .admin-user-row { grid-template-columns: 1fr; }
   .login-panel, .admin-panel { border-radius: 18px; }
 }
 
@@ -5095,6 +5142,30 @@ button:not(.primary) { background: var(--surface-soft); color: #1e3a8a; border: 
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 8px;
+}
+
+.video-quota-box {
+  display: grid;
+  gap: 8px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface-soft);
+  padding: 12px;
+}
+
+.video-quota-box strong {
+  color: var(--text);
+  font-weight: 900;
+}
+
+.video-quota-box span {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.video-quota-box button {
+  justify-self: start;
 }
 
 .video-grid {

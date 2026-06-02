@@ -1,6 +1,6 @@
 import { type FormEvent, useEffect, useMemo, useState } from 'react'
-import { createMiniMaxVideo, getMiniMaxApiKey, maskMiniMaxKey, queryMiniMaxVideo, retrieveMiniMaxFile, saveMiniMaxApiKey } from '../api/minimaxVideos'
-import type { MiniMaxFileResult, MiniMaxVideoStatus } from '../types'
+import { createMiniMaxVideo, getMiniMaxVideoQuota, queryMiniMaxVideo, retrieveMiniMaxFile } from '../api/minimaxVideos'
+import type { MiniMaxFileResult, MiniMaxVideoQuota, MiniMaxVideoStatus } from '../types'
 
 const statusLabels: Record<string, string> = {
   Preparing: '排队/准备中',
@@ -11,8 +11,7 @@ const statusLabels: Record<string, string> = {
 }
 
 export function MiniMaxVideoPanel({ seedPrompt }: { seedPrompt: string }) {
-  const [apiKeyInput, setApiKeyInput] = useState('')
-  const [apiKeyReady, setApiKeyReady] = useState(false)
+  const [quota, setQuota] = useState<MiniMaxVideoQuota | null>(null)
   const [model, setModel] = useState('MiniMax-Hailuo-02')
   const [prompt, setPrompt] = useState(seedPrompt)
   const [duration, setDuration] = useState(6)
@@ -29,9 +28,7 @@ export function MiniMaxVideoPanel({ seedPrompt }: { seedPrompt: string }) {
   const downloadURL = file?.file?.download_url || ''
 
   useEffect(() => {
-    const key = getMiniMaxApiKey()
-    setApiKeyReady(Boolean(key))
-    setApiKeyInput('')
+    void refreshQuota()
   }, [])
 
   useEffect(() => {
@@ -44,11 +41,12 @@ export function MiniMaxVideoPanel({ seedPrompt }: { seedPrompt: string }) {
     return `${statusLabels[status.status] || status.status || '未知状态'}${status.file_id ? ` · file_id=${status.file_id}` : ''}`
   }, [status])
 
-  function saveKey() {
-    saveMiniMaxApiKey(apiKeyInput)
-    setApiKeyReady(Boolean(apiKeyInput.trim()))
-    setApiKeyInput('')
-    setMessage(apiKeyInput.trim() ? `MiniMax Key 已保存到当前浏览器：${maskMiniMaxKey(apiKeyInput)}` : 'MiniMax Key 已清除')
+  async function refreshQuota() {
+    try {
+      setQuota(await getMiniMaxVideoQuota())
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '读取视频额度失败')
+    }
   }
 
   async function submit(event: FormEvent) {
@@ -57,8 +55,12 @@ export function MiniMaxVideoPanel({ seedPrompt }: { seedPrompt: string }) {
     setMessage('')
     setFile(null)
     setStatus(null)
-    if (!getMiniMaxApiKey()) {
-      setError('请先保存 MiniMax API Key')
+    if (!quota?.minimaxApiKeySet) {
+      setError('管理员还没有配置 MiniMax API Key')
+      return
+    }
+    if ((quota?.remaining || 0) < (quota?.costPerVideo || 1)) {
+      setError('视频额度不足，请联系管理员增加额度')
       return
     }
     if (!prompt.trim()) {
@@ -67,7 +69,7 @@ export function MiniMaxVideoPanel({ seedPrompt }: { seedPrompt: string }) {
     }
     setBusy(true)
     try {
-      const task = await createMiniMaxVideo({
+      const data = await createMiniMaxVideo({
         model,
         prompt,
         duration,
@@ -76,7 +78,9 @@ export function MiniMaxVideoPanel({ seedPrompt }: { seedPrompt: string }) {
         fast_pretreatment: fastPretreatment,
         aigc_watermark: aigcWatermark,
       })
+      const task = data.task
       setTaskID(task.task_id)
+      setQuota((current) => current ? { ...current, remaining: data.quota.remaining } : current)
       setMessage('视频任务已提交，稍后可点击查询状态')
     } catch (err) {
       setError(err instanceof Error ? err.message : '创建视频任务失败')
@@ -129,16 +133,17 @@ export function MiniMaxVideoPanel({ seedPrompt }: { seedPrompt: string }) {
         <form className="video-card video-form" onSubmit={submit}>
           <div className="panel-title">
             <strong>提交视频任务</strong>
-            <span>{apiKeyReady ? 'MiniMax Key 已保存在当前浏览器' : 'MiniMax Key 未设置'}</span>
+            <span>
+              {quota?.minimaxApiKeySet ? '管理员已配置 MiniMax Key' : 'MiniMax Key 未配置'}
+              {' · '}
+              额度 {quota?.remaining ?? 0}
+            </span>
           </div>
-
-          <label>
-            MiniMax API Key
-            <div className="video-key-row">
-              <input type="password" value={apiKeyInput} onChange={(event) => setApiKeyInput(event.target.value)} placeholder={apiKeyReady ? '已保存，输入新 Key 可覆盖；留空保存会清除' : '填入 MiniMax API Key'} />
-              <button type="button" onClick={saveKey}>保存</button>
-            </div>
-          </label>
+          <div className="video-quota-box">
+            <strong>视频额度：{quota?.remaining ?? 0}</strong>
+            <span>每次提交文生视频任务消耗 {quota?.costPerVideo || 1} 点额度；MiniMax Key 由管理员统一配置，普通用户不需要填写。</span>
+            <button type="button" onClick={() => void refreshQuota()}>刷新额度</button>
+          </div>
 
           <label>
             视频提示词
@@ -173,7 +178,7 @@ export function MiniMaxVideoPanel({ seedPrompt }: { seedPrompt: string }) {
             <label><input type="checkbox" checked={aigcWatermark} onChange={(event) => setAigcWatermark(event.target.checked)} /> 添加 AIGC 水印</label>
           </div>
 
-          <button type="submit" disabled={busy || !apiKeyReady}>{busy ? '处理中...' : '生成视频'}</button>
+          <button type="submit" disabled={busy || !quota?.minimaxApiKeySet || (quota?.remaining || 0) <= 0}>{busy ? '处理中...' : '生成视频'}</button>
           {message ? <p className="video-message">{message}</p> : null}
           {error ? <p className="video-error">{error}</p> : null}
         </form>

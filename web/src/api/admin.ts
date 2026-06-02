@@ -1,5 +1,5 @@
 import { requestJson } from './client'
-import type { AdminAuthStatus, AdminConfig, AdminSession } from '../types'
+import type { AdminAuthStatus, AdminConfig, AdminSession, AdminUser } from '../types'
 
 export const ADMIN_TOKEN_KEY = 'image-workbench:admin-token:v1'
 
@@ -58,11 +58,30 @@ export async function getAdminConfig() {
   return data.config
 }
 
-export async function saveAdminConfig(newApiBaseUrl: string, timeoutSec: number, publicBaseUrl: string, debugEnabled: boolean) {
+export async function saveAdminConfig(newApiBaseUrl: string, timeoutSec: number, publicBaseUrl: string, debugEnabled: boolean, minimaxApiKey = '', clearMinimaxApiKey = false) {
+  const body: Record<string, unknown> = { newApiBaseUrl, timeoutSec, publicBaseUrl, debugEnabled }
+  if (minimaxApiKey.trim()) body.minimaxApiKey = minimaxApiKey.trim()
+  if (clearMinimaxApiKey) body.clearMinimaxApiKey = true
   const data = await requestJson<{ ok: boolean; config: AdminConfig }>('/api/admin/config', {
     method: 'POST',
     headers: adminHeaders(),
-    body: JSON.stringify({ newApiBaseUrl, timeoutSec, publicBaseUrl, debugEnabled }),
+    body: JSON.stringify(body),
   }, '')
   return data.config
+}
+
+export async function listAdminUsers() {
+  const data = await requestJson<{ ok: boolean; users: AdminUser[] }>('/api/admin/users', {
+    headers: adminHeaders(),
+  }, '')
+  return data.users || []
+}
+
+export async function addUserVideoQuota(username: string, delta: number) {
+  const data = await requestJson<{ ok: boolean; user: AdminUser; users: AdminUser[] }>('/api/admin/users/video-quota', {
+    method: 'POST',
+    headers: adminHeaders(),
+    body: JSON.stringify({ username, delta }),
+  }, '')
+  return data
 }
