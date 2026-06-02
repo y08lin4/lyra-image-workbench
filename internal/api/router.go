@@ -6,6 +6,7 @@ import (
 	"github.com/y08lin4/lyra-image-workbench/internal/adminauth"
 	"github.com/y08lin4/lyra-image-workbench/internal/config"
 	"github.com/y08lin4/lyra-image-workbench/internal/jobs"
+	"github.com/y08lin4/lyra-image-workbench/internal/minimax"
 	"github.com/y08lin4/lyra-image-workbench/internal/output"
 	"github.com/y08lin4/lyra-image-workbench/internal/prompttools"
 	"github.com/y08lin4/lyra-image-workbench/internal/settings"
@@ -24,6 +25,7 @@ type Dependencies struct {
 	SpaceConfig *spaceconfig.Store
 	Uploads     *uploads.Store
 	Jobs        *jobs.Manager
+	MiniMax     *minimax.Client
 	Output      *output.Store
 	PromptTools *prompttools.Service
 }
@@ -38,6 +40,7 @@ func NewRouter(deps Dependencies) http.Handler {
 	statusMetadata := NewStatusMetadataHandler()
 	uploadHandler := NewUploadHandler(deps.Uploads)
 	taskHandler := NewTaskHandler(deps.Jobs, deps.Output)
+	minimaxVideoHandler := NewMiniMaxVideoHandler(deps.MiniMax)
 	promptToolsHandler := NewPromptToolsHandler(deps.PromptTools)
 	outputHandler := NewOutputHandler(deps.Output)
 	staticHandler := NewStaticHandler(deps.Config.WebDir)
@@ -74,6 +77,9 @@ func NewRouter(deps Dependencies) http.Handler {
 	mux.HandleFunc("POST /api/background-tasks/{id}/images/{index}/pixhost", taskHandler.UploadPixhost)
 	mux.HandleFunc("GET /api/background-tasks/{id}/images/{index}", taskHandler.Image)
 	mux.HandleFunc("GET /api/stats", taskHandler.Stats)
+	mux.HandleFunc("POST /api/minimax/videos", minimaxVideoHandler.Create)
+	mux.HandleFunc("GET /api/minimax/videos/{taskID}", minimaxVideoHandler.Query)
+	mux.HandleFunc("GET /api/minimax/files/{fileID}", minimaxVideoHandler.File)
 	mux.HandleFunc("POST /api/prompt-tools/text-to-prompt", promptToolsHandler.TextToPrompt)
 	mux.HandleFunc("POST /api/prompt-tools/image-to-prompt", promptToolsHandler.ImageToPrompt)
 	mux.HandleFunc("POST /api/prompt-tools/sessions", promptToolsHandler.CreateSession)

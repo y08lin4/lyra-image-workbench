@@ -152,6 +152,50 @@ export interface CreateTaskRequest {
   uploadIds: string[]
 }
 
+export interface MiniMaxVideoCreateRequest {
+  model: string
+  prompt: string
+  duration?: number
+  resolution?: string
+  prompt_optimizer: boolean
+  fast_pretreatment?: boolean
+  aigc_watermark?: boolean
+}
+
+export interface MiniMaxBase {
+  status_code: number
+  status_msg: string
+}
+
+export interface MiniMaxVideoTask {
+  task_id: string
+  base: MiniMaxBase
+  raw?: unknown
+}
+
+export interface MiniMaxVideoStatus {
+  task_id: string
+  status: string
+  file_id?: string
+  video_width?: number
+  video_height?: number
+  base: MiniMaxBase
+  raw?: unknown
+}
+
+export interface MiniMaxFileResult {
+  file: {
+    file_id?: string
+    bytes?: number
+    created_at?: number
+    filename?: string
+    purpose?: string
+    download_url?: string
+  }
+  base: MiniMaxBase
+  raw?: unknown
+}
+
 export type PromptToolMode = 'text-to-prompt' | 'image-to-prompt'
 
 export interface PromptRecord {

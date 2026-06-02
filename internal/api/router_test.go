@@ -15,6 +15,7 @@ import (
 	"github.com/y08lin4/lyra-image-workbench/internal/events"
 	"github.com/y08lin4/lyra-image-workbench/internal/jobs"
 	"github.com/y08lin4/lyra-image-workbench/internal/llm"
+	"github.com/y08lin4/lyra-image-workbench/internal/minimax"
 	"github.com/y08lin4/lyra-image-workbench/internal/newapi"
 	"github.com/y08lin4/lyra-image-workbench/internal/output"
 	"github.com/y08lin4/lyra-image-workbench/internal/prompttools"
@@ -299,6 +300,7 @@ func newTestAPIEnv(t *testing.T) testAPIEnv {
 		SpaceConfig: spaceConfigStore,
 		Uploads:     uploadStore,
 		Jobs:        jobManager,
+		MiniMax:     minimax.NewClient(),
 		Output:      outputStore,
 		PromptTools: promptService,
 	})
