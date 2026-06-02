@@ -12,6 +12,7 @@ import { TaskSidebar } from './TaskSidebar'
 import { PromptAssistantModal } from './PromptAssistantModal'
 import { ResultCanvas } from './ResultCanvas'
 import { ThemeToggle, type ThemeMode } from './ThemeToggle'
+import { GitHubLink } from './GitHubLink'
 import { useTaskEvents } from '../hooks/useTaskEvents'
 import { BANANA_PROVIDER, DEFAULT_BANANA_MODEL, DEFAULT_IMAGE2_MODEL, getBananaModelOption } from '../lib/models'
 import { formatBytes } from '../lib/format'
@@ -506,6 +507,7 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
           <span className="ready">后端在线</span>
         </div>
         <nav className="top-actions">
+          <GitHubLink />
           <ThemeToggle theme={theme} onToggle={onToggleTheme} />
           <button onClick={logout}>退出登录</button>
         </nav>

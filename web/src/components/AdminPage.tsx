@@ -11,6 +11,7 @@ import {
 } from '../api/admin'
 import type { AdminAuthStatus, AdminConfig } from '../types'
 import { ThemeToggle, type ThemeMode } from './ThemeToggle'
+import { GitHubLink } from './GitHubLink'
 
 type AdminMode = 'loading' | 'setup' | 'login' | 'config'
 type NumericInputValue = number | ''
@@ -116,6 +117,7 @@ export function AdminPage({ theme, onToggleTheme }: { theme: ThemeMode; onToggle
     return (
       <main className="center-shell">
         <div className="center-theme-action">
+          <GitHubLink compact />
           <ThemeToggle theme={theme} onToggle={onToggleTheme} />
         </div>
         <section className="admin-panel">
@@ -131,6 +133,7 @@ export function AdminPage({ theme, onToggleTheme }: { theme: ThemeMode; onToggle
     return (
       <main className="center-shell">
         <div className="center-theme-action">
+          <GitHubLink compact />
           <ThemeToggle theme={theme} onToggle={onToggleTheme} />
         </div>
         <form className="admin-panel" onSubmit={submitPassword}>
@@ -157,6 +160,7 @@ export function AdminPage({ theme, onToggleTheme }: { theme: ThemeMode; onToggle
   return (
     <main className="center-shell">
       <div className="center-theme-action">
+        <GitHubLink compact />
         <ThemeToggle theme={theme} onToggle={onToggleTheme} />
       </div>
       <form className="admin-panel" onSubmit={submit}>

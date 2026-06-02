@@ -3,6 +3,7 @@ import { ApiError } from '../api/client'
 import { loginUser, registerUser } from '../api/users'
 import type { UserSession } from '../types'
 import { ThemeToggle, type ThemeMode } from './ThemeToggle'
+import { GitHubLink } from './GitHubLink'
 
 type Mode = 'login' | 'register'
 
@@ -45,6 +46,7 @@ export function SpaceLogin({ onSession, theme, onToggleTheme }: { onSession: (se
   return (
     <main className="center-shell">
       <div className="center-theme-action">
+        <GitHubLink compact />
         <ThemeToggle theme={theme} onToggle={onToggleTheme} />
       </div>
       <form className="login-panel" onSubmit={submit}>

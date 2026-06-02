@@ -73,10 +73,27 @@ textarea { resize: vertical; line-height: 1.55; }
   min-height: 40px;
   display: inline-flex;
   align-items: center;
+  justify-content: center;
+  gap: 7px;
   border: 1px solid var(--border);
   border-radius: 999px;
   padding: 0 14px;
   background: var(--surface);
+}
+.github-link {
+  color: var(--text);
+  font-weight: 900;
+}
+.github-link svg {
+  width: 16px;
+  height: 16px;
+  fill: currentColor;
+  flex: 0 0 auto;
+}
+.github-link.compact {
+  width: 38px;
+  min-height: 38px;
+  padding: 0;
 }
 
 .workspace {
@@ -4262,6 +4279,9 @@ button:not(.primary) { background: var(--surface-soft); color: #1e3a8a; border: 
   top: 16px;
   right: 16px;
   z-index: 20;
+  display: flex;
+  gap: 8px;
+  align-items: center;
 }
 
 :root[data-theme='dark'] {
@@ -5016,4 +5036,3 @@ button:not(.primary) { background: var(--surface-soft); color: #1e3a8a; border: 
   border-color: rgba(34, 197, 94, .55) !important;
   color: #bbf7d0 !important;
 }
-
