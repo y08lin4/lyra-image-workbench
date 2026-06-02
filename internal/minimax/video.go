@@ -91,20 +91,22 @@ func (c *Client) CreateVideo(ctx context.Context, apiKey string, req CreateVideo
 	compactPayload(payload)
 
 	var out struct {
-		TaskID string `json:"task_id"`
-		Base   Base   `json:"base"`
+		TaskID   string `json:"task_id"`
+		Base     Base   `json:"base"`
+		BaseResp Base   `json:"base_resp"`
 	}
 	raw, err := c.doJSON(ctx, http.MethodPost, "/v1/video_generation", apiKey, payload, &out)
 	if err != nil {
 		return CreateVideoResponse{}, err
 	}
-	if out.Base.StatusCode != 0 {
-		return CreateVideoResponse{}, fmt.Errorf("MiniMax 创建视频失败：%s (%d)", firstNonEmpty(out.Base.StatusMsg, "unknown error"), out.Base.StatusCode)
+	base := pickBase(out.Base, out.BaseResp)
+	if base.StatusCode != 0 {
+		return CreateVideoResponse{}, fmt.Errorf("MiniMax 创建视频失败：%s (%d)", firstNonEmpty(base.StatusMsg, "unknown error"), base.StatusCode)
 	}
 	if out.TaskID == "" {
 		return CreateVideoResponse{}, errors.New("MiniMax 未返回 task_id")
 	}
-	return CreateVideoResponse{TaskID: out.TaskID, Base: out.Base, Raw: raw}, nil
+	return CreateVideoResponse{TaskID: out.TaskID, Base: base, Raw: raw}, nil
 }
 
 func (c *Client) QueryVideo(ctx context.Context, apiKey, taskID string) (QueryVideoResponse, error) {
@@ -122,15 +124,17 @@ func (c *Client) QueryVideo(ctx context.Context, apiKey, taskID string) (QueryVi
 		VideoWidth  int    `json:"video_width"`
 		VideoHeight int    `json:"video_height"`
 		Base        Base   `json:"base"`
+		BaseResp    Base   `json:"base_resp"`
 	}
 	raw, err := c.doJSON(ctx, http.MethodGet, "/v1/query/video_generation?task_id="+url.QueryEscape(taskID), apiKey, nil, &out)
 	if err != nil {
 		return QueryVideoResponse{}, err
 	}
-	if out.Base.StatusCode != 0 {
-		return QueryVideoResponse{}, fmt.Errorf("MiniMax 查询视频失败：%s (%d)", firstNonEmpty(out.Base.StatusMsg, "unknown error"), out.Base.StatusCode)
+	base := pickBase(out.Base, out.BaseResp)
+	if base.StatusCode != 0 {
+		return QueryVideoResponse{}, fmt.Errorf("MiniMax 查询视频失败：%s (%d)", firstNonEmpty(base.StatusMsg, "unknown error"), base.StatusCode)
 	}
-	return QueryVideoResponse{TaskID: firstNonEmpty(out.TaskID, taskID), Status: out.Status, FileID: out.FileID, VideoWidth: out.VideoWidth, VideoHeight: out.VideoHeight, Base: out.Base, Raw: raw}, nil
+	return QueryVideoResponse{TaskID: firstNonEmpty(out.TaskID, taskID), Status: out.Status, FileID: out.FileID, VideoWidth: out.VideoWidth, VideoHeight: out.VideoHeight, Base: base, Raw: raw}, nil
 }
 
 func (c *Client) RetrieveFile(ctx context.Context, apiKey, fileID string) (FileResponse, error) {
@@ -142,17 +146,19 @@ func (c *Client) RetrieveFile(ctx context.Context, apiKey, fileID string) (FileR
 		return FileResponse{}, errors.New("file_id 为空")
 	}
 	var out struct {
-		File FileObject `json:"file"`
-		Base Base       `json:"base"`
+		File     FileObject `json:"file"`
+		Base     Base       `json:"base"`
+		BaseResp Base       `json:"base_resp"`
 	}
 	raw, err := c.doJSON(ctx, http.MethodGet, "/v1/files/retrieve?file_id="+url.QueryEscape(fileID), apiKey, nil, &out)
 	if err != nil {
 		return FileResponse{}, err
 	}
-	if out.Base.StatusCode != 0 {
-		return FileResponse{}, fmt.Errorf("MiniMax 获取文件失败：%s (%d)", firstNonEmpty(out.Base.StatusMsg, "unknown error"), out.Base.StatusCode)
+	base := pickBase(out.Base, out.BaseResp)
+	if base.StatusCode != 0 {
+		return FileResponse{}, fmt.Errorf("MiniMax 获取文件失败：%s (%d)", firstNonEmpty(base.StatusMsg, "unknown error"), base.StatusCode)
 	}
-	return FileResponse{File: out.File, Base: out.Base, Raw: raw}, nil
+	return FileResponse{File: out.File, Base: base, Raw: raw}, nil
 }
 
 func (c *Client) doJSON(ctx context.Context, method, path, apiKey string, payload any, out any) (any, error) {
@@ -218,4 +224,13 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func pickBase(values ...Base) Base {
+	for _, value := range values {
+		if value.StatusCode != 0 || strings.TrimSpace(value.StatusMsg) != "" {
+			return value
+		}
+	}
+	return Base{}
 }
