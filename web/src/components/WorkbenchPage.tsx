@@ -242,22 +242,10 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
       upsertTask(job)
       setActiveId(job.id)
       setPrompt('')
-      if (submittedUploads.length) {
-        setUploads((current) => current.filter((item) => !submittedUploads.some((submitted) => submitted.id === item.id)))
-        void clearSubmittedReferenceUploads(submittedUploads)
-      }
       goToTab('result')
-      setMessage('任务已提交，后端会继续执行，前端可刷新或断开')
+      setMessage(submittedUploads.length ? '任务已提交，参考图已保留，可在生成页手动删除' : '任务已提交，后端会继续执行，前端可刷新或断开')
     } catch (err) {
       setError(err instanceof Error ? err.message : '提交失败')
-    }
-  }
-
-  async function clearSubmittedReferenceUploads(items: ReferenceUpload[]) {
-    const results = await Promise.allSettled(items.map((item) => deleteReferenceUpload(item.id)))
-    await refreshUploads()
-    if (results.some((result) => result.status === 'rejected')) {
-      setToast('任务已提交，部分参考图自动移除失败，可手动删除')
     }
   }
 
