@@ -109,6 +109,8 @@ export function PromptAssistantModal({ tasks, uploads, provider, bananaModel, on
     }
   }
 
+
+
   function selectedModel(nextProvider = applyProvider) {
     return nextProvider === BANANA_PROVIDER ? applyBananaModel : DEFAULT_IMAGE2_MODEL
   }
@@ -640,6 +642,7 @@ function PromptResult({
     </aside>
   )
 }
+
 
 function pickVersion(session: PromptSession | null, versionId: string) {
   if (!session?.versions.length) return null

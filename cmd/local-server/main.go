@@ -4,6 +4,7 @@ import (
 	"errors"
 	"log"
 	"net/http"
+	"path/filepath"
 
 	"github.com/y08lin4/lyra-image-workbench/internal/adminauth"
 	"github.com/y08lin4/lyra-image-workbench/internal/api"
@@ -14,6 +15,7 @@ import (
 	"github.com/y08lin4/lyra-image-workbench/internal/llm"
 	"github.com/y08lin4/lyra-image-workbench/internal/newapi"
 	"github.com/y08lin4/lyra-image-workbench/internal/output"
+	"github.com/y08lin4/lyra-image-workbench/internal/promptlibrary"
 	"github.com/y08lin4/lyra-image-workbench/internal/prompttools"
 	"github.com/y08lin4/lyra-image-workbench/internal/server"
 	"github.com/y08lin4/lyra-image-workbench/internal/settings"
@@ -53,6 +55,7 @@ func main() {
 	llmClient := llm.NewClient()
 	promptStore := prompttools.NewStore(spaceStore)
 	promptService := prompttools.NewService(promptStore, settingsStore, spaceConfigStore, uploadStore, jobManager, outputStore, llmClient)
+	promptLibraryService := promptlibrary.NewService(filepath.Join(cfg.DataDir, "cache", "prompt-library"))
 	gifStore := gifrender.NewStore(spaceStore)
 	gifRenderer := gifrender.NewFFmpegRenderer(gifrender.ConfigFromApp(cfg))
 	gifService := gifrender.NewService(gifRenderer, gifStore)
@@ -61,18 +64,19 @@ func main() {
 	}
 
 	router := api.NewRouter(api.Dependencies{
-		Config:      cfg,
-		AdminAuth:   adminAuthStore,
-		Users:       userStore,
-		Settings:    settingsStore,
-		Spaces:      spaceStore,
-		SpaceConfig: spaceConfigStore,
-		Uploads:     uploadStore,
-		Jobs:        jobManager,
-		Output:      outputStore,
-		PromptTools: promptService,
-		LLM:         llmClient,
-		GIF:         gifService,
+		Config:        cfg,
+		AdminAuth:     adminAuthStore,
+		Users:         userStore,
+		Settings:      settingsStore,
+		Spaces:        spaceStore,
+		SpaceConfig:   spaceConfigStore,
+		Uploads:       uploadStore,
+		Jobs:          jobManager,
+		Output:        outputStore,
+		PromptLibrary: promptLibraryService,
+		PromptTools:   promptService,
+		LLM:           llmClient,
+		GIF:           gifService,
 	})
 	httpServer := server.New(cfg, router)
 

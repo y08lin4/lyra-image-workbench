@@ -18,6 +18,7 @@ import (
 	"github.com/y08lin4/lyra-image-workbench/internal/llm"
 	"github.com/y08lin4/lyra-image-workbench/internal/newapi"
 	"github.com/y08lin4/lyra-image-workbench/internal/output"
+	"github.com/y08lin4/lyra-image-workbench/internal/promptlibrary"
 	"github.com/y08lin4/lyra-image-workbench/internal/prompttools"
 	"github.com/y08lin4/lyra-image-workbench/internal/settings"
 	"github.com/y08lin4/lyra-image-workbench/internal/spaceconfig"
@@ -92,6 +93,24 @@ func TestGIFAPIsRequireLogin(t *testing.T) {
 		{http.MethodGet, "/api/gif-renders/gifrender_missing", ""},
 	} {
 		req := httptest.NewRequest(tc.method, tc.path, strings.NewReader(tc.body))
+		res := httptest.NewRecorder()
+		router.ServeHTTP(res, req)
+		if res.Code != http.StatusUnauthorized {
+			t.Fatalf("%s %s without login code=%d body=%s", tc.method, tc.path, res.Code, res.Body.String())
+		}
+	}
+}
+
+func TestPromptLibraryAPIRequiresLogin(t *testing.T) {
+	router := newTestRouter(t)
+	for _, tc := range []struct {
+		method string
+		path   string
+	}{
+		{http.MethodGet, "/api/prompt-library"},
+		{http.MethodPost, "/api/prompt-library/refresh"},
+	} {
+		req := httptest.NewRequest(tc.method, tc.path, nil)
 		res := httptest.NewRecorder()
 		router.ServeHTTP(res, req)
 		if res.Code != http.StatusUnauthorized {
@@ -312,21 +331,23 @@ func newTestAPIEnv(t *testing.T) testAPIEnv {
 	llmClient := llm.NewClient()
 	promptStore := prompttools.NewStore(spaceStore)
 	promptService := prompttools.NewService(promptStore, settingsStore, spaceConfigStore, uploadStore, jobManager, outputStore, llmClient)
+	promptLibraryService := promptlibrary.NewService(filepath.Join(cfg.DataDir, "cache", "prompt-library"))
 	gifService := gifrender.NewService(gifrender.NewFFmpegRenderer(gifrender.ConfigFromApp(cfg)), gifrender.NewStore(spaceStore))
 
 	router := NewRouter(Dependencies{
-		Config:      cfg,
-		AdminAuth:   adminAuthStore,
-		Users:       userStore,
-		Settings:    settingsStore,
-		Spaces:      spaceStore,
-		SpaceConfig: spaceConfigStore,
-		Uploads:     uploadStore,
-		Jobs:        jobManager,
-		Output:      outputStore,
-		PromptTools: promptService,
-		LLM:         llmClient,
-		GIF:         gifService,
+		Config:        cfg,
+		AdminAuth:     adminAuthStore,
+		Users:         userStore,
+		Settings:      settingsStore,
+		Spaces:        spaceStore,
+		SpaceConfig:   spaceConfigStore,
+		Uploads:       uploadStore,
+		Jobs:          jobManager,
+		Output:        outputStore,
+		PromptLibrary: promptLibraryService,
+		PromptTools:   promptService,
+		LLM:           llmClient,
+		GIF:           gifService,
 	})
 	return testAPIEnv{Router: router, Spaces: spaceStore, Output: outputStore}
 }
