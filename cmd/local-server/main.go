@@ -4,6 +4,7 @@ import (
 	"errors"
 	"log"
 	"net/http"
+	"path/filepath"
 
 	"github.com/y08lin4/lyra-image-workbench/internal/adminauth"
 	"github.com/y08lin4/lyra-image-workbench/internal/api"
@@ -13,6 +14,7 @@ import (
 	"github.com/y08lin4/lyra-image-workbench/internal/llm"
 	"github.com/y08lin4/lyra-image-workbench/internal/newapi"
 	"github.com/y08lin4/lyra-image-workbench/internal/output"
+	"github.com/y08lin4/lyra-image-workbench/internal/promptlibrary"
 	"github.com/y08lin4/lyra-image-workbench/internal/prompttools"
 	"github.com/y08lin4/lyra-image-workbench/internal/server"
 	"github.com/y08lin4/lyra-image-workbench/internal/settings"
@@ -51,21 +53,23 @@ func main() {
 	jobManager := jobs.NewManager(jobStore, eventHub, settingsStore, spaceConfigStore, uploadStore, outputStore, newapi.NewClient())
 	promptStore := prompttools.NewStore(spaceStore)
 	promptService := prompttools.NewService(promptStore, settingsStore, spaceConfigStore, uploadStore, jobManager, outputStore, llm.NewClient())
+	promptLibraryService := promptlibrary.NewService(filepath.Join(cfg.DataDir, "cache", "prompt-library"))
 	if err := jobManager.Recover(); err != nil {
 		log.Printf("恢复任务状态失败：%v", err)
 	}
 
 	router := api.NewRouter(api.Dependencies{
-		Config:      cfg,
-		AdminAuth:   adminAuthStore,
-		Users:       userStore,
-		Settings:    settingsStore,
-		Spaces:      spaceStore,
-		SpaceConfig: spaceConfigStore,
-		Uploads:     uploadStore,
-		Jobs:        jobManager,
-		Output:      outputStore,
-		PromptTools: promptService,
+		Config:        cfg,
+		AdminAuth:     adminAuthStore,
+		Users:         userStore,
+		Settings:      settingsStore,
+		Spaces:        spaceStore,
+		SpaceConfig:   spaceConfigStore,
+		Uploads:       uploadStore,
+		Jobs:          jobManager,
+		Output:        outputStore,
+		PromptLibrary: promptLibraryService,
+		PromptTools:   promptService,
 	})
 	httpServer := server.New(cfg, router)
 

@@ -7,6 +7,7 @@ import (
 	"github.com/y08lin4/lyra-image-workbench/internal/config"
 	"github.com/y08lin4/lyra-image-workbench/internal/jobs"
 	"github.com/y08lin4/lyra-image-workbench/internal/output"
+	"github.com/y08lin4/lyra-image-workbench/internal/promptlibrary"
 	"github.com/y08lin4/lyra-image-workbench/internal/prompttools"
 	"github.com/y08lin4/lyra-image-workbench/internal/settings"
 	"github.com/y08lin4/lyra-image-workbench/internal/spaceconfig"
@@ -16,16 +17,17 @@ import (
 )
 
 type Dependencies struct {
-	Config      config.Config
-	AdminAuth   *adminauth.Store
-	Users       *users.Store
-	Settings    *settings.FileStore
-	Spaces      *spaces.FileStore
-	SpaceConfig *spaceconfig.Store
-	Uploads     *uploads.Store
-	Jobs        *jobs.Manager
-	Output      *output.Store
-	PromptTools *prompttools.Service
+	Config        config.Config
+	AdminAuth     *adminauth.Store
+	Users         *users.Store
+	Settings      *settings.FileStore
+	Spaces        *spaces.FileStore
+	SpaceConfig   *spaceconfig.Store
+	Uploads       *uploads.Store
+	Jobs          *jobs.Manager
+	Output        *output.Store
+	PromptLibrary *promptlibrary.Service
+	PromptTools   *prompttools.Service
 }
 
 func NewRouter(deps Dependencies) http.Handler {
@@ -39,6 +41,7 @@ func NewRouter(deps Dependencies) http.Handler {
 	uploadHandler := NewUploadHandler(deps.Uploads)
 	taskHandler := NewTaskHandler(deps.Jobs, deps.Output)
 	promptToolsHandler := NewPromptToolsHandler(deps.PromptTools)
+	promptLibraryHandler := NewPromptLibraryHandler(deps.PromptLibrary)
 	outputHandler := NewOutputHandler(deps.Output)
 	staticHandler := NewStaticHandler(deps.Config.WebDir)
 
@@ -85,6 +88,8 @@ func NewRouter(deps Dependencies) http.Handler {
 	mux.HandleFunc("POST /api/prompt-tools/inspiration/expand", promptToolsHandler.InspirationExpand)
 	mux.HandleFunc("GET /api/prompt-tools/history", promptToolsHandler.History)
 	mux.HandleFunc("DELETE /api/prompt-tools/history/{id}", promptToolsHandler.Delete)
+	mux.HandleFunc("GET /api/prompt-library", promptLibraryHandler.List)
+	mux.HandleFunc("POST /api/prompt-library/refresh", promptLibraryHandler.Refresh)
 	mux.HandleFunc("GET /outputs/{space}/{date}/{file}", outputHandler.Serve)
 	mux.HandleFunc("GET /", staticHandler.Serve)
 

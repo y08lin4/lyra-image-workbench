@@ -152,6 +152,42 @@ export interface CreateTaskRequest {
   uploadIds: string[]
 }
 
+
+export interface PromptLibraryImage {
+  url: string
+  alt?: string
+}
+
+export interface PromptLibrarySource {
+  label: string
+  url: string
+}
+
+export interface PromptLibraryItem {
+  id: string
+  title: string
+  category: string
+  prompt: string
+  images?: PromptLibraryImage[]
+  sources?: PromptLibrarySource[]
+  repoUrl: string
+}
+
+export interface PromptLibrary {
+  repo: string
+  lang: string
+  sourceUrl: string
+  readmeUrl: string
+  fetchedAt: string
+  contentSha?: string
+  stale: boolean
+  fetchError?: string
+  categories: string[]
+  total: number
+  matching: number
+  items: PromptLibraryItem[]
+}
+
 export type PromptToolMode = 'text-to-prompt' | 'image-to-prompt'
 
 export interface PromptRecord {

@@ -17,6 +17,7 @@ import (
 	"github.com/y08lin4/lyra-image-workbench/internal/llm"
 	"github.com/y08lin4/lyra-image-workbench/internal/newapi"
 	"github.com/y08lin4/lyra-image-workbench/internal/output"
+	"github.com/y08lin4/lyra-image-workbench/internal/promptlibrary"
 	"github.com/y08lin4/lyra-image-workbench/internal/prompttools"
 	"github.com/y08lin4/lyra-image-workbench/internal/settings"
 	"github.com/y08lin4/lyra-image-workbench/internal/spaceconfig"
@@ -75,6 +76,24 @@ func TestUserConfigRequiresLogin(t *testing.T) {
 	router.ServeHTTP(res, req)
 	if res.Code != http.StatusUnauthorized {
 		t.Fatalf("GET /api/config without login code=%d body=%s", res.Code, res.Body.String())
+	}
+}
+
+func TestPromptLibraryAPIRequiresLogin(t *testing.T) {
+	router := newTestRouter(t)
+	for _, tc := range []struct {
+		method string
+		path   string
+	}{
+		{http.MethodGet, "/api/prompt-library"},
+		{http.MethodPost, "/api/prompt-library/refresh"},
+	} {
+		req := httptest.NewRequest(tc.method, tc.path, nil)
+		res := httptest.NewRecorder()
+		router.ServeHTTP(res, req)
+		if res.Code != http.StatusUnauthorized {
+			t.Fatalf("%s %s without login code=%d body=%s", tc.method, tc.path, res.Code, res.Body.String())
+		}
 	}
 }
 
@@ -289,18 +308,20 @@ func newTestAPIEnv(t *testing.T) testAPIEnv {
 	jobManager := jobs.NewManager(jobStore, events.NewHub(), settingsStore, spaceConfigStore, uploadStore, outputStore, newapi.NewClient())
 	promptStore := prompttools.NewStore(spaceStore)
 	promptService := prompttools.NewService(promptStore, settingsStore, spaceConfigStore, uploadStore, jobManager, outputStore, llm.NewClient())
+	promptLibraryService := promptlibrary.NewService(filepath.Join(cfg.DataDir, "cache", "prompt-library"))
 
 	router := NewRouter(Dependencies{
-		Config:      cfg,
-		AdminAuth:   adminAuthStore,
-		Users:       userStore,
-		Settings:    settingsStore,
-		Spaces:      spaceStore,
-		SpaceConfig: spaceConfigStore,
-		Uploads:     uploadStore,
-		Jobs:        jobManager,
-		Output:      outputStore,
-		PromptTools: promptService,
+		Config:        cfg,
+		AdminAuth:     adminAuthStore,
+		Users:         userStore,
+		Settings:      settingsStore,
+		Spaces:        spaceStore,
+		SpaceConfig:   spaceConfigStore,
+		Uploads:       uploadStore,
+		Jobs:          jobManager,
+		Output:        outputStore,
+		PromptLibrary: promptLibraryService,
+		PromptTools:   promptService,
 	})
 	return testAPIEnv{Router: router, Spaces: spaceStore, Output: outputStore}
 }
