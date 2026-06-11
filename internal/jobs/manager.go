@@ -163,12 +163,13 @@ func (m *Manager) Create(spaceToken string, req CreateRequest) (Job, error) {
 		Model:        model,
 		Mode:         req.Mode,
 		Prompt:       strings.TrimSpace(req.Prompt),
+		FramePrompts: normalizeFramePrompts(req.FramePrompts, clamp(req.Count, 1, 24, 1)),
 		Ratio:        ratio,
 		Resolution:   resolution,
 		Quality:      quality,
 		OutputFormat: outputFormat,
 		Size:         size,
-		Count:        clamp(req.Count, 1, 12, 1),
+		Count:        clamp(req.Count, 1, 24, 1),
 		Concurrency:  clamp(req.Concurrency, 1, 0, 1),
 		UploadIDs:    append([]string{}, req.UploadIDs...),
 		References:   references,
@@ -305,6 +306,7 @@ func (m *Manager) Retry(spaceToken string, id string, secrets RuntimeSecrets) (J
 		Model:          old.Model,
 		Mode:           old.Mode,
 		Prompt:         old.Prompt,
+		FramePrompts:   old.FramePrompts,
 		Ratio:          old.Ratio,
 		Resolution:     old.Resolution,
 		Quality:        old.Quality,
@@ -498,6 +500,7 @@ func (m *Manager) generateOne(ctx context.Context, spaceToken string, jobID stri
 	})
 	m.publish(jobID, "progress", eventPayload(job))
 	admin := m.settings.Get()
+	prompt := promptForImage(job, index)
 	spaceCfg, err := m.spaceConfig.Get(spaceToken)
 	if err != nil {
 		return NewResult(index, StatusFailed, err.Error())
@@ -548,10 +551,10 @@ func (m *Manager) generateOne(ctx context.Context, spaceToken string, jobID stri
 		"payload":         debugPayload(job, model, skipImageParams),
 		"inputImages":     debugInputImages(inputs),
 		"skipImageParams": skipImageParams,
-		"promptLength":    len([]rune(job.Prompt)),
-		"promptPreview":   compactDebugText(job.Prompt, 120),
+		"promptLength":    len([]rune(prompt)),
+		"promptPreview":   compactDebugText(prompt, 120),
 	})
-	image, err := m.newapi.Generate(ctx, newapi.Request{Mode: string(job.Mode), BaseURL: admin.NewAPIBaseURL, APIKey: apiKey, Model: model, Prompt: job.Prompt, Size: job.Size, Quality: job.Quality, OutputFormat: job.OutputFormat, SkipImageParams: skipImageParams, TimeoutSec: admin.TimeoutSec, InputImages: inputs})
+	image, err := m.newapi.Generate(ctx, newapi.Request{Mode: string(job.Mode), BaseURL: admin.NewAPIBaseURL, APIKey: apiKey, Model: model, Prompt: prompt, Size: job.Size, Quality: job.Quality, OutputFormat: job.OutputFormat, SkipImageParams: skipImageParams, TimeoutSec: admin.TimeoutSec, InputImages: inputs})
 	if err != nil {
 		fields := map[string]any{
 			"error":     err.Error(),
@@ -927,6 +930,32 @@ func requestContentType(mode Mode) string {
 		return "multipart/form-data"
 	}
 	return "application/json"
+}
+
+func promptForImage(job Job, index int) string {
+	if index >= 0 && index < len(job.FramePrompts) {
+		if prompt := strings.TrimSpace(job.FramePrompts[index]); prompt != "" {
+			return prompt
+		}
+	}
+	return job.Prompt
+}
+
+func normalizeFramePrompts(values []string, count int) []string {
+	if len(values) == 0 || count <= 0 {
+		return nil
+	}
+	out := make([]string, 0, count)
+	for i := 0; i < count && i < len(values); i++ {
+		out = append(out, strings.TrimSpace(values[i]))
+	}
+	for len(out) > 0 && out[len(out)-1] == "" {
+		out = out[:len(out)-1]
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 func debugPayload(job Job, model string, skipImageParams bool) map[string]any {

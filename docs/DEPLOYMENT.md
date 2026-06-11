@@ -72,3 +72,13 @@ Browser
 4. 更新后能访问 `/admin` 和普通工作台页面。
 
 默认宝塔/systemd 路径的一键更新命令见 [`README.md#已部署服务器一键更新`](../README.md#已部署服务器一键更新)。如果你的目录或 systemd 服务名不同，请先替换命令里的路径和服务名。
+
+## GIF / FFmpeg note
+
+The `/gif` page can generate animation frames without FFmpeg, but final GIF merging requires the server to run `ffmpeg`. Docker images install FFmpeg in the runtime image. For bare binary, systemd, or panel deployments, install FFmpeg on the host and verify:
+
+```bash
+ffmpeg -version
+```
+
+Set `FFMPEG_BIN=/path/to/ffmpeg` if the executable is not on `PATH`, or `GIF_ENABLED=false` to disable final GIF rendering while keeping normal image generation available.

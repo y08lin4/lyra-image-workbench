@@ -38,6 +38,10 @@ func requiresUserAuth(path string) bool {
 		return true
 	case strings.HasPrefix(path, "/api/prompt-tools/"):
 		return true
+	case strings.HasPrefix(path, "/api/gif/"):
+		return true
+	case strings.HasPrefix(path, "/api/gif-renders"):
+		return true
 	case strings.HasPrefix(path, "/api/users/2fa/"):
 		return true
 	case strings.HasPrefix(path, "/outputs/"):

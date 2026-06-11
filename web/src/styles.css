@@ -5036,3 +5036,227 @@ button:not(.primary) { background: var(--surface-soft); color: #1e3a8a; border: 
   border-color: rgba(34, 197, 94, .55) !important;
   color: #bbf7d0 !important;
 }
+
+/* GIF workbench */
+.gif-workbench-page .ghost-link,
+.download-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  text-decoration: none;
+}
+
+.gif-layout {
+  display: grid;
+  grid-template-columns: minmax(320px, 0.92fr) minmax(360px, 1.08fr);
+  gap: 20px;
+  padding: 20px;
+}
+
+.gif-panel {
+  border: 1px solid var(--border-color, rgba(148, 163, 184, 0.25));
+  border-radius: 24px;
+  background: var(--panel-bg, rgba(255, 255, 255, 0.78));
+  box-shadow: var(--panel-shadow, 0 18px 60px rgba(15, 23, 42, 0.08));
+  padding: 20px;
+}
+
+.gif-control-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.gif-step-card {
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 18px;
+  padding: 16px;
+  background: rgba(255, 255, 255, 0.52);
+}
+
+.gif-single-upload {
+  min-height: 132px;
+}
+
+.gif-source-card {
+  margin-top: 0;
+}
+
+.gif-motion-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 10px;
+  margin: 12px 0;
+}
+
+.gif-motion-grid button {
+  min-height: 76px;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: 16px;
+  background: rgba(248, 250, 252, 0.86);
+  text-align: left;
+  padding: 10px 12px;
+}
+
+.gif-motion-grid button.active {
+  border-color: rgba(79, 70, 229, 0.75);
+  background: rgba(99, 102, 241, 0.12);
+}
+
+.gif-motion-grid small,
+.gif-frame-summary span {
+  display: block;
+  color: var(--muted-color, #64748b);
+  margin-top: 4px;
+}
+
+.gif-prompt-input {
+  width: 100%;
+  resize: vertical;
+  border-radius: 14px;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.82);
+  color: inherit;
+  margin-bottom: 12px;
+}
+
+.gif-settings-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+  gap: 12px;
+}
+
+.gif-settings-grid label,
+.gif-checkbox {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--muted-color, #64748b);
+}
+
+.gif-settings-grid input,
+.gif-settings-grid select {
+  border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  padding: 9px 10px;
+  background: rgba(255, 255, 255, 0.86);
+  color: inherit;
+}
+
+.gif-checkbox {
+  flex-direction: row;
+  align-items: center;
+  margin-top: 12px;
+}
+
+.gif-action-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.gif-preview-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.gif-player {
+  border-radius: 22px;
+  overflow: hidden;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  background: rgba(15, 23, 42, 0.04);
+}
+
+.gif-player-stage {
+  min-height: 360px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted-color, #64748b);
+}
+
+.gif-player-stage img,
+.gif-result-image {
+  max-width: 100%;
+  max-height: 520px;
+  object-fit: contain;
+  display: block;
+  margin: 0 auto;
+}
+
+.gif-player-controls,
+.gif-frame-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px;
+  border-top: 1px solid rgba(148, 163, 184, 0.2);
+}
+
+.gif-frame-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+  gap: 10px;
+}
+
+.gif-frame-card {
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  border-radius: 14px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.58);
+}
+
+.gif-frame-card img,
+.gif-frame-error {
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  object-fit: cover;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.gif-frame-card small {
+  display: block;
+  padding: 8px;
+  color: var(--muted-color, #64748b);
+}
+
+.gif-render-panel,
+.gif-plan-details {
+  border-top: 1px solid rgba(148, 163, 184, 0.22);
+  padding-top: 16px;
+}
+
+.gif-plan-details li {
+  margin: 10px 0;
+}
+
+[data-theme='dark'] .gif-panel,
+[data-theme='dark'] .gif-step-card,
+[data-theme='dark'] .gif-frame-card {
+  background: rgba(15, 23, 42, 0.7);
+}
+
+[data-theme='dark'] .gif-motion-grid button,
+[data-theme='dark'] .gif-prompt-input,
+[data-theme='dark'] .gif-settings-grid input,
+[data-theme='dark'] .gif-settings-grid select {
+  background: rgba(15, 23, 42, 0.85);
+}
+
+@media (max-width: 960px) {
+  .gif-layout {
+    grid-template-columns: 1fr;
+    padding: 12px;
+  }
+  .gif-player-stage {
+    min-height: 260px;
+  }
+}

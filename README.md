@@ -160,6 +160,8 @@ cmd/local-server              Go 服务入口
 - Go 1.22+
 - Node.js 20+
 - npm
+- FFmpeg (required only for final GIF rendering; when missing, `/gif` can still generate frames but cannot merge GIF)
+æç» GIF åæåè½éè¦ï¼ç¼ºå¤±æ¶ `/gif` ä»å¯çæå¸§ï¼ä½ä¸è½åå¹¶ GIFï¼
 
 ### 本机生产形态运行
 
@@ -410,6 +412,55 @@ scripts/                部署和本地重启脚本
 ```
 
 ---
+
+
+## GIF workflow
+
+`/gif` PAGE supports single-image-to-GIF workflow: upload one reference image, enter a motion prompt, optionally use GPT-5.5 to plan frame prompts, reuse the existing `image-to-image` background task to generate frames, preview by rotating frame images in the browser, then call the Go backend FFmpeg renderer to create the final GIF.
+
+GIF rendering depends on a system FFmpeg installation. The project does not bundle FFmpeg into the Go binary and does not use cgo; the backend calls the external `ffmpeg` command with `exec.CommandContext`.
+
+Install FFmpeg:
+
+```bash
+# macOS
+brew install ffmpeg
+
+# Ubuntu / Debian
+sudo apt update
+sudo apt install -y ffmpeg
+
+# Alpine / Docker
+apk add --no-cache ffmpeg
+
+# Windows example
+winget install Gyan.FFmpeg
+```
+
+Verify:
+
+```bash
+ffmpeg -version
+```
+
+Environment variables:
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `GIF_ENABLED` | `true` | Enables final GIF rendering; frames can still be generated when disabled, but `/gif` disables the merge button. |
+| `FFMPEG_BIN` | `ffmpeg` | FFmpeg executable name or absolute path. |
+| `GIF_WORK_DIR` | `./data/gif_work` | Temporary working directory used while copying frames; temporary frames are cleaned after render. |
+| `GIF_MAX_FRAMES` | `24` | Maximum frames per GIF render. |
+| `GIF_MAX_FPS` | `15` | Maximum GIF FPS. |
+| `GIF_MAX_SIZE` | `1024` | Maximum exported GIF width. |
+| `GIF_RENDER_TIMEOUT_SEC` | `60` | FFmpeg render timeout. |
+
+Troubleshooting:
+
+- FFmpeg (required only for final GIF rendering; when missing, `/gif` can still generate frames but cannot merge GIF)
+- Preview works but merge fails: verify all selected frames succeeded and the service can write to `GIF_WORK_DIR`.
+- GIF is too large: lower frame count, FPS, or export width.
+- Why not Go `image/gif`: MVP uses FFmpeg for final export to get better palette handling and compatibility; preview is direct frame rotation in the frontend.
 
 ## 开发和测试
 

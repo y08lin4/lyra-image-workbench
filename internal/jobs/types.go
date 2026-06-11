@@ -51,6 +51,7 @@ type Job struct {
 	Model        string              `json:"model"`
 	Mode         Mode                `json:"mode"`
 	Prompt       string              `json:"prompt"`
+	FramePrompts []string            `json:"framePrompts,omitempty"`
 	Ratio        string              `json:"ratio"`
 	Resolution   string              `json:"resolution"`
 	Quality      string              `json:"quality"`
@@ -126,6 +127,7 @@ type CreateRequest struct {
 	Model        string              `json:"model"`
 	Mode         Mode                `json:"mode"`
 	Prompt       string              `json:"prompt"`
+	FramePrompts []string            `json:"framePrompts,omitempty"`
 	Ratio        string              `json:"ratio"`
 	Resolution   string              `json:"resolution"`
 	Quality      string              `json:"quality"`

@@ -505,3 +505,33 @@ rm /www/wwwroot/image-workbench/data/admin.auth.json
 9. 图生图能上传参考图并提交任务。
 10. 刷新页面后历史任务和结果仍在。
 11. 提示词助手能生成提示词，并能选择应用到 Image-2 或 Banana。
+
+
+### GIF / FFmpeg dependency
+
+The `/gif` page needs system FFmpeg only for final GIF rendering. FFmpeg is not compiled into the Go binary and cgo is not used; the backend calls the external command.
+
+```bash
+ffmpeg -version
+```
+
+Install on Ubuntu / Debian:
+
+```bash
+sudo apt update
+sudo apt install -y ffmpeg
+```
+
+Optional environment variables:
+
+```env
+GIF_ENABLED=true
+FFMPEG_BIN=ffmpeg
+GIF_WORK_DIR=/var/lib/image-workbench/data/gif_work
+GIF_MAX_FRAMES=24
+GIF_MAX_FPS=15
+GIF_MAX_SIZE=1024
+GIF_RENDER_TIMEOUT_SEC=60
+```
+
+If FFmpeg is unavailable, normal text-to-image and image-to-image still work. The `/gif` page can still generate frames, but the merge button is disabled.

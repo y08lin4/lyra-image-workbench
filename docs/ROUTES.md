@@ -41,3 +41,14 @@
 - SSE 只是同源状态观察通道，定时发送 heartbeat，避免 UI 误判断流。
 - 图片结果统一保存到本地 `outputs/YYYY-MM-DD/`，前端展示同源图片 URL。
 - Key 不出现在日志和提交记录里。
+
+
+## GIF workflow routes
+
+- `GET /api/gif/status`: returns GIF feature flag, FFmpeg availability, and frame/FPS/width limits.
+- `POST /api/gif/plans`: creates a frame prompt plan from one uploaded reference image, motion type, prompt, frame count, FPS, and strength. If GPT returns invalid JSON, the backend uses a deterministic fallback plan.
+- `POST /api/gif-renders`: renders selected successful task frames into a final GIF. Inputs must come from the authenticated user's task result / output store; local paths and external URLs are not accepted.
+- `GET /api/gif-renders/{id}`: returns a GIF render record.
+- `GET /api/gif-renders/{id}/file`: returns the final GIF file.
+
+Preview GIFs are not generated server-side. The frontend previews by rotating frame images and calls FFmpeg only after the user clicks merge.
