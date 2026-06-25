@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/y08lin4/lyra-image-workbench/internal/adminauth"
+	"github.com/y08lin4/lyra-image-workbench/internal/apikeys"
 	"github.com/y08lin4/lyra-image-workbench/internal/config"
 	"github.com/y08lin4/lyra-image-workbench/internal/gifrender"
 	"github.com/y08lin4/lyra-image-workbench/internal/jobs"
@@ -23,6 +24,7 @@ type Dependencies struct {
 	Config        config.Config
 	AdminAuth     *adminauth.Store
 	Users         *users.Store
+	APIKeys       *apikeys.Store
 	Settings      *settings.FileStore
 	Spaces        *spaces.FileStore
 	SpaceConfig   *spaceconfig.Store
@@ -43,9 +45,11 @@ func NewRouter(deps Dependencies) http.Handler {
 	adminConfig := NewAdminConfigHandler(deps.Settings, deps.AdminAuth)
 	userHandler := NewUserHandler(deps.Users, deps.Spaces)
 	userConfig := NewUserConfigHandler(deps.SpaceConfig)
+	developerKeyHandler := NewDeveloperAPIKeyHandler(deps.APIKeys, deps.SpaceConfig)
 	statusMetadata := NewStatusMetadataHandler()
 	uploadHandler := NewUploadHandler(deps.Uploads)
 	taskHandler := NewTaskHandler(deps.Jobs, deps.Output)
+	v1ImageTaskHandler := NewV1ImageTaskHandler(deps.APIKeys, deps.SpaceConfig, deps.Jobs, deps.Output)
 	promptToolsHandler := NewPromptToolsHandler(deps.PromptTools)
 	promptLibraryHandler := NewPromptLibraryHandler(deps.PromptLibrary)
 	outputHandler := NewOutputHandler(deps.Output)
@@ -69,6 +73,9 @@ func NewRouter(deps Dependencies) http.Handler {
 	mux.HandleFunc("POST /api/users/2fa/disable", userHandler.DisableTwoFactor)
 	mux.HandleFunc("GET /api/config", userConfig.Get)
 	mux.HandleFunc("POST /api/config", userConfig.Update)
+	mux.HandleFunc("GET /api/developer/api-keys", developerKeyHandler.List)
+	mux.HandleFunc("POST /api/developer/api-keys", developerKeyHandler.Create)
+	mux.HandleFunc("DELETE /api/developer/api-keys/{id}", developerKeyHandler.Delete)
 	mux.HandleFunc("GET /api/status-metadata", statusMetadata.ServeHTTP)
 	mux.HandleFunc("POST /api/uploads/reference", uploadHandler.SaveReferenceImages)
 	mux.HandleFunc("GET /api/uploads/reference", uploadHandler.ListReferenceImages)
@@ -85,6 +92,10 @@ func NewRouter(deps Dependencies) http.Handler {
 	mux.HandleFunc("POST /api/background-tasks/{id}/images/{index}/pixhost", taskHandler.UploadPixhost)
 	mux.HandleFunc("GET /api/background-tasks/{id}/images/{index}", taskHandler.Image)
 	mux.HandleFunc("GET /api/stats", taskHandler.Stats)
+	mux.HandleFunc("POST /v1/image-tasks", v1ImageTaskHandler.Create)
+	mux.HandleFunc("GET /v1/image-tasks/{id}", v1ImageTaskHandler.Get)
+	mux.HandleFunc("POST /v1/image-tasks/{id}/cancel", v1ImageTaskHandler.Cancel)
+	mux.HandleFunc("GET /v1/image-tasks/{id}/images/{index}", v1ImageTaskHandler.Image)
 	mux.HandleFunc("POST /api/prompt-tools/text-to-prompt", promptToolsHandler.TextToPrompt)
 	mux.HandleFunc("POST /api/prompt-tools/image-to-prompt", promptToolsHandler.ImageToPrompt)
 	mux.HandleFunc("POST /api/prompt-tools/sessions", promptToolsHandler.CreateSession)

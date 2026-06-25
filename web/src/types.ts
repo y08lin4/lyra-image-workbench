@@ -34,6 +34,14 @@ export interface UserConfig {
   updatedAt: string
 }
 
+export interface DeveloperApiKey {
+  id: string
+  name: string
+  prefix: string
+  createdAt: string
+  lastUsedAt?: string
+}
+
 export interface AdminConfig {
   newApiBaseUrl: string
   publicBaseUrl: string
