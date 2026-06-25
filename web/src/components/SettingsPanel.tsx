@@ -2,8 +2,9 @@ import { type FormEvent, useEffect, useState } from 'react'
 import { QRCodeSVG } from 'qrcode.react'
 import { formatError } from '../api/client'
 import { getUserConfig, saveUserConfig, type SaveUserConfigPayload } from '../api/config'
+import { createDeveloperApiKey, deleteDeveloperApiKey, listDeveloperApiKeys } from '../api/developerKeys'
 import { disableTwoFactor, enableTwoFactor, getCurrentUser, setupTwoFactor, type TwoFactorSetup } from '../api/users'
-import type { UserConfig } from '../types'
+import type { DeveloperApiKey, UserConfig } from '../types'
 import { clearLocalApiKeys } from '../lib/localApiKeys'
 
 type NumericInputValue = number | ''
@@ -12,6 +13,9 @@ export function SettingsPanel({ onReady, onConfig }: { onReady?: (ready: boolean
   const [config, setConfig] = useState<UserConfig | null>(null)
   const [apiKey, setApiKey] = useState('')
   const [bananaApiKey, setBananaApiKey] = useState('')
+  const [developerKeys, setDeveloperKeys] = useState<DeveloperApiKey[]>([])
+  const [developerKeyName, setDeveloperKeyName] = useState('local-sdk')
+  const [developerSecret, setDeveloperSecret] = useState('')
   const [saveApiKeyToCloud, setSaveApiKeyToCloud] = useState(false)
   const [saveBananaKeyToCloud, setSaveBananaKeyToCloud] = useState(false)
   const [defaultCount, setDefaultCount] = useState<NumericInputValue>(1)
@@ -30,9 +34,10 @@ export function SettingsPanel({ onReady, onConfig }: { onReady?: (ready: boolean
   }, [onReady, onConfig])
 
   async function refreshAll() {
-    const [cfg, session] = await Promise.all([getUserConfig(), getCurrentUser()])
+    const [cfg, session, apiKeys] = await Promise.all([getUserConfig(), getCurrentUser(), listDeveloperApiKeys()])
     applyConfig(cfg)
     setTwoFactorEnabled(Boolean(session.user.twoFactorEnabled))
+    setDeveloperKeys(apiKeys)
   }
 
   function applyConfig(cfg: UserConfig) {
@@ -101,6 +106,30 @@ export function SettingsPanel({ onReady, onConfig }: { onReady?: (ready: boolean
     setMessage(kind === 'apiKey' ? 'codex-key 已从云端清除' : 'Banana Key 已从云端清除')
   }
 
+  async function createDeveloperKey() {
+    try {
+      setError('')
+      setDeveloperSecret('')
+      const result = await createDeveloperApiKey(developerKeyName)
+      setDeveloperKeys(await listDeveloperApiKeys())
+      setDeveloperSecret(result.secret)
+      setMessage('开发者 API Key 已生成，请保存 Secret')
+    } catch (err) {
+      handleActionError(err, '生成开发者 API Key 失败')
+    }
+  }
+
+  async function removeDeveloperKey(id: string) {
+    try {
+      setError('')
+      await deleteDeveloperApiKey(id)
+      setDeveloperKeys((items) => items.filter((item) => item.id !== id))
+      setMessage('开发者 API Key 已删除')
+    } catch (err) {
+      handleActionError(err, '删除开发者 API Key 失败')
+    }
+  }
+
   async function startTwoFactorSetup() {
     setError('')
     setTwoFactorSetup(await setupTwoFactor())
@@ -139,6 +168,8 @@ export function SettingsPanel({ onReady, onConfig }: { onReady?: (ready: boolean
     setMessage('')
     setError(formatError(err, fallback))
   }
+
+  const cloudKeyReady = Boolean(config?.cloudApiKeySet || config?.cloudBananaApiKeySet)
 
   return (
     <section className="settings-flow-panel">
@@ -219,6 +250,36 @@ export function SettingsPanel({ onReady, onConfig }: { onReady?: (ready: boolean
           </label>
         </section>
 
+        <section className="settings-card developer-key-card">
+          <div className="section-title">
+            <span>开发者 API Key</span>
+            <small>Bearer / SDK</small>
+          </div>
+          <p className="muted">需要先保存云端上游 Key。Secret 只会在创建时显示一次。</p>
+          <div className="developer-key-create">
+            <input value={developerKeyName} onChange={(e) => setDeveloperKeyName(e.target.value)} placeholder="API Key 名称" />
+            <button type="button" className="primary" disabled={!cloudKeyReady} onClick={() => void createDeveloperKey()}>生成 Bearer Key</button>
+          </div>
+          {!cloudKeyReady ? <small className="error">请先勾选上传并保存至少一个云端上游 Key</small> : null}
+          {developerSecret ? (
+            <div className="developer-secret-box">
+              <span>Secret</span>
+              <code>{developerSecret}</code>
+            </div>
+          ) : null}
+          <div className="developer-key-list">
+            {developerKeys.length ? developerKeys.map((item) => (
+              <div className="developer-key-item" key={item.id}>
+                <div>
+                  <strong>{item.name}</strong>
+                  <small>{item.prefix} · 创建于 {formatDateTime(item.createdAt)}{item.lastUsedAt ? ` · 最近使用 ${formatDateTime(item.lastUsedAt)}` : ''}</small>
+                </div>
+                <button type="button" onClick={() => void removeDeveloperKey(item.id)}>删除</button>
+              </div>
+            )) : <small className="muted">暂无开发者 API Key</small>}
+          </div>
+        </section>
+
         <section className="settings-card defaults-card">
           <div className="section-title">
             <span>默认生成设置</span>
@@ -283,4 +344,12 @@ function readNumberInput(value: string): NumericInputValue {
 
 function numericOrDefault(value: NumericInputValue, fallback: number) {
   return value === '' ? fallback : value
+}
+
+
+function formatDateTime(value?: string) {
+  if (!value) return '-'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return date.toLocaleString()
 }

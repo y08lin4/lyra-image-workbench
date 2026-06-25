@@ -1,4 +1,4 @@
-﻿:root {
+:root {
   --bg: #f6f7fb;
   --surface: #ffffff;
   --surface-soft: #f8fafc;
@@ -3979,6 +3979,79 @@ button:not(.primary) { background: var(--surface-soft); color: #1e3a8a; border: 
 }
 .cloud-key-check {
   margin-top: -2px;
+}
+.developer-key-create {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+.developer-key-create button {
+  width: auto;
+  min-height: 40px;
+  border-radius: 999px;
+  padding: 0 16px;
+}
+.developer-secret-box {
+  display: grid;
+  gap: 6px;
+  border: 1px dashed var(--border);
+  border-radius: 12px;
+  background: var(--surface-soft);
+  padding: 10px;
+}
+.developer-secret-box span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+}
+.developer-secret-box code {
+  overflow-wrap: anywhere;
+  border-radius: 10px;
+  background: #0f172a;
+  color: #e0f2fe;
+  padding: 10px 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 13px;
+}
+.developer-key-list {
+  display: grid;
+  gap: 8px;
+}
+.developer-key-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  padding: 10px;
+}
+.developer-key-item div {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+.developer-key-item strong,
+.developer-key-item small {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.developer-key-item button {
+  width: auto;
+  min-height: 34px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-soft);
+  color: var(--muted);
+  padding: 0 12px;
+  font-weight: 800;
+}
+@media (max-width: 640px) {
+  .developer-key-create,
+  .developer-key-item {
+    grid-template-columns: 1fr;
+  }
 }
 .two-factor-setup {
   display: grid;

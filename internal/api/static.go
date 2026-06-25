@@ -19,7 +19,7 @@ func (h StaticHandler) Serve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	path := strings.TrimPrefix(r.URL.Path, "/")
-	if path == "api" || strings.HasPrefix(path, "api/") || path == "outputs" || strings.HasPrefix(path, "outputs/") {
+	if path == "api" || strings.HasPrefix(path, "api/") || path == "v1" || strings.HasPrefix(path, "v1/") || path == "outputs" || strings.HasPrefix(path, "outputs/") {
 		http.NotFound(w, r)
 		return
 	}

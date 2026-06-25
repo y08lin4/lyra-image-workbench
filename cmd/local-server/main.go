@@ -8,6 +8,7 @@ import (
 
 	"github.com/y08lin4/lyra-image-workbench/internal/adminauth"
 	"github.com/y08lin4/lyra-image-workbench/internal/api"
+	"github.com/y08lin4/lyra-image-workbench/internal/apikeys"
 	"github.com/y08lin4/lyra-image-workbench/internal/config"
 	"github.com/y08lin4/lyra-image-workbench/internal/events"
 	"github.com/y08lin4/lyra-image-workbench/internal/jobs"
@@ -38,6 +39,10 @@ func main() {
 	if err != nil {
 		log.Fatalf("加载用户配置失败：%v", err)
 	}
+	apiKeyStore, err := apikeys.NewStore(cfg.APIKeysPath())
+	if err != nil {
+		log.Fatalf("加载开发者 API Key 失败：%v", err)
+	}
 	spaceStore, err := spaces.NewFileStore(cfg.DataDir)
 	if err != nil {
 		log.Fatalf("加载个人空间存储失败：%v", err)
@@ -62,6 +67,7 @@ func main() {
 		Config:        cfg,
 		AdminAuth:     adminAuthStore,
 		Users:         userStore,
+		APIKeys:       apiKeyStore,
 		Settings:      settingsStore,
 		Spaces:        spaceStore,
 		SpaceConfig:   spaceConfigStore,

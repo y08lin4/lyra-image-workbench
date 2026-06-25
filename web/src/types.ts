@@ -1,4 +1,4 @@
-﻿export type Mode = 'text-to-image' | 'image-to-image'
+export type Mode = 'text-to-image' | 'image-to-image'
 export type ModelProvider = 'image-2' | 'banana'
 export type TaskStatus = 'queued' | 'running' | 'succeeded' | 'partial_failed' | 'failed' | 'cancelled' | 'interrupted'
 
@@ -32,6 +32,14 @@ export interface UserConfig {
   defaultConcurrency: number
   autoUploadPixhost: boolean
   updatedAt: string
+}
+
+export interface DeveloperApiKey {
+  id: string
+  name: string
+  prefix: string
+  createdAt: string
+  lastUsedAt?: string
 }
 
 export interface AdminConfig {
