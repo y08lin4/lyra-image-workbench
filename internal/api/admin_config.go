@@ -6,19 +6,21 @@ import (
 
 	"github.com/y08lin4/lyra-image-workbench/internal/adminauth"
 	"github.com/y08lin4/lyra-image-workbench/internal/settings"
+	"github.com/y08lin4/lyra-image-workbench/internal/users"
 )
 
 type AdminConfigHandler struct {
 	store *settings.FileStore
 	auth  *adminauth.Store
+	users *users.Store
 }
 
-func NewAdminConfigHandler(store *settings.FileStore, auth *adminauth.Store) AdminConfigHandler {
-	return AdminConfigHandler{store: store, auth: auth}
+func NewAdminConfigHandler(store *settings.FileStore, auth *adminauth.Store, userStore *users.Store) AdminConfigHandler {
+	return AdminConfigHandler{store: store, auth: auth, users: userStore}
 }
 
 func (h AdminConfigHandler) Get(w http.ResponseWriter, r *http.Request) {
-	if !requireAdmin(w, r, h.auth) {
+	if !h.requireAdmin(w, r) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
@@ -28,7 +30,7 @@ func (h AdminConfigHandler) Get(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h AdminConfigHandler) Update(w http.ResponseWriter, r *http.Request) {
-	if !requireAdmin(w, r, h.auth) {
+	if !h.requireAdmin(w, r) {
 		return
 	}
 	defer r.Body.Close()
@@ -47,20 +49,30 @@ func (h AdminConfigHandler) Update(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func requireAdmin(w http.ResponseWriter, r *http.Request, auth *adminauth.Store) bool {
-	if auth == nil || !auth.Status().PasswordSet {
+func (h AdminConfigHandler) requireAdmin(w http.ResponseWriter, r *http.Request) bool {
+	if adminTokenAuthorized(r, h.auth) {
+		return true
+	}
+	if session, ok := currentUserSession(h.users, r); ok && session.User.IsAdmin {
+		return true
+	}
+	if h.auth == nil || !h.auth.Status().PasswordSet {
 		writeError(w, http.StatusForbidden, "ADMIN_PASSWORD_NOT_SET", "请先设置 Admin 管理密码")
+		return false
+	}
+	writeError(w, http.StatusUnauthorized, "ADMIN_AUTH_REQUIRED", "需要先输入 Admin 管理密码")
+	return false
+}
+
+func adminTokenAuthorized(r *http.Request, auth *adminauth.Store) bool {
+	if auth == nil || !auth.Status().PasswordSet {
 		return false
 	}
 	token := r.Header.Get("X-Admin-Token")
 	if token == "" {
 		token = bearerToken(r.Header.Get("Authorization"))
 	}
-	if !auth.ValidateToken(token) {
-		writeError(w, http.StatusUnauthorized, "ADMIN_AUTH_REQUIRED", "需要先输入 Admin 管理密码")
-		return false
-	}
-	return true
+	return auth.ValidateToken(token)
 }
 
 func bearerToken(value string) string {

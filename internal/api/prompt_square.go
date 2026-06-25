@@ -1,23 +1,41 @@
 package api
 
 import (
+	"encoding/json"
+	"errors"
 	"mime/multipart"
 	"net/http"
 	"strings"
 
+	"github.com/y08lin4/lyra-image-workbench/internal/jobs"
 	"github.com/y08lin4/lyra-image-workbench/internal/promptsquare"
 )
 
+type promptSquareJobReader interface {
+	Get(spaceToken string, id string) (jobs.Job, bool, error)
+}
+
+type promptSquareOutputResolver interface {
+	Resolve(spaceToken string, date string, fileName string) (string, string, error)
+	ResolveURL(outputURL string) (string, string, error)
+}
+
 type PromptSquareHandler struct {
-	store *promptsquare.Store
+	store  *promptsquare.Store
+	jobs   promptSquareJobReader
+	output promptSquareOutputResolver
 }
 
 func NewPromptSquareHandler(store *promptsquare.Store) PromptSquareHandler {
 	return PromptSquareHandler{store: store}
 }
 
+func NewPromptSquareHandlerWithResults(store *promptsquare.Store, jobReader promptSquareJobReader, outputResolver promptSquareOutputResolver) PromptSquareHandler {
+	return PromptSquareHandler{store: store, jobs: jobReader, output: outputResolver}
+}
+
 func (h PromptSquareHandler) List(w http.ResponseWriter, r *http.Request) {
-	items, err := h.store.List()
+	items, err := h.store.ListForUser(promptSquareUsername(r))
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "PROMPT_SQUARE_LIST_FAILED", "读取提示词广场失败")
 		return
@@ -37,23 +55,26 @@ func (h PromptSquareHandler) Create(w http.ResponseWriter, r *http.Request) {
 	if r.MultipartForm != nil && r.MultipartForm.Value != nil {
 		tags = r.MultipartForm.Value["tags"]
 	}
-	author := strings.TrimSpace(r.FormValue("authorName"))
-	if author == "" {
-		author = strings.TrimSpace(r.Header.Get("X-User-Name"))
+	authorName := strings.TrimSpace(r.FormValue("authorName"))
+	username := promptSquareUsername(r)
+	if authorName == "" {
+		authorName = username
 	}
 	item, err := h.store.Create(promptsquare.CreateRequest{
-		Title:       r.FormValue("title"),
-		Prompt:      r.FormValue("prompt"),
-		Negative:    r.FormValue("negativePrompt"),
-		Model:       r.FormValue("model"),
-		Tags:        tags,
-		ImageURL:    r.FormValue("imageUrl"),
-		SourceName:  r.FormValue("sourceName"),
-		SourceURL:   r.FormValue("sourceUrl"),
-		License:     r.FormValue("license"),
-		AuthorName:  author,
-		AuthorURL:   r.FormValue("authorUrl"),
-		ImageHeader: image,
+		Title:             r.FormValue("title"),
+		Prompt:            r.FormValue("prompt"),
+		Negative:          r.FormValue("negativePrompt"),
+		Model:             r.FormValue("model"),
+		Tags:              tags,
+		ImageURL:          r.FormValue("imageUrl"),
+		SourceName:        r.FormValue("sourceName"),
+		SourceURL:         r.FormValue("sourceUrl"),
+		License:           r.FormValue("license"),
+		AuthorName:        authorName,
+		AuthorUsername:    username,
+		AuthorDisplayName: promptSquareDisplayName(r, authorName),
+		AuthorURL:         r.FormValue("authorUrl"),
+		ImageHeader:       image,
 		Params: map[string]string{
 			"ratio":        r.FormValue("ratio"),
 			"resolution":   r.FormValue("resolution"),
@@ -68,6 +89,110 @@ func (h PromptSquareHandler) Create(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "item": item})
 }
 
+type promptSquareFromResultRequest struct {
+	TaskID     string   `json:"taskId"`
+	ImageIndex int      `json:"imageIndex"`
+	Title      string   `json:"title"`
+	Tags       []string `json:"tags"`
+}
+
+func (h PromptSquareHandler) FromResult(w http.ResponseWriter, r *http.Request) {
+	if h.jobs == nil || h.output == nil {
+		writeError(w, http.StatusServiceUnavailable, "PROMPT_SQUARE_RESULT_DEPENDENCY_MISSING", "广场投稿缺少任务或输出读取依赖")
+		return
+	}
+	defer r.Body.Close()
+	var payload promptSquareFromResultRequest
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		writeError(w, http.StatusBadRequest, "BAD_JSON", "请求体不是有效 JSON")
+		return
+	}
+	payload.TaskID = strings.TrimSpace(payload.TaskID)
+	if payload.TaskID == "" || payload.ImageIndex < 0 {
+		writeError(w, http.StatusBadRequest, "PROMPT_SQUARE_FROM_RESULT_INVALID", "任务 ID 或图片序号无效")
+		return
+	}
+
+	spaceToken := r.Header.Get(userStorageTokenHeader)
+	job, ok, err := h.jobs.Get(spaceToken, payload.TaskID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "PROMPT_SQUARE_TASK_READ_FAILED", "读取任务失败")
+		return
+	}
+	if !ok {
+		writeError(w, http.StatusNotFound, "PROMPT_SQUARE_TASK_NOT_FOUND", "任务不存在")
+		return
+	}
+	result, ok := promptSquareResultByIndex(job, payload.ImageIndex)
+	if !ok || !result.OK {
+		writeError(w, http.StatusBadRequest, "PROMPT_SQUARE_RESULT_NOT_READY", "任务图片不存在或尚未成功")
+		return
+	}
+	path, mime, err := h.resolveResultImage(job, result)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "PROMPT_SQUARE_RESULT_IMAGE_NOT_FOUND", "任务图片文件不存在")
+		return
+	}
+
+	username := promptSquareUsername(r)
+	item, err := h.store.SubmitFromResult(promptsquare.SubmitFromResultRequest{
+		Title:             payload.Title,
+		Prompt:            firstPromptSquareText(job.Prompt, result.RevisedPrompt),
+		Model:             job.Model,
+		Ratio:             job.Ratio,
+		Quality:           firstPromptSquareText(result.ActualQuality, job.Quality),
+		OutputFormat:      firstPromptSquareText(result.OutputFormat, job.OutputFormat),
+		Tags:              payload.Tags,
+		Author:            username,
+		AuthorDisplayName: promptSquareDisplayName(r, username),
+		SourceTaskID:      job.ID,
+		SourceImagePath:   path,
+		SourceImageMime:   firstPromptSquareText(mime, result.Mime),
+	})
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "PROMPT_SQUARE_FROM_RESULT_FAILED", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "item": item})
+}
+
+type promptSquareLikeRequest struct {
+	Liked bool `json:"liked"`
+}
+
+func (h PromptSquareHandler) Like(w http.ResponseWriter, r *http.Request) {
+	defer r.Body.Close()
+	var payload promptSquareLikeRequest
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		writeError(w, http.StatusBadRequest, "BAD_JSON", "请求体不是有效 JSON")
+		return
+	}
+	item, err := h.store.SetLike(strings.TrimSpace(r.PathValue("id")), promptSquareUsername(r), payload.Liked)
+	if err != nil {
+		writePromptSquareStoreError(w, err, "PROMPT_SQUARE_LIKE_FAILED", "更新点赞失败")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "item": item})
+}
+
+func (h PromptSquareHandler) Daily(w http.ResponseWriter, r *http.Request) {
+	items, err := h.store.Daily(promptSquareUsername(r))
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "PROMPT_SQUARE_DAILY_FAILED", "读取每日榜失败")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "items": items})
+}
+
+func (h PromptSquareHandler) Mine(w http.ResponseWriter, r *http.Request) {
+	items, err := h.store.MineForUser(promptSquareUsername(r))
+	if err != nil {
+		writePromptSquareStoreError(w, err, "PROMPT_SQUARE_MINE_FAILED", "读取我的作品失败")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "items": items})
+}
+
 func (h PromptSquareHandler) Image(w http.ResponseWriter, r *http.Request) {
 	path, mime, err := h.store.ResolveImage(r.PathValue("file"))
 	if err != nil {
@@ -77,6 +202,54 @@ func (h PromptSquareHandler) Image(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", mime)
 	w.Header().Set("Cache-Control", "public, max-age=3600")
 	http.ServeFile(w, r, path)
+}
+
+func (h PromptSquareHandler) resolveResultImage(job jobs.Job, result jobs.Result) (string, string, error) {
+	if result.OutputDate != "" && result.OutputFileName != "" {
+		return h.output.Resolve(job.SpaceToken, result.OutputDate, result.OutputFileName)
+	}
+	return h.output.ResolveURL(result.ImageURL)
+}
+
+func promptSquareResultByIndex(job jobs.Job, index int) (jobs.Result, bool) {
+	for _, result := range job.Results {
+		if result.Index == index {
+			return result, true
+		}
+	}
+	return jobs.Result{}, false
+}
+
+func promptSquareUsername(r *http.Request) string {
+	return strings.TrimSpace(r.Header.Get("X-User-Name"))
+}
+
+func promptSquareDisplayName(r *http.Request, fallback string) string {
+	if display := strings.TrimSpace(r.Header.Get("X-User-Display-Name")); display != "" {
+		return display
+	}
+	return strings.TrimSpace(fallback)
+}
+
+func firstPromptSquareText(values ...string) string {
+	for _, value := range values {
+		trimmed := strings.TrimSpace(value)
+		if trimmed != "" {
+			return trimmed
+		}
+	}
+	return ""
+}
+
+func writePromptSquareStoreError(w http.ResponseWriter, err error, fallbackCode string, fallbackMessage string) {
+	switch {
+	case errors.Is(err, promptsquare.ErrItemNotFound):
+		writeError(w, http.StatusNotFound, "PROMPT_SQUARE_ITEM_NOT_FOUND", "广场作品不存在")
+	case errors.Is(err, promptsquare.ErrUsernameRequired):
+		writeError(w, http.StatusUnauthorized, "USER_AUTH_REQUIRED", "请先登录")
+	default:
+		writeError(w, http.StatusBadRequest, fallbackCode, fallbackMessage)
+	}
 }
 
 func firstFile(r *http.Request, name string) *multipart.FileHeader {

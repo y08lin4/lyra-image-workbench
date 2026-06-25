@@ -1,7 +1,21 @@
 import { requestJson } from './client'
-import type { AdminAuthStatus, AdminConfig, AdminSession, AdminUser } from '../types'
+import type { AdminAuthStatus, AdminBillingConfig, AdminConfig, AdminSession, AdminUser, CreditLedgerEntry } from '../types'
 
 export const ADMIN_TOKEN_KEY = 'image-workbench:admin-token:v1'
+
+export type AdminConfigPatch = Partial<AdminConfig> & Record<string, unknown>
+export type AdminBillingConfigPatch = AdminBillingConfig & {
+  epayKey?: string
+  clearEpayKey?: boolean
+}
+export type GrantCreditsResponse = {
+  ok: boolean
+  user?: AdminUser
+  users?: AdminUser[]
+  entry?: CreditLedgerEntry
+  ledger?: CreditLedgerEntry[]
+}
+export type SetAdminUserRoleResponse = { ok: boolean; user?: AdminUser; users?: AdminUser[] }
 
 export function getAdminToken() {
   return localStorage.getItem(ADMIN_TOKEN_KEY) || ''
@@ -58,10 +72,21 @@ export async function getAdminConfig() {
   return data.config
 }
 
-export async function saveAdminConfig(newApiBaseUrl: string, timeoutSec: number, publicBaseUrl: string, debugEnabled: boolean, minimaxApiKey = '', clearMinimaxApiKey = false) {
+export async function updateAdminConfig(patch: AdminConfigPatch) {
+  const data = await requestJson<{ ok: boolean; config: AdminConfig }>('/api/admin/config', {
+    method: 'PUT',
+    headers: adminHeaders(),
+    body: JSON.stringify(patch),
+  }, '')
+  return data.config
+}
+
+export async function saveAdminBillingConfig(config: AdminBillingConfigPatch) {
+  return updateAdminConfig(config as AdminConfigPatch)
+}
+
+export async function saveAdminConfig(newApiBaseUrl: string, timeoutSec: number, publicBaseUrl: string, debugEnabled: boolean) {
   const body: Record<string, unknown> = { newApiBaseUrl, timeoutSec, publicBaseUrl, debugEnabled }
-  if (minimaxApiKey.trim()) body.minimaxApiKey = minimaxApiKey.trim()
-  if (clearMinimaxApiKey) body.clearMinimaxApiKey = true
   const data = await requestJson<{ ok: boolean; config: AdminConfig }>('/api/admin/config', {
     method: 'POST',
     headers: adminHeaders(),
@@ -77,11 +102,28 @@ export async function listAdminUsers() {
   return data.users || []
 }
 
-export async function addUserVideoQuota(username: string, delta: number) {
-  const data = await requestJson<{ ok: boolean; user: AdminUser; users: AdminUser[] }>('/api/admin/users/video-quota', {
+export async function grantUserCredits(username: string, amount: number, reason: string) {
+  const data = await requestJson<GrantCreditsResponse>('/api/admin/users/credits/add', {
     method: 'POST',
     headers: adminHeaders(),
-    body: JSON.stringify({ username, delta }),
+    body: JSON.stringify({ username, amount, reason }),
+  }, '')
+  return data
+}
+
+export async function listAdminUserLedger(username: string) {
+  const data = await requestJson<{ ok: boolean; ledger?: CreditLedgerEntry[]; entries?: CreditLedgerEntry[] }>(`/api/admin/users/${encodeURIComponent(username)}/ledger`, {
+    headers: adminHeaders(),
+  }, '')
+  return data.ledger || data.entries || []
+}
+
+export async function setAdminUserRole(username: string, role: string | boolean) {
+  const body = typeof role === 'boolean' ? { isAdmin: role } : { role }
+  const data = await requestJson<SetAdminUserRoleResponse>(`/api/admin/users/${encodeURIComponent(username)}/role`, {
+    method: 'POST',
+    headers: adminHeaders(),
+    body: JSON.stringify(body),
   }, '')
   return data
 }

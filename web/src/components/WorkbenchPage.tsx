@@ -3,7 +3,8 @@ import { cancelTask, createTask, deleteTask, listTasks, retryTask, setTaskFavori
 import { getCurrentUser, logoutUser } from '../api/users'
 import { deleteReferenceUpload, listReferenceUploads, uploadReferenceImages } from '../api/uploads'
 import { getUserConfig } from '../api/config'
-import type { CreateTaskRequest, Mode, ModelProvider, ReferenceUpload, Task, TaskEvent, UserConfig, UserSession } from '../types'
+import { submitPromptSquareFromResult } from '../api/promptSquare'
+import type { CreateTaskRequest, Mode, ModelProvider, ReferenceUpload, Task, TaskEvent, TaskResult, UserConfig, UserSession } from '../types'
 import { SpaceLogin } from './SpaceLogin'
 import { GenerationPanel } from './GenerationPanel'
 import { SettingsPanel } from './SettingsPanel'
@@ -12,7 +13,8 @@ import { TaskSidebar } from './TaskSidebar'
 import { PromptAssistantModal } from './PromptAssistantModal'
 import { PromptLibraryPage } from './PromptLibraryPage'
 import { PromptSquarePanel } from './PromptSquarePanel'
-import { MiniMaxVideoPanel } from './MiniMaxVideoPanel'
+import { ProfilePage } from './ProfilePage'
+import { ApiDocsPage } from './ApiDocsPage'
 import { ResultCanvas } from './ResultCanvas'
 import { ThemeToggle, type ThemeMode } from './ThemeToggle'
 import { GitHubLink } from './GitHubLink'
@@ -23,21 +25,23 @@ import { nativeExitApp, nativeSaveImage } from '../lib/nativeBridge'
 import { ensureAppBackBridge, installEdgeBackGesture, registerAppBackHandler } from '../lib/appBack'
 
 type NumericInputValue = number | ''
-type WorkbenchTab = 'generate' | 'library' | 'square' | 'video' | 'result' | 'queue' | 'settings'
+type WorkbenchTab = 'generate' | 'assistant' | 'library' | 'square' | 'result' | 'profile' | 'apiDocs' | 'settings'
 type WorkbenchTabItem = { id: WorkbenchTab; label: string; hint: string; badge?: string; tone?: 'normal' | 'danger' | 'active' }
 
 const MAX_REFERENCE_IMAGES = 8
 const MAX_REFERENCE_IMAGE_BYTES = 12 * 1024 * 1024
 const MAX_REFERENCE_UPLOAD_BYTES = 50 * 1024 * 1024
 const ALLOWED_REFERENCE_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp'])
+const SUBMITTED_SQUARE_KEYS_STORAGE = 'lyra:prompt-square:submitted-result-keys:v1'
 
 const workflowTabs: WorkbenchTabItem[] = [
   { id: 'generate', label: '生成', hint: '请求' },
+  { id: 'assistant', label: '提示词助手', hint: '四栏' },
   { id: 'library', label: '提示词库', hint: '灵感' },
   { id: 'square', label: '广场', hint: 'Prompt' },
-  { id: 'video', label: '视频', hint: 'MiniMax' },
-  { id: 'result', label: '结果', hint: '图片' },
-  { id: 'queue', label: '队列', hint: '历史' },
+  { id: 'result', label: '结果', hint: '队列' },
+  { id: 'profile', label: '我的', hint: '账号' },
+  { id: 'apiDocs', label: 'API 文档', hint: 'Bearer' },
   { id: 'settings', label: '设置', hint: 'Key' },
 ]
 
@@ -68,6 +72,7 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
   const [toast, setToast] = useState('')
+  const [submittedSquareKeys, setSubmittedSquareKeys] = useState<Set<string>>(() => loadSubmittedSquareKeys())
   const activeTabRef = useRef(activeTab)
   const detailIdRef = useRef(detailId)
   const tabHistoryRef = useRef<WorkbenchTab[]>([])
@@ -85,14 +90,15 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
   const missingKeyCount = (keyReady ? 0 : 1) + (bananaKeyReady ? 0 : 1)
   const tabItems = useMemo<WorkbenchTabItem[]>(() => workflowTabs.map((tab) => {
     if (tab.id === 'generate') return { ...tab, hint: currentKeyReady ? '可提交' : '缺 Key', tone: currentKeyReady ? 'normal' : 'danger' }
+    if (tab.id === 'assistant') return { ...tab, hint: '四栏' }
     if (tab.id === 'library') return { ...tab, hint: 'GitHub', tone: 'normal' }
     if (tab.id === 'square') return { ...tab, hint: '试验版' }
-    if (tab.id === 'video') return { ...tab, hint: 'MiniMax' }
-    if (tab.id === 'result') return { ...tab, hint: activeTask ? activeTask.statusText : '图片', badge: activeTask ? `${activeTask.progress}%` : undefined, tone: activeTask && !isFinal(activeTask) ? 'active' : 'normal' }
-    if (tab.id === 'queue') return { ...tab, hint: activeCount ? `${activeCount} 进行中` : '历史', badge: activeCount ? String(activeCount) : undefined, tone: activeCount ? 'active' : 'normal' }
+    if (tab.id === 'result') return { ...tab, hint: activeTask ? activeTask.statusText : activeCount ? `${activeCount} 进行中` : '队列', badge: activeTask ? `${activeTask.progress}%` : activeCount ? String(activeCount) : undefined, tone: activeTask && !isFinal(activeTask) ? 'active' : activeCount ? 'active' : 'normal' }
+    if (tab.id === 'profile') return { ...tab, hint: session?.user.creditsBalance != null ? `${session.user.creditsBalance} 次` : '账号' }
+    if (tab.id === 'apiDocs') return { ...tab, hint: 'Bearer' }
     if (tab.id === 'settings') return { ...tab, hint: missingKeyCount ? `${missingKeyCount} 个未设` : '已配置', badge: missingKeyCount ? '!' : undefined, tone: missingKeyCount ? 'danger' : 'normal' }
     return tab
-  }), [activeCount, activeTask, currentKeyReady, missingKeyCount])
+  }), [activeCount, activeTask, currentKeyReady, missingKeyCount, session?.user.creditsBalance])
 
   const goToTab = useCallback((nextTab: WorkbenchTab, options?: { replace?: boolean }) => {
     setActiveTab((current) => {
@@ -348,6 +354,40 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
   function handleOpenTaskDetail(task: Task) {
     setActiveId(task.id)
     setDetailId(task.id)
+  }
+
+  async function handleSubmitResultToSquare(task: Task, result: TaskResult, index: number) {
+    if (!result.ok || !result.imageUrl) throw new Error('只有成功生成的图片可以提交到广场')
+    const defaultTitle = compactSquareText(result.revisedPrompt || task.prompt || `生成结果 ${index + 1}`, 80)
+    const title = window.prompt('广场标题（可留空使用提示词首行）', defaultTitle)
+    if (title === null) return false
+    const defaultTags = defaultSquareTags(task)
+    const tagInput = window.prompt('标签（用逗号、空格分隔，可留空）', defaultTags.join(', '))
+    if (tagInput === null) return false
+    const tags = splitSubmitTags(tagInput)
+    const promptText = result.revisedPrompt || task.prompt || '（无提示词）'
+    const confirmLines = [
+      `标题：${title.trim() || defaultTitle}`,
+      `标签：${tags.length ? tags.join('、') : '无'}`,
+      `Prompt：${compactSquareText(promptText, 160)}`,
+      `模型：${task.model || 'gpt-image-2'}`,
+      `比例：${task.ratio || 'auto'} / 质量：${result.actualQuality || task.quality || 'auto'}`,
+      `图片：第 ${index + 1} 张 · ${result.actualSize || task.size || '自动尺寸'} · ${formatBytes(result.bytes)} · ${result.outputFormat || task.outputFormat || 'png'}`,
+      '提交后会复制到广场永久目录；未提交结果仍按 30 天清理。',
+    ]
+    if (!window.confirm(`确认提交到广场？\n\n${confirmLines.join('\n')}`)) return false
+
+    const item = await submitPromptSquareFromResult({ taskId: task.id, imageIndex: index, title, tags })
+    const key = resultSquareKey(task.id, index)
+    setSubmittedSquareKeys((prev) => {
+      const next = new Set(prev)
+      next.add(key)
+      saveSubmittedSquareKeys(next)
+      return next
+    })
+    setMessage(`已提交到广场：${item.title || title || defaultTitle}`)
+    setToast('已提交到广场，结果将永久保留')
+    return true
   }
 
   function handleReuseTask(task: Task) {
@@ -614,17 +654,56 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
           />
         ) : null}
 
+        {activeTab === 'assistant' ? (
+          <section className="workflow-page assistant-page">
+            <PromptAssistantModal
+              embedded
+              tasks={tasks}
+              uploads={uploads}
+              provider={provider}
+              bananaModel={bananaModel}
+              onClose={() => goToTab('generate')}
+              onUsePrompt={handleUseAssistantPrompt}
+              onRefreshUploads={refreshUploads}
+            />
+          </section>
+        ) : null}
+
         {activeTab === 'result' ? (
           <section className="workflow-page result-page">
-            <ResultCanvas
-              task={activeTask}
-              onUseAsReference={handleUseResultAsReference}
-              onUploadPixhost={handleUploadPixhost}
-              onOpenGenerate={() => goToTab('generate')}
-              onOpenQueue={() => goToTab('queue')}
-              onReuse={handleReuseTask}
-              onRetry={(id) => void handleRetry(id)}
-            />
+            <div className="result-queue-layout">
+              <TaskSidebar
+                tasks={tasks}
+                activeId={activeId || undefined}
+                query={searchQuery}
+                favoriteIds={favoriteIds}
+                selectedIds={selectedIds}
+                onQueryChange={setSearchQuery}
+                onToggleSelect={toggleSelectTask}
+                onSelectVisible={selectVisibleTasks}
+                onClearSelection={() => setSelectedIds(new Set())}
+                onBatchFavorite={(favorite) => void handleBatchFavorite(favorite)}
+                onBatchDelete={() => void handleBatchDelete()}
+                onBatchDownload={handleBatchDownload}
+                onSelect={handleSelectTask}
+                onOpenDetail={handleOpenTaskDetail}
+                onRetry={(id) => void handleRetry(id)}
+                onCancel={(id) => void handleCancel(id)}
+                onDelete={(id) => void handleDelete(id)}
+                onReuse={handleReuseTask}
+                onToggleFavorite={(id) => void toggleFavorite(id)}
+              />
+              <ResultCanvas
+                task={activeTask}
+                onUseAsReference={handleUseResultAsReference}
+                onUploadPixhost={handleUploadPixhost}
+                onOpenGenerate={() => goToTab('generate')}
+                onReuse={handleReuseTask}
+                onRetry={(id) => void handleRetry(id)}
+                submittedSquareKeys={submittedSquareKeys}
+                onSubmitToSquare={handleSubmitResultToSquare}
+              />
+            </div>
           </section>
         ) : null}
 
@@ -634,43 +713,27 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
           </section>
         ) : null}
 
-        {activeTab === 'video' ? (
-          <section className="workflow-page video-page">
-            <MiniMaxVideoPanel seedPrompt={prompt} />
-          </section>
+
+        {activeTab === 'profile' ? (
+          <ProfilePage session={session} onSessionChange={(nextSession) => setSession(nextSession)} />
         ) : null}
 
-        {activeTab === 'queue' ? (
-          <section className="workflow-page queue-page">
-            <TaskSidebar
-              tasks={tasks}
-              activeId={activeId || undefined}
-              query={searchQuery}
-              favoriteIds={favoriteIds}
-              selectedIds={selectedIds}
-              onQueryChange={setSearchQuery}
-              onToggleSelect={toggleSelectTask}
-              onSelectVisible={selectVisibleTasks}
-              onClearSelection={() => setSelectedIds(new Set())}
-              onBatchFavorite={(favorite) => void handleBatchFavorite(favorite)}
-              onBatchDelete={() => void handleBatchDelete()}
-              onBatchDownload={handleBatchDownload}
-              onSelect={handleSelectTask}
-              onOpenDetail={handleOpenTaskDetail}
-              onRetry={(id) => void handleRetry(id)}
-              onCancel={(id) => void handleCancel(id)}
-              onDelete={(id) => void handleDelete(id)}
-              onReuse={handleReuseTask}
-              onToggleFavorite={(id) => void toggleFavorite(id)}
-            />
-          </section>
+        {activeTab === 'apiDocs' ? (
+          <ApiDocsPage />
         ) : null}
 
         {activeTab === 'settings' ? (
           <section className="workflow-page settings-page-inline">
             <PageHeader eyebrow="Settings" title="设置" description="Key 保存在当前浏览器本地；默认数量、默认并发和图床设置随账号保存。" />
-            <div className="settings-inline-grid settings-only-grid">
+            <div className={`settings-inline-grid${session.user.isAdmin ? '' : ' settings-only-grid'}`}>
               <SettingsPanel onConfig={applyUserConfig} />
+              {session.user.isAdmin ? (
+                <aside className="admin-entry-panel" aria-label="管理员入口">
+                  <strong>管理员后台</strong>
+                  <span>配置站点参数、上游服务和用户管理。</span>
+                  <a className="ghost-link" href="/admin">打开管理后台</a>
+                </aside>
+              ) : null}
             </div>
           </section>
         ) : null}
@@ -698,6 +761,47 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
   )
 }
 
+function resultSquareKey(taskId: string, imageIndex: number) {
+  return `${taskId}:${imageIndex}`
+}
+
+function loadSubmittedSquareKeys() {
+  if (typeof window === 'undefined') return new Set<string>()
+  try {
+    const raw = window.localStorage.getItem(SUBMITTED_SQUARE_KEYS_STORAGE)
+    const items = raw ? JSON.parse(raw) : []
+    return new Set<string>(Array.isArray(items) ? items.filter((item) => typeof item === 'string') : [])
+  } catch {
+    return new Set<string>()
+  }
+}
+
+function saveSubmittedSquareKeys(keys: Set<string>) {
+  try {
+    window.localStorage.setItem(SUBMITTED_SQUARE_KEYS_STORAGE, JSON.stringify(Array.from(keys).slice(-500)))
+  } catch {
+    // localStorage can be unavailable in hardened browser contexts.
+  }
+}
+
+function defaultSquareTags(task: Task) {
+  return [
+    task.mode === 'image-to-image' ? '图生图' : '文生图',
+    task.provider || 'image-2',
+    task.model || '',
+  ].filter(Boolean).slice(0, 6)
+}
+
+function splitSubmitTags(value: string) {
+  return value.split(/[,，\s]+/).map((item) => item.trim()).filter(Boolean).slice(0, 12)
+}
+
+function compactSquareText(value: string, max = 96) {
+  const text = value.trim().replace(/\s+/g, ' ')
+  if (text.length <= max) return text
+  return `${text.slice(0, max)}...`
+}
+
 function PageHeader({ eyebrow, title, description }: { eyebrow: string; title: string; description: string }) {
   return (
     <header className="workflow-page-header">
@@ -710,9 +814,9 @@ function PageHeader({ eyebrow, title, description }: { eyebrow: string; title: s
 
 function WorkbenchTabs({ tabs = workflowTabs, activeTab, onChange, className }: { tabs?: WorkbenchTabItem[]; activeTab: WorkbenchTab; onChange: (tab: WorkbenchTab) => void; className: string }) {
   return (
-    <nav className={className} aria-label="工作流标签页">
+    <nav className={className} aria-label="工作流标签页" role="tablist">
       {tabs.map((tab) => (
-        <button key={tab.id} type="button" className={`${activeTab === tab.id ? 'active' : ''} ${tab.tone ? `tone-${tab.tone}` : ''}`} onClick={() => onChange(tab.id)}>
+        <button key={tab.id} type="button" role="tab" aria-selected={activeTab === tab.id} className={`${activeTab === tab.id ? 'active' : ''} ${tab.tone ? `tone-${tab.tone}` : ''}`} onClick={() => onChange(tab.id)}>
           <strong>{tab.label}{tab.badge ? <i>{tab.badge}</i> : null}</strong>
           <span>{tab.hint}</span>
         </button>

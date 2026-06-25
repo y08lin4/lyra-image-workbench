@@ -2,14 +2,22 @@ export type Mode = 'text-to-image' | 'image-to-image'
 export type ModelProvider = 'image-2' | 'banana'
 export type TaskStatus = 'queued' | 'running' | 'succeeded' | 'partial_failed' | 'failed' | 'cancelled' | 'interrupted'
 
+export interface PublicUser {
+  username: string
+  displayName: string
+  email: string
+  avatarUrl: string
+  isAdmin: boolean
+  creditsBalance: number
+  referralCode: string
+  referredByUsername?: string
+  createdAt: string
+  lastLoginAt?: string
+  twoFactorEnabled: boolean
+}
+
 export interface UserSession {
-  user: {
-    username: string
-    displayName: string
-    twoFactorEnabled: boolean
-    createdAt: string
-    lastLoginAt?: string
-  }
+  user: PublicUser
   expiresAt: string
 }
 
@@ -42,13 +50,36 @@ export interface DeveloperApiKey {
   lastUsedAt?: string
 }
 
-export interface AdminUser {
+export type CreditLedgerType = 'admin_add' | 'purchase' | 'referral_reward' | 'task_charge' | 'refund' | string
+
+export interface CreditLedgerEntry {
+  id: string
   username: string
-  displayName: string
-  twoFactorEnabled: boolean
-  videoQuota: number
+  delta: number
+  balanceAfter: number
+  type: CreditLedgerType
+  reason?: string
+  sourceId?: string
+  adminActor?: string
+  relatedUsername?: string
   createdAt: string
-  lastLoginAt?: string
+}
+
+export interface AdminUser extends PublicUser {
+  role?: string
+  disabled?: boolean
+}
+
+export interface AdminBillingConfig {
+  epayEnabled?: boolean
+  epayApiUrl?: string
+  epayPid?: string
+  epayKeySet?: boolean
+  epayKeyPreview?: string
+  epayMethods?: string[]
+  creditPriceCents?: number
+  minTopUpCredits?: number
+  referralRewardCredits?: number
 }
 
 export interface AdminConfig {
@@ -58,8 +89,16 @@ export interface AdminConfig {
   timeoutSec: number
   model: string
   modelLocked: boolean
-  minimaxApiKeySet: boolean
-  minimaxApiKeyPreview: string
+  billing?: AdminBillingConfig
+  epayEnabled?: boolean
+  epayApiUrl?: string
+  epayPid?: string
+  epayKeySet?: boolean
+  epayKeyPreview?: string
+  epayMethods?: string[]
+  creditPriceCents?: number
+  minTopUpCredits?: number
+  referralRewardCredits?: number
   timeoutCode: string
   updatedAt: string
   limits: { minTimeoutSec: number; maxTimeoutSec: number }
@@ -217,7 +256,13 @@ export interface PromptSquareItem {
   params?: Record<string, string>
   imageUrl?: string
   thumbnailUrl?: string
+  ratio?: string
+  resolution?: string
+  quality?: string
+  outputFormat?: string
   tags?: string[]
+  authorUsername?: string
+  authorDisplayName?: string
   author: {
     name: string
     url?: string
@@ -228,6 +273,14 @@ export interface PromptSquareItem {
     url?: string
     license?: string
   }
+  likeCount?: number
+  likes?: number
+  likedByMe?: boolean
+  permanent?: boolean
+  submittedToSquare?: boolean
+  taskId?: string
+  imageIndex?: number
+  submittedAt?: string
   status: string
   createdAt: string
   updatedAt: string
@@ -252,54 +305,41 @@ export interface CreatePromptSquareItemRequest {
   image?: File | null
 }
 
-export interface MiniMaxVideoCreateRequest {
-  model: string
-  prompt: string
-  duration?: number
-  resolution?: string
-  prompt_optimizer: boolean
-  fast_pretreatment?: boolean
-  aigc_watermark?: boolean
+export type EpayMethod = 'alipay' | 'wxpay' | 'qqpay' | string
+
+export interface TopUpOption {
+  credits: number
+  amountCents: number
+  label?: string
+  bonusCredits?: number
+  methods?: EpayMethod[]
 }
 
-export interface MiniMaxBase {
-  status_code: number
-  status_msg: string
+export interface CreateEpayOrderRequest {
+  credits: number
+  method: EpayMethod
 }
 
-export interface MiniMaxVideoTask {
-  task_id: string
-  base: MiniMaxBase
-  raw?: unknown
-}
-
-export interface MiniMaxVideoStatus {
-  task_id: string
+export interface EpayOrder {
+  tradeNo: string
+  payUrl: string
+  credits: number
+  amountCents: number
   status: string
-  file_id?: string
-  video_width?: number
-  video_height?: number
-  base: MiniMaxBase
-  raw?: unknown
+  method?: EpayMethod
+  createdAt?: string
+  paidAt?: string
 }
 
-export interface MiniMaxFileResult {
-  file: {
-    file_id?: string
-    bytes?: number
-    created_at?: number
-    filename?: string
-    purpose?: string
-    download_url?: string
-  }
-  base: MiniMaxBase
-  raw?: unknown
-}
-
-export interface MiniMaxVideoQuota {
-  remaining: number
-  costPerVideo: number
-  minimaxApiKeySet: boolean
+export interface BillingTopUp {
+  tradeNo: string
+  credits: number
+  amountCents: number
+  status: string
+  method?: EpayMethod
+  createdAt: string
+  paidAt?: string
+  thirdPartyTradeNo?: string
 }
 
 export type PromptToolMode = 'text-to-prompt' | 'image-to-prompt'

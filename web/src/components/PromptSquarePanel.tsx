@@ -1,236 +1,396 @@
-import { type FormEvent, useEffect, useMemo, useState } from 'react'
-import { createPromptSquareItem, listPromptSquareItems } from '../api/promptSquare'
-import type { CreatePromptSquareItemRequest, PromptSquareItem } from '../types'
-
-const demoItems: PromptSquareItem[] = [
-  {
-    id: 'demo_cinematic_portrait',
-    title: '电影感人物海报',
-    prompt: 'Cinematic portrait of a confident traveler standing under neon rain, dramatic rim light, shallow depth of field, ultra detailed, editorial poster composition',
-    model: 'gpt-image-2',
-    params: { ratio: '9:16', quality: 'high' },
-    tags: ['portrait', 'cinematic', 'neon'],
-    author: { name: 'Lyra Demo' },
-    source: { type: 'demo', license: 'example_only' },
-    status: 'published',
-    createdAt: '2026-06-01T00:00:00Z',
-    updatedAt: '2026-06-01T00:00:00Z',
-  },
-  {
-    id: 'demo_product_render',
-    title: '极简产品渲染',
-    prompt: 'Minimal product render of a translucent smart speaker on a matte stone pedestal, soft studio lighting, clean background, premium commercial photography',
-    model: 'gpt-image-2',
-    params: { ratio: '1:1', quality: 'high' },
-    tags: ['product', 'minimal', 'studio'],
-    author: { name: 'Lyra Demo' },
-    source: { type: 'demo', license: 'example_only' },
-    status: 'published',
-    createdAt: '2026-06-01T00:00:00Z',
-    updatedAt: '2026-06-01T00:00:00Z',
-  },
-]
+import { useEffect, useMemo, useState } from 'react'
+import { likePromptSquareItem, listPromptSquareItems, type PromptSquareListOptions } from '../api/promptSquare'
+import type { PromptSquareItem } from '../types'
 
 type PromptSquarePanelProps = {
   onUsePrompt: (prompt: string, item?: PromptSquareItem) => void
 }
 
+type PromptSquareView = 'latest' | 'daily' | 'mine'
+
+type RuntimePromptSquareItem = Omit<PromptSquareItem, 'author'> & {
+  author?: PromptSquareItem['author'] | string
+  authorDisplayName?: string
+  authorUrl?: string
+  dailyRank?: number
+  sourceTaskId?: string
+}
+
+const viewOptions: Array<{ value: PromptSquareView; label: string; description: string; emptyTitle: string; emptyBody: string }> = [
+  {
+    value: 'latest',
+    label: '最新',
+    description: '按发布时间查看公开作品',
+    emptyTitle: '还没有公开投稿',
+    emptyBody: '生成结果投稿入口会出现在结果卡片里；后端准备好后这里会显示公开作品。',
+  },
+  {
+    value: 'daily',
+    label: '每日榜',
+    description: '查看今天点赞最高的投稿',
+    emptyTitle: '今日榜单暂无作品',
+    emptyBody: '每日榜只统计服务器当天 00:00-24:00 的投稿。',
+  },
+  {
+    value: 'mine',
+    label: '我的投稿',
+    description: '只看当前登录用户的作品',
+    emptyTitle: '你还没有投稿',
+    emptyBody: '从生成结果提交作品后，它们会出现在这里并永久保留。',
+  },
+]
+
 export function PromptSquarePanel({ onUsePrompt }: PromptSquarePanelProps) {
+  const [view, setView] = useState<PromptSquareView>('latest')
   const [items, setItems] = useState<PromptSquareItem[]>([])
   const [query, setQuery] = useState('')
   const [selectedTag, setSelectedTag] = useState('')
   const [loading, setLoading] = useState(true)
-  const [message, setMessage] = useState('')
   const [error, setError] = useState('')
-  const [form, setForm] = useState<CreatePromptSquareItemRequest>({
-    title: '',
-    prompt: '',
-    model: 'gpt-image-2',
-    tags: '',
-    license: 'user_submitted',
-    ratio: '',
-    resolution: '',
-    quality: 'high',
-    outputFormat: 'png',
-    image: null,
-  })
+  const [notice, setNotice] = useState('')
+  const [likingIds, setLikingIds] = useState<Record<string, boolean>>({})
 
   useEffect(() => {
-    void refresh()
-  }, [])
+    void refresh(view)
+  }, [view])
 
-  async function refresh() {
+  async function refresh(targetView = view) {
     setLoading(true)
     setError('')
+    setNotice('')
     try {
-      setItems(await listPromptSquareItems())
+      const nextItems = await listPromptSquareItems(listOptionsForView(targetView))
+      setItems(nextItems)
     } catch (err) {
-      setError(err instanceof Error ? err.message : '读取提示词广场失败')
+      setItems([])
+      setError(`${viewLabel(targetView)}加载失败：${formatErrorMessage(err, '读取提示词广场失败')}`)
     } finally {
       setLoading(false)
     }
   }
 
-  const displayItems = items.length ? items : demoItems
+  function switchView(nextView: PromptSquareView) {
+    if (nextView === view) {
+      void refresh(nextView)
+      return
+    }
+    setQuery('')
+    setSelectedTag('')
+    setView(nextView)
+  }
+
+  async function copyPrompt(prompt: string) {
+    setError('')
+    setNotice('')
+    try {
+      await navigator.clipboard.writeText(prompt)
+      setNotice('提示词已复制')
+    } catch (err) {
+      setError(formatErrorMessage(err, '复制失败'))
+    }
+  }
+
+  async function toggleLike(item: PromptSquareItem) {
+    const liked = !Boolean(item.likedByMe)
+    const previous = item
+    setError('')
+    setNotice('')
+    setLikingIds((prev) => ({ ...prev, [item.id]: true }))
+    setItems((prev) => prev.map((entry) => entry.id === item.id ? withLocalLike(entry, liked) : entry))
+    try {
+      const updated = await likePromptSquareItem(item.id, liked)
+      setItems((prev) => prev.map((entry) => entry.id === item.id ? updated : entry))
+      setNotice(liked ? '已点赞' : '已取消点赞')
+    } catch (err) {
+      setItems((prev) => prev.map((entry) => entry.id === item.id ? previous : entry))
+      setError(`点赞失败：${formatErrorMessage(err, '请确认后端点赞接口已完成')}`)
+    } finally {
+      setLikingIds((prev) => {
+        const next = { ...prev }
+        delete next[item.id]
+        return next
+      })
+    }
+  }
+
+  const activeView = viewOptions.find((option) => option.value === view) || viewOptions[0]
+
   const tags = useMemo(() => {
     const set = new Set<string>()
-    for (const item of displayItems) {
+    for (const item of items) {
       for (const tag of item.tags || []) set.add(tag)
     }
     return Array.from(set).slice(0, 24)
-  }, [displayItems])
+  }, [items])
 
   const filtered = useMemo(() => {
     const keyword = query.trim().toLowerCase()
-    return displayItems.filter((item) => {
-      const text = [item.title, item.prompt, item.model, ...(item.tags || [])].join(' ').toLowerCase()
+    return items.filter((item) => {
+      const runtime = asRuntimeItem(item)
+      const text = [
+        runtime.title,
+        runtime.prompt,
+        runtime.model,
+        runtime.ratio,
+        runtime.quality,
+        runtime.outputFormat,
+        runtime.params?.ratio,
+        runtime.params?.quality,
+        runtime.params?.outputFormat,
+        authorName(runtime),
+        ...(runtime.tags || []),
+      ].join(' ').toLowerCase()
       const matchQuery = !keyword || text.includes(keyword)
-      const matchTag = !selectedTag || item.tags?.includes(selectedTag)
+      const matchTag = !selectedTag || runtime.tags?.includes(selectedTag)
       return matchQuery && matchTag
     })
-  }, [displayItems, query, selectedTag])
+  }, [items, query, selectedTag])
 
-  async function submit(event: FormEvent) {
-    event.preventDefault()
-    setError('')
-    setMessage('')
-    if (!form.prompt.trim()) {
-      setError('请先填写提示词')
-      return
-    }
-    try {
-      const item = await createPromptSquareItem(form)
-      setItems((prev) => [item, ...prev])
-      setForm({
-        title: '',
-        prompt: '',
-        model: 'gpt-image-2',
-        tags: '',
-        license: 'user_submitted',
-        ratio: '',
-        resolution: '',
-        quality: 'high',
-        outputFormat: 'png',
-        image: null,
-      })
-      setMessage('已提交到本地提示词广场。下一步可把 data/prompt_square 同步到 GitHub 数据仓库。')
-    } catch (err) {
-      setError(err instanceof Error ? err.message : '提交失败')
-    }
-  }
+  const emptyTitle = query || selectedTag ? '没有匹配的作品' : activeView.emptyTitle
+  const emptyBody = query || selectedTag ? '换个关键词或清除标签筛选后再试。' : activeView.emptyBody
 
   return (
     <div className="prompt-square">
       <section className="prompt-square-hero">
         <div>
-          <p className="eyebrow">Prompt Square / Dev Preview</p>
-          <h3>提示词广场试验版</h3>
-          <p>先跑通“用户上传提示词 + 图片/来源 + 本地结构化存储”的闭环；后续再把同一份 JSON 和图片同步到 GitHub 数据仓库并做 PR 审核。</p>
+          <p className="eyebrow">Prompt Square</p>
+          <h3>提示词广场</h3>
+          <p>{activeView.description}</p>
         </div>
-        <button type="button" onClick={() => void refresh()} disabled={loading}>{loading ? '刷新中' : '刷新广场'}</button>
+        <div className="prompt-square-header-actions">
+          <button type="button" onClick={() => void refresh(view)} disabled={loading}>{loading ? '刷新中' : '刷新'}</button>
+        </div>
       </section>
 
-      <section className="prompt-square-layout">
-        <form className="prompt-square-submit" onSubmit={submit}>
-          <div className="panel-title">
-            <strong>上传提示词</strong>
-            <span>当前 dev 版写入后端 `data/prompt_square`</span>
-          </div>
-          <label>
-            标题
-            <input value={form.title} onChange={(event) => setForm({ ...form, title: event.target.value })} placeholder="例如：电影感霓虹人像" />
-          </label>
-          <label>
-            提示词 *
-            <textarea value={form.prompt} onChange={(event) => setForm({ ...form, prompt: event.target.value })} placeholder="输入可复用的生图提示词" rows={5} />
-          </label>
-          <div className="prompt-square-form-grid">
-            <label>
-              模型
-              <input value={form.model || ''} onChange={(event) => setForm({ ...form, model: event.target.value })} placeholder="gpt-image-2" />
-            </label>
-            <label>
-              标签
-              <input value={form.tags || ''} onChange={(event) => setForm({ ...form, tags: event.target.value })} placeholder="portrait, neon, 9:16" />
-            </label>
-            <label>
-              比例
-              <input value={form.ratio || ''} onChange={(event) => setForm({ ...form, ratio: event.target.value })} placeholder="9:16 / 1:1" />
-            </label>
-            <label>
-              质量
-              <input value={form.quality || ''} onChange={(event) => setForm({ ...form, quality: event.target.value })} placeholder="high" />
-            </label>
-          </div>
-          <label>
-            上传图片
-            <input type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => setForm({ ...form, image: event.target.files?.[0] || null })} />
-          </label>
-          <label>
-            或填写图片 URL
-            <input value={form.imageUrl || ''} onChange={(event) => setForm({ ...form, imageUrl: event.target.value })} placeholder="https://..." />
-          </label>
-          <div className="prompt-square-form-grid">
-            <label>
-              来源链接
-              <input value={form.sourceUrl || ''} onChange={(event) => setForm({ ...form, sourceUrl: event.target.value })} placeholder="https://..." />
-            </label>
-            <label>
-              授权/许可
-              <input value={form.license || ''} onChange={(event) => setForm({ ...form, license: event.target.value })} placeholder="user_submitted / CC-BY" />
-            </label>
-          </div>
-          <button type="submit">提交到广场</button>
-          {message ? <p className="prompt-square-message">{message}</p> : null}
-          {error ? <p className="prompt-square-error">{error}</p> : null}
-        </form>
-
-        <section className="prompt-square-feed">
-          <div className="prompt-square-toolbar">
-            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索标题、提示词、模型、标签" />
-            <div className="prompt-square-tags">
-              <button type="button" className={!selectedTag ? 'active' : ''} onClick={() => setSelectedTag('')}>全部</button>
-              {tags.map((tag) => (
-                <button key={tag} type="button" className={selectedTag === tag ? 'active' : ''} onClick={() => setSelectedTag(tag)}>{tag}</button>
-              ))}
-            </div>
-          </div>
-          {!items.length ? <p className="prompt-square-hint">当前还没有真实上传数据，下方展示的是前端 demo 卡片。</p> : null}
-          <div className="prompt-square-grid">
-            {filtered.map((item) => (
-              <PromptSquareCard key={item.id} item={item} onUsePrompt={onUsePrompt} />
+      <section className="prompt-square-feed" aria-busy={loading}>
+        <div className="prompt-square-viewbar">
+          <div className="prompt-square-segments" role="tablist" aria-label="广场视图">
+            {viewOptions.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                role="tab"
+                aria-selected={view === option.value}
+                className={view === option.value ? 'active' : ''}
+                onClick={() => switchView(option.value)}
+              >
+                {option.label}
+              </button>
             ))}
           </div>
-        </section>
+          <span>{loading ? '加载中' : `${filtered.length} / ${items.length} 个作品`}</span>
+        </div>
+
+        <div className="prompt-square-toolbar">
+          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索标题、提示词、作者、模型、标签" />
+          <div className="prompt-square-tags" aria-label="标签筛选">
+            <button type="button" className={!selectedTag ? 'active' : ''} onClick={() => setSelectedTag('')} aria-pressed={!selectedTag}>全部</button>
+            {tags.map((tag) => (
+              <button key={tag} type="button" className={selectedTag === tag ? 'active' : ''} onClick={() => setSelectedTag(tag)} aria-pressed={selectedTag === tag}>{tag}</button>
+            ))}
+          </div>
+        </div>
+
+        {notice ? <p className="prompt-square-alert success" role="status">{notice}</p> : null}
+        {error ? <p className="prompt-square-alert error" role="alert">{error}</p> : null}
+
+        {loading ? (
+          <PromptSquareSkeleton />
+        ) : error && !items.length ? (
+          <PromptSquareState title={`${activeView.label}暂不可用`} body="后端广场接口可能还在接线中，请稍后刷新。" actionLabel="重试" onAction={() => void refresh(view)} />
+        ) : filtered.length ? (
+          <div className="prompt-square-grid">
+            {filtered.map((item) => (
+              <PromptSquareCard
+                key={item.id}
+                item={item}
+                liking={Boolean(likingIds[item.id])}
+                onUsePrompt={onUsePrompt}
+                onCopyPrompt={copyPrompt}
+                onToggleLike={toggleLike}
+              />
+            ))}
+          </div>
+        ) : (
+          <PromptSquareState title={emptyTitle} body={emptyBody} />
+        )}
       </section>
     </div>
   )
 }
 
-function PromptSquareCard({ item, onUsePrompt }: { item: PromptSquareItem; onUsePrompt: PromptSquarePanelProps['onUsePrompt'] }) {
+function PromptSquareCard({
+  item,
+  liking,
+  onUsePrompt,
+  onCopyPrompt,
+  onToggleLike,
+}: {
+  item: PromptSquareItem
+  liking: boolean
+  onUsePrompt: PromptSquarePanelProps['onUsePrompt']
+  onCopyPrompt: (prompt: string) => Promise<void>
+  onToggleLike: (item: PromptSquareItem) => Promise<void>
+}) {
+  const runtime = asRuntimeItem(item)
+  const title = itemTitle(runtime)
+  const ratio = itemParam(runtime, 'ratio')
+  const quality = itemParam(runtime, 'quality')
+  const outputFormat = itemParam(runtime, 'outputFormat')
+  const likes = likeCount(runtime)
+  const liked = Boolean(runtime.likedByMe)
+  const sourceUrl = runtime.source?.url
+  const imageUrl = runtime.thumbnailUrl || runtime.imageUrl
+  const rank = Number(runtime.dailyRank || 0)
+
   return (
     <article className="prompt-square-card">
-      <div className="prompt-square-image">
-        {item.thumbnailUrl || item.imageUrl ? <img src={item.thumbnailUrl || item.imageUrl} alt={item.title} loading="lazy" /> : <div className="prompt-square-placeholder">Prompt</div>}
+      <div className="prompt-square-image" style={imageAspectStyle(ratio)}>
+        {rank > 0 ? <span className="prompt-square-rank">每日 #{rank}</span> : null}
+        {imageUrl ? <img src={imageUrl} alt={title} loading="lazy" /> : <div className="prompt-square-placeholder">Prompt</div>}
       </div>
       <div className="prompt-square-card-body">
-        <div className="prompt-square-card-head">
-          <strong>{item.title}</strong>
-          <span>{item.model || 'unknown model'}</span>
-        </div>
-        <p>{item.prompt}</p>
+        <header className="prompt-square-card-head">
+          <div className="prompt-square-title-block">
+            <strong>{title}</strong>
+            <span>{authorName(runtime)}</span>
+          </div>
+          <span className="prompt-square-like-count">{likes} 赞</span>
+        </header>
+
+        <p className="prompt-square-prompt">{runtime.prompt}</p>
+
+        <dl className="prompt-square-meta-grid">
+          <div><dt>模型</dt><dd>{runtime.model || '未标注'}</dd></div>
+          <div><dt>比例</dt><dd>{ratio || '未标注'}</dd></div>
+          <div><dt>质量</dt><dd>{quality || '未标注'}</dd></div>
+          <div><dt>格式</dt><dd>{outputFormat || '未标注'}</dd></div>
+        </dl>
+
         <div className="prompt-square-chip-row">
-          {(item.tags || []).slice(0, 6).map((tag) => <span key={tag}>{tag}</span>)}
+          {(runtime.tags || []).slice(0, 8).map((tag) => <span key={tag}>{tag}</span>)}
+          {runtime.tags?.length ? null : <span>无标签</span>}
         </div>
-        <footer>
-          <span>{item.author?.name || '匿名'} · {item.source?.license || 'unknown'}</span>
-          <div>
-            {item.source?.url ? <a href={item.source.url} target="_blank" rel="noreferrer">来源</a> : null}
-            <button type="button" onClick={() => void navigator.clipboard.writeText(item.prompt)}>复制</button>
-            <button type="button" onClick={() => onUsePrompt(item.prompt, item)}>使用</button>
+
+        <footer className="prompt-square-card-footer">
+          <span className="prompt-square-time">{formatDate(runtime.submittedAt || runtime.createdAt)}</span>
+          <div className="prompt-square-actions">
+            {sourceUrl ? <a href={sourceUrl} target="_blank" rel="noreferrer">来源</a> : null}
+            <button type="button" onClick={() => void onCopyPrompt(runtime.prompt)}>复制</button>
+            <button type="button" className="prompt-square-use" onClick={() => onUsePrompt(runtime.prompt, item)}>使用</button>
+            <button
+              type="button"
+              className={liked ? 'prompt-square-like active' : 'prompt-square-like'}
+              onClick={() => void onToggleLike(item)}
+              disabled={liking}
+              aria-pressed={liked}
+            >
+              {liking ? '处理中' : liked ? '已赞' : '点赞'}
+            </button>
           </div>
         </footer>
       </div>
     </article>
   )
+}
+
+function PromptSquareSkeleton() {
+  return (
+    <div className="prompt-square-grid" aria-hidden="true">
+      {Array.from({ length: 6 }, (_, index) => (
+        <article className="prompt-square-card prompt-square-card-skeleton" key={index}>
+          <div className="prompt-square-image" />
+          <div className="prompt-square-card-body">
+            <span />
+            <p />
+            <p />
+            <div />
+          </div>
+        </article>
+      ))}
+    </div>
+  )
+}
+
+function PromptSquareState({ title, body, actionLabel, onAction }: { title: string; body: string; actionLabel?: string; onAction?: () => void }) {
+  return (
+    <div className="prompt-square-state">
+      <strong>{title}</strong>
+      <p>{body}</p>
+      {actionLabel && onAction ? <button type="button" onClick={onAction}>{actionLabel}</button> : null}
+    </div>
+  )
+}
+
+function listOptionsForView(view: PromptSquareView): PromptSquareListOptions {
+  if (view === 'daily') return { daily: true, sort: 'daily' }
+  if (view === 'mine') return { mine: true }
+  return { sort: 'latest' }
+}
+
+function asRuntimeItem(item: PromptSquareItem) {
+  return item as RuntimePromptSquareItem
+}
+
+function itemTitle(item: RuntimePromptSquareItem) {
+  const title = item.title?.trim()
+  if (title) return title
+  const prompt = item.prompt?.trim() || ''
+  return prompt ? prompt.slice(0, 48) : '未命名作品'
+}
+
+function authorName(item: RuntimePromptSquareItem) {
+  if (item.authorDisplayName?.trim()) return item.authorDisplayName.trim()
+  if (typeof item.author === 'string') return item.author.trim() || '匿名用户'
+  return item.author?.name?.trim() || item.authorUsername || '匿名用户'
+}
+
+function itemParam(item: RuntimePromptSquareItem, key: 'ratio' | 'quality' | 'outputFormat') {
+  return (item[key] || item.params?.[key] || '').trim()
+}
+
+function likeCount(item: RuntimePromptSquareItem) {
+  return Math.max(0, Number(item.likeCount ?? item.likes ?? 0) || 0)
+}
+
+function withLocalLike(item: PromptSquareItem, liked: boolean): PromptSquareItem {
+  const current = likeCount(asRuntimeItem(item))
+  const wasLiked = Boolean(item.likedByMe)
+  const delta = liked === wasLiked ? 0 : liked ? 1 : -1
+  const nextCount = Math.max(0, current + delta)
+  return { ...item, likedByMe: liked, likeCount: nextCount, likes: nextCount }
+}
+
+function imageAspectStyle(ratio: string) {
+  const aspectRatio = ratioToCssAspect(ratio)
+  return aspectRatio ? { aspectRatio } : undefined
+}
+
+function ratioToCssAspect(value: string) {
+  const match = value.trim().match(/^(\d+(?:\.\d+)?)\s*[:/x×]\s*(\d+(?:\.\d+)?)$/i)
+  if (!match) return ''
+  const width = Number(match[1])
+  const height = Number(match[2])
+  if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return ''
+  return `${width} / ${height}`
+}
+
+function formatDate(value?: string) {
+  if (!value) return '发布时间未知'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return `${new Intl.DateTimeFormat('zh-CN', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date)} 发布`
+}
+
+function viewLabel(view: PromptSquareView) {
+  return viewOptions.find((option) => option.value === view)?.label || '广场'
+}
+
+function formatErrorMessage(err: unknown, fallback: string) {
+  return err instanceof Error ? err.message : fallback
 }

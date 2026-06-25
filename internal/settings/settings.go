@@ -15,27 +15,54 @@ import (
 )
 
 type RuntimeConfig struct {
-	NewAPIBaseURL string `json:"newApiBaseUrl"`
-	PublicBaseURL string `json:"publicBaseUrl"`
-	DebugEnabled  bool   `json:"debugEnabled"`
-	TimeoutSec    int    `json:"timeoutSec"`
-	Model         string `json:"model"`
-	MiniMaxAPIKey string `json:"minimaxApiKey,omitempty"`
-	UpdatedAt     string `json:"updatedAt"`
+	NewAPIBaseURL         string   `json:"newApiBaseUrl"`
+	PublicBaseURL         string   `json:"publicBaseUrl"`
+	DebugEnabled          bool     `json:"debugEnabled"`
+	TimeoutSec            int      `json:"timeoutSec"`
+	Model                 string   `json:"model"`
+	EpayEnabled           bool     `json:"epayEnabled"`
+	EpayAPIURL            string   `json:"epayApiUrl"`
+	EpayPID               string   `json:"epayPid"`
+	EpayKey               string   `json:"epayKey"`
+	EpayMethods           []string `json:"epayMethods"`
+	CreditPriceCents      int      `json:"creditPriceCents"`
+	MinTopUpCredits       int      `json:"minTopUpCredits"`
+	ReferralRewardCredits int      `json:"referralRewardCredits"`
+	UpdatedAt             string   `json:"updatedAt"`
 }
 
 type PublicRuntimeConfig struct {
-	NewAPIBaseURL        string `json:"newApiBaseUrl"`
-	PublicBaseURL        string `json:"publicBaseUrl"`
-	DebugEnabled         bool   `json:"debugEnabled"`
-	TimeoutSec           int    `json:"timeoutSec"`
-	Model                string `json:"model"`
-	ModelLocked          bool   `json:"modelLocked"`
-	MiniMaxAPIKeySet     bool   `json:"minimaxApiKeySet"`
-	MiniMaxAPIKeyPreview string `json:"minimaxApiKeyPreview"`
-	TimeoutCode          string `json:"timeoutCode"`
-	UpdatedAt            string `json:"updatedAt"`
-	Limits               Limits `json:"limits"`
+	NewAPIBaseURL         string              `json:"newApiBaseUrl"`
+	PublicBaseURL         string              `json:"publicBaseUrl"`
+	DebugEnabled          bool                `json:"debugEnabled"`
+	TimeoutSec            int                 `json:"timeoutSec"`
+	Model                 string              `json:"model"`
+	ModelLocked           bool                `json:"modelLocked"`
+	EpayEnabled           bool                `json:"epayEnabled"`
+	EpayAPIURL            string              `json:"epayApiUrl"`
+	EpayPID               string              `json:"epayPid"`
+	EpayKeySet            bool                `json:"epayKeySet"`
+	EpayKeyPreview        string              `json:"epayKeyPreview"`
+	EpayMethods           []string            `json:"epayMethods"`
+	CreditPriceCents      int                 `json:"creditPriceCents"`
+	MinTopUpCredits       int                 `json:"minTopUpCredits"`
+	ReferralRewardCredits int                 `json:"referralRewardCredits"`
+	Billing               PublicBillingConfig `json:"billing"`
+	TimeoutCode           string              `json:"timeoutCode"`
+	UpdatedAt             string              `json:"updatedAt"`
+	Limits                Limits              `json:"limits"`
+}
+
+type PublicBillingConfig struct {
+	EpayEnabled           bool     `json:"epayEnabled"`
+	EpayAPIURL            string   `json:"epayApiUrl"`
+	EpayPID               string   `json:"epayPid"`
+	EpayKeySet            bool     `json:"epayKeySet"`
+	EpayKeyPreview        string   `json:"epayKeyPreview"`
+	EpayMethods           []string `json:"epayMethods"`
+	CreditPriceCents      int      `json:"creditPriceCents"`
+	MinTopUpCredits       int      `json:"minTopUpCredits"`
+	ReferralRewardCredits int      `json:"referralRewardCredits"`
 }
 
 type Limits struct {
@@ -44,13 +71,26 @@ type Limits struct {
 }
 
 type Update struct {
-	NewAPIBaseURL      *string `json:"newApiBaseUrl"`
-	PublicBaseURL      *string `json:"publicBaseUrl"`
-	DebugEnabled       *bool   `json:"debugEnabled"`
-	TimeoutSec         *int    `json:"timeoutSec"`
-	MiniMaxAPIKey      *string `json:"minimaxApiKey"`
-	ClearMiniMaxAPIKey *bool   `json:"clearMinimaxApiKey"`
+	NewAPIBaseURL         *string  `json:"newApiBaseUrl"`
+	PublicBaseURL         *string  `json:"publicBaseUrl"`
+	DebugEnabled          *bool    `json:"debugEnabled"`
+	TimeoutSec            *int     `json:"timeoutSec"`
+	EpayEnabled           *bool    `json:"epayEnabled"`
+	EpayAPIURL            *string  `json:"epayApiUrl"`
+	EpayPID               *string  `json:"epayPid"`
+	EpayKey               *string  `json:"epayKey"`
+	ClearEpayKey          bool     `json:"clearEpayKey"`
+	EpayMethods           []string `json:"epayMethods"`
+	CreditPriceCents      *int     `json:"creditPriceCents"`
+	MinTopUpCredits       *int     `json:"minTopUpCredits"`
+	ReferralRewardCredits *int     `json:"referralRewardCredits"`
 }
+
+const (
+	DefaultCreditPriceCents      = 10
+	DefaultMinTopUpCredits       = 10
+	DefaultReferralRewardCredits = 0
+)
 
 type FileStore struct {
 	mu      sync.RWMutex
@@ -84,10 +124,14 @@ func NewFileStore(path string, defaults RuntimeConfig) (*FileStore, error) {
 
 func DefaultsFromConfig(cfg config.Config) RuntimeConfig {
 	return normalize(RuntimeConfig{
-		NewAPIBaseURL: cfg.BuiltinNewAPIBaseURL,
-		TimeoutSec:    cfg.DefaultTimeoutSec,
-		Model:         config.DefaultModel,
-		UpdatedAt:     time.Now().Format(time.RFC3339),
+		NewAPIBaseURL:         cfg.BuiltinNewAPIBaseURL,
+		TimeoutSec:            cfg.DefaultTimeoutSec,
+		Model:                 config.DefaultModel,
+		EpayMethods:           defaultEpayMethods(),
+		CreditPriceCents:      DefaultCreditPriceCents,
+		MinTopUpCredits:       DefaultMinTopUpCredits,
+		ReferralRewardCredits: DefaultReferralRewardCredits,
+		UpdatedAt:             time.Now().Format(time.RFC3339),
 	})
 }
 
@@ -118,13 +162,33 @@ func (s *FileStore) Update(update Update) (RuntimeConfig, error) {
 	if update.TimeoutSec != nil {
 		next.TimeoutSec = *update.TimeoutSec
 	}
-	if update.MiniMaxAPIKey != nil && strings.TrimSpace(*update.MiniMaxAPIKey) != "" {
-		next.MiniMaxAPIKey = strings.TrimSpace(*update.MiniMaxAPIKey)
+	if update.EpayEnabled != nil {
+		next.EpayEnabled = *update.EpayEnabled
 	}
-	if update.ClearMiniMaxAPIKey != nil && *update.ClearMiniMaxAPIKey {
-		next.MiniMaxAPIKey = ""
+	if update.EpayAPIURL != nil {
+		next.EpayAPIURL = strings.TrimSpace(*update.EpayAPIURL)
 	}
-
+	if update.EpayPID != nil {
+		next.EpayPID = strings.TrimSpace(*update.EpayPID)
+	}
+	if update.ClearEpayKey {
+		next.EpayKey = ""
+	}
+	if update.EpayKey != nil {
+		next.EpayKey = strings.TrimSpace(*update.EpayKey)
+	}
+	if update.EpayMethods != nil {
+		next.EpayMethods = update.EpayMethods
+	}
+	if update.CreditPriceCents != nil {
+		next.CreditPriceCents = *update.CreditPriceCents
+	}
+	if update.MinTopUpCredits != nil {
+		next.MinTopUpCredits = *update.MinTopUpCredits
+	}
+	if update.ReferralRewardCredits != nil {
+		next.ReferralRewardCredits = *update.ReferralRewardCredits
+	}
 	normalized, err := validate(next)
 	if err != nil {
 		return RuntimeConfig{}, err
@@ -163,11 +227,30 @@ func merge(base RuntimeConfig, loaded RuntimeConfig) RuntimeConfig {
 	if loaded.TimeoutSec != 0 {
 		base.TimeoutSec = loaded.TimeoutSec
 	}
+	base.EpayEnabled = loaded.EpayEnabled
+	if strings.TrimSpace(loaded.EpayAPIURL) != "" {
+		base.EpayAPIURL = loaded.EpayAPIURL
+	}
+	if strings.TrimSpace(loaded.EpayPID) != "" {
+		base.EpayPID = loaded.EpayPID
+	}
+	if strings.TrimSpace(loaded.EpayKey) != "" {
+		base.EpayKey = loaded.EpayKey
+	}
+	if len(loaded.EpayMethods) > 0 {
+		base.EpayMethods = loaded.EpayMethods
+	}
+	if loaded.CreditPriceCents != 0 {
+		base.CreditPriceCents = loaded.CreditPriceCents
+	}
+	if loaded.MinTopUpCredits != 0 {
+		base.MinTopUpCredits = loaded.MinTopUpCredits
+	}
+	if loaded.ReferralRewardCredits != 0 {
+		base.ReferralRewardCredits = loaded.ReferralRewardCredits
+	}
 	if strings.TrimSpace(loaded.UpdatedAt) != "" {
 		base.UpdatedAt = loaded.UpdatedAt
-	}
-	if strings.TrimSpace(loaded.MiniMaxAPIKey) != "" {
-		base.MiniMaxAPIKey = strings.TrimSpace(loaded.MiniMaxAPIKey)
 	}
 	base.Model = config.DefaultModel
 	return base
@@ -177,10 +260,14 @@ func normalize(value RuntimeConfig) RuntimeConfig {
 	normalized, err := validate(value)
 	if err != nil {
 		return RuntimeConfig{
-			NewAPIBaseURL: config.DefaultNewAPIBaseURL,
-			TimeoutSec:    config.DefaultTimeoutSec,
-			Model:         config.DefaultModel,
-			UpdatedAt:     time.Now().Format(time.RFC3339),
+			NewAPIBaseURL:         config.DefaultNewAPIBaseURL,
+			TimeoutSec:            config.DefaultTimeoutSec,
+			Model:                 config.DefaultModel,
+			EpayMethods:           defaultEpayMethods(),
+			CreditPriceCents:      DefaultCreditPriceCents,
+			MinTopUpCredits:       DefaultMinTopUpCredits,
+			ReferralRewardCredits: DefaultReferralRewardCredits,
+			UpdatedAt:             time.Now().Format(time.RFC3339),
 		}
 	}
 	if strings.TrimSpace(normalized.UpdatedAt) == "" {
@@ -201,14 +288,48 @@ func validate(value RuntimeConfig) (RuntimeConfig, error) {
 	if value.TimeoutSec < config.MinTimeoutSec || value.TimeoutSec > config.MaxTimeoutSec {
 		return RuntimeConfig{}, fmt.Errorf("超时时间必须在 %d 到 %d 秒之间", config.MinTimeoutSec, config.MaxTimeoutSec)
 	}
+	epayAPIURL, err := normalizeOptionalHTTPURL(value.EpayAPIURL, "易支付网关地址")
+	if err != nil {
+		return RuntimeConfig{}, err
+	}
+	epayPID := strings.TrimSpace(value.EpayPID)
+	epayKey := strings.TrimSpace(value.EpayKey)
+	epayMethods := normalizeEpayMethods(value.EpayMethods)
+	creditPriceCents := value.CreditPriceCents
+	if creditPriceCents == 0 {
+		creditPriceCents = DefaultCreditPriceCents
+	}
+	if creditPriceCents < 0 {
+		return RuntimeConfig{}, errors.New("次数单价不能小于 0")
+	}
+	minTopUpCredits := value.MinTopUpCredits
+	if minTopUpCredits == 0 {
+		minTopUpCredits = DefaultMinTopUpCredits
+	}
+	if minTopUpCredits < 0 {
+		return RuntimeConfig{}, errors.New("最小充值次数不能小于 0")
+	}
+	if value.ReferralRewardCredits < 0 {
+		return RuntimeConfig{}, errors.New("邀请奖励次数不能小于 0")
+	}
+	if value.EpayEnabled && (epayAPIURL == "" || epayPID == "" || epayKey == "" || len(epayMethods) == 0 || creditPriceCents <= 0 || minTopUpCredits <= 0) {
+		return RuntimeConfig{}, errors.New("启用易支付前必须填写网关地址、商户 PID、商户 Key、支付方式、次数单价和最小充值次数")
+	}
 	return RuntimeConfig{
-		NewAPIBaseURL: baseURL,
-		PublicBaseURL: publicBaseURL,
-		DebugEnabled:  value.DebugEnabled,
-		TimeoutSec:    value.TimeoutSec,
-		Model:         config.DefaultModel,
-		MiniMaxAPIKey: strings.TrimSpace(value.MiniMaxAPIKey),
-		UpdatedAt:     strings.TrimSpace(value.UpdatedAt),
+		NewAPIBaseURL:         baseURL,
+		PublicBaseURL:         publicBaseURL,
+		DebugEnabled:          value.DebugEnabled,
+		TimeoutSec:            value.TimeoutSec,
+		Model:                 config.DefaultModel,
+		EpayEnabled:           value.EpayEnabled,
+		EpayAPIURL:            epayAPIURL,
+		EpayPID:               epayPID,
+		EpayKey:               epayKey,
+		EpayMethods:           epayMethods,
+		CreditPriceCents:      creditPriceCents,
+		MinTopUpCredits:       minTopUpCredits,
+		ReferralRewardCredits: value.ReferralRewardCredits,
+		UpdatedAt:             strings.TrimSpace(value.UpdatedAt),
 	}, nil
 }
 
@@ -224,6 +345,22 @@ func normalizePublicBaseURL(raw string) (string, error) {
 	}
 	if parsed.Scheme != "http" && parsed.Scheme != "https" {
 		return "", errors.New("对外访问域名仅支持 http 或 https")
+	}
+	return strings.TrimRight(parsed.String(), "/"), nil
+}
+
+func normalizeOptionalHTTPURL(raw string, label string) (string, error) {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return "", nil
+	}
+	trimmed = strings.TrimRight(trimmed, "/")
+	parsed, err := url.Parse(trimmed)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return "", fmt.Errorf("%s格式无效，请填写 http:// 或 https:// 开头的完整地址", label)
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return "", fmt.Errorf("%s仅支持 http 或 https", label)
 	}
 	return strings.TrimRight(parsed.String(), "/"), nil
 }
@@ -246,32 +383,73 @@ func normalizeBaseURL(raw string) (string, error) {
 	return strings.TrimRight(parsed.String(), "/"), nil
 }
 
+func normalizeEpayMethods(methods []string) []string {
+	seen := make(map[string]bool)
+	normalized := make([]string, 0, len(methods))
+	for _, method := range methods {
+		method = strings.ToLower(strings.TrimSpace(method))
+		if method == "" || seen[method] {
+			continue
+		}
+		seen[method] = true
+		normalized = append(normalized, method)
+	}
+	if len(normalized) == 0 {
+		return defaultEpayMethods()
+	}
+	return normalized
+}
+
+func defaultEpayMethods() []string {
+	return []string{"alipay", "wxpay"}
+}
+
+func MaskSecret(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+	if len(value) <= 8 {
+		return "********"
+	}
+	return value[:4] + "********" + value[len(value)-4:]
+}
+
 func toPublic(value RuntimeConfig) PublicRuntimeConfig {
+	epayKeyPreview := MaskSecret(value.EpayKey)
+	billing := PublicBillingConfig{
+		EpayEnabled:           value.EpayEnabled,
+		EpayAPIURL:            value.EpayAPIURL,
+		EpayPID:               value.EpayPID,
+		EpayKeySet:            value.EpayKey != "",
+		EpayKeyPreview:        epayKeyPreview,
+		EpayMethods:           append([]string{}, value.EpayMethods...),
+		CreditPriceCents:      value.CreditPriceCents,
+		MinTopUpCredits:       value.MinTopUpCredits,
+		ReferralRewardCredits: value.ReferralRewardCredits,
+	}
 	return PublicRuntimeConfig{
-		NewAPIBaseURL:        value.NewAPIBaseURL,
-		PublicBaseURL:        value.PublicBaseURL,
-		DebugEnabled:         value.DebugEnabled,
-		TimeoutSec:           value.TimeoutSec,
-		Model:                config.DefaultModel,
-		ModelLocked:          true,
-		MiniMaxAPIKeySet:     strings.TrimSpace(value.MiniMaxAPIKey) != "",
-		MiniMaxAPIKeyPreview: maskSecret(value.MiniMaxAPIKey),
-		TimeoutCode:          fmt.Sprintf("TIMEOUT_%dS", value.TimeoutSec),
-		UpdatedAt:            value.UpdatedAt,
+		NewAPIBaseURL:         value.NewAPIBaseURL,
+		PublicBaseURL:         value.PublicBaseURL,
+		DebugEnabled:          value.DebugEnabled,
+		TimeoutSec:            value.TimeoutSec,
+		Model:                 config.DefaultModel,
+		ModelLocked:           true,
+		EpayEnabled:           billing.EpayEnabled,
+		EpayAPIURL:            billing.EpayAPIURL,
+		EpayPID:               billing.EpayPID,
+		EpayKeySet:            billing.EpayKeySet,
+		EpayKeyPreview:        billing.EpayKeyPreview,
+		EpayMethods:           append([]string{}, billing.EpayMethods...),
+		CreditPriceCents:      billing.CreditPriceCents,
+		MinTopUpCredits:       billing.MinTopUpCredits,
+		ReferralRewardCredits: billing.ReferralRewardCredits,
+		Billing:               billing,
+		TimeoutCode:           fmt.Sprintf("TIMEOUT_%dS", value.TimeoutSec),
+		UpdatedAt:             value.UpdatedAt,
 		Limits: Limits{
 			MinTimeoutSec: config.MinTimeoutSec,
 			MaxTimeoutSec: config.MaxTimeoutSec,
 		},
 	}
-}
-
-func maskSecret(value string) string {
-	trimmed := strings.TrimSpace(value)
-	if trimmed == "" {
-		return ""
-	}
-	if len(trimmed) <= 8 {
-		return "********"
-	}
-	return trimmed[:4] + "********" + trimmed[len(trimmed)-4:]
 }

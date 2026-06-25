@@ -1,0 +1,242 @@
+package api
+
+import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"strings"
+	"testing"
+
+	"github.com/y08lin4/lyra-image-workbench/internal/billing"
+	"github.com/y08lin4/lyra-image-workbench/internal/settings"
+)
+
+func TestAdminConfigDoesNotLeakEpayKey(t *testing.T) {
+	router := newTestRouter(t)
+	adminToken := createAdminToken(t, router)
+	rawKey := "epay-secret-1234567890"
+
+	body := doAdminJSON(t, router, http.MethodPost, "/api/admin/config", adminToken, map[string]any{
+		"epayEnabled":           true,
+		"epayApiUrl":            "https://pay.example.com/submit.php",
+		"epayPid":               "1001",
+		"epayKey":               rawKey,
+		"epayMethods":           []string{"alipay", "wxpay"},
+		"creditPriceCents":      10,
+		"minTopUpCredits":       10,
+		"referralRewardCredits": 3,
+	})
+	assertEpayKeyHidden(t, body, rawKey)
+	if !strings.Contains(body, `"epayKeySet":true`) || !strings.Contains(body, `"epayKeyPreview":"epay********7890"`) {
+		t.Fatalf("admin config response missing epay key status/preview: %s", body)
+	}
+
+	body = doAdminJSON(t, router, http.MethodGet, "/api/admin/config", adminToken, nil)
+	assertEpayKeyHidden(t, body, rawKey)
+
+	body = doAdminJSON(t, router, http.MethodPut, "/api/admin/config", adminToken, map[string]any{
+		"epayEnabled":  false,
+		"clearEpayKey": true,
+	})
+	if strings.Contains(body, rawKey) || !strings.Contains(body, `"epayKeySet":false`) {
+		t.Fatalf("cleared epay key response invalid: %s", body)
+	}
+}
+
+func TestBillingAuthMatrix(t *testing.T) {
+	router := newTestRouter(t)
+	for _, tc := range []struct {
+		method string
+		path   string
+		body   string
+	}{
+		{http.MethodGet, "/api/billing/topup/options", ""},
+		{http.MethodPost, "/api/billing/epay/orders", `{"credits":10,"method":"alipay"}`},
+		{http.MethodGet, "/api/billing/topups", ""},
+	} {
+		req := httptest.NewRequest(tc.method, tc.path, strings.NewReader(tc.body))
+		if tc.body != "" {
+			req.Header.Set("Content-Type", "application/json")
+		}
+		res := httptest.NewRecorder()
+		router.ServeHTTP(res, req)
+		if res.Code != http.StatusUnauthorized || !strings.Contains(res.Body.String(), "USER_AUTH_REQUIRED") {
+			t.Fatalf("%s %s without login code=%d body=%s", tc.method, tc.path, res.Code, res.Body.String())
+		}
+	}
+
+	for _, method := range []string{http.MethodGet, http.MethodPost} {
+		req := httptest.NewRequest(method, "/api/billing/epay/notify", nil)
+		res := httptest.NewRecorder()
+		router.ServeHTTP(res, req)
+		if res.Code != http.StatusOK || strings.TrimSpace(res.Body.String()) != "fail" {
+			t.Fatalf("%s notify without login code=%d body=%s", method, res.Code, res.Body.String())
+		}
+	}
+}
+
+func TestBillingDisabledRejectsOrder(t *testing.T) {
+	router := newTestRouter(t)
+	token := createTestSession(t, router)
+
+	code, body := doJSONStatus(t, router, http.MethodPost, "/api/billing/epay/orders", token, map[string]any{
+		"credits": 10,
+		"method":  "alipay",
+	}, "")
+	if code != http.StatusBadRequest || !strings.Contains(body, "BILLING_DISABLED") {
+		t.Fatalf("disabled billing order code=%d body=%s", code, body)
+	}
+}
+
+func TestEpayNotifyValidatesPidMethodAndIsIdempotent(t *testing.T) {
+	env := newTestAPIEnv(t)
+	key := configureTestBilling(t, env)
+	token := createNamedUserSession(t, env.Router, "buyer01", "R7!Buyer#Vault$2026", "")
+
+	tradeNo := createTestEpayOrder(t, env.Router, token, 10, "alipay")
+	order, ok := env.Billing.GetByTradeNo(tradeNo)
+	if !ok {
+		t.Fatalf("created order %s missing", tradeNo)
+	}
+
+	badPID := signedNotifyValues(order, key)
+	badPID.Set("pid", "bad-pid")
+	badPID.Set("sign", billing.SignParams(valuesToMap(badPID), key))
+	code, body := postNotifyForm(t, env.Router, badPID)
+	if code != http.StatusOK || strings.TrimSpace(body) != "fail" {
+		t.Fatalf("bad pid notify code=%d body=%s", code, body)
+	}
+	ledger, err := env.Users.ListCreditLedger("buyer01")
+	if err != nil {
+		t.Fatalf("ListCreditLedger() error = %v", err)
+	}
+	if len(ledger) != 0 {
+		t.Fatalf("bad pid should not grant credits: %+v", ledger)
+	}
+
+	badMethod := signedNotifyValues(order, key)
+	badMethod.Set("type", "wxpay")
+	badMethod.Set("sign", billing.SignParams(valuesToMap(badMethod), key))
+	code, body = postNotifyForm(t, env.Router, badMethod)
+	if code != http.StatusOK || strings.TrimSpace(body) != "fail" {
+		t.Fatalf("bad method notify code=%d body=%s", code, body)
+	}
+
+	valid := signedNotifyValues(order, key)
+	for i := 0; i < 2; i++ {
+		code, body = postNotifyForm(t, env.Router, valid)
+		if code != http.StatusOK || strings.TrimSpace(body) != "success" {
+			t.Fatalf("valid notify #%d code=%d body=%s", i+1, code, body)
+		}
+	}
+
+	ledger, err = env.Users.ListCreditLedger("buyer01")
+	if err != nil {
+		t.Fatalf("ListCreditLedger(after valid) error = %v", err)
+	}
+	if len(ledger) != 1 || ledger[0].Delta != 10 || ledger[0].SourceID != tradeNo {
+		t.Fatalf("duplicate notify should grant once, ledger=%+v", ledger)
+	}
+	profile, err := env.Users.Profile("buyer01")
+	if err != nil {
+		t.Fatalf("Profile() error = %v", err)
+	}
+	if profile.CreditsBalance != 10 {
+		t.Fatalf("creditsBalance=%d, want 10", profile.CreditsBalance)
+	}
+	updated, ok := env.Billing.GetByTradeNo(tradeNo)
+	if !ok || updated.Status != billing.TopUpStatusSuccess {
+		t.Fatalf("order after notify = %+v ok=%v", updated, ok)
+	}
+}
+
+func assertEpayKeyHidden(t *testing.T, body string, rawKey string) {
+	t.Helper()
+	if strings.Contains(body, rawKey) || strings.Contains(body, `"epayKey":`) {
+		t.Fatalf("admin config leaked epay key: %s", body)
+	}
+}
+
+func configureTestBilling(t *testing.T, env testAPIEnv) string {
+	t.Helper()
+	enabled := true
+	apiURL := "https://pay.example.com/submit.php"
+	pid := "1001"
+	key := "secret-key"
+	price := 10
+	minimum := 10
+	reward := 0
+	if _, err := env.Settings.Update(settings.Update{
+		EpayEnabled:           &enabled,
+		EpayAPIURL:            &apiURL,
+		EpayPID:               &pid,
+		EpayKey:               &key,
+		EpayMethods:           []string{"alipay"},
+		CreditPriceCents:      &price,
+		MinTopUpCredits:       &minimum,
+		ReferralRewardCredits: &reward,
+	}); err != nil {
+		t.Fatalf("Settings.Update(epay) error = %v", err)
+	}
+	return key
+}
+
+func createTestEpayOrder(t *testing.T, router http.Handler, token string, credits int, method string) string {
+	t.Helper()
+	body := doJSON(t, router, http.MethodPost, "/api/billing/epay/orders", token, map[string]any{"credits": credits, "method": method})
+	var payload struct {
+		TradeNo string `json:"tradeNo"`
+		Order   struct {
+			TradeNo string `json:"tradeNo"`
+		} `json:"order"`
+	}
+	if err := json.Unmarshal([]byte(body), &payload); err != nil {
+		t.Fatalf("decode epay order response: %v body=%s", err, body)
+	}
+	if payload.TradeNo != "" {
+		return payload.TradeNo
+	}
+	if payload.Order.TradeNo != "" {
+		return payload.Order.TradeNo
+	}
+	t.Fatalf("tradeNo missing from response: %s", body)
+	return ""
+}
+
+func signedNotifyValues(order billing.TopUpOrder, key string) url.Values {
+	params := map[string]string{
+		"pid":          "1001",
+		"type":         order.Method,
+		"out_trade_no": order.TradeNo,
+		"trade_no":     "E202606260001",
+		"trade_status": billing.EpayStatusTradeSuccess,
+		"money":        billing.FormatCents(order.AmountCents),
+	}
+	params["sign"] = billing.SignParams(params, key)
+	params["sign_type"] = billing.EpaySignTypeMD5
+	values := url.Values{}
+	for k, v := range params {
+		values.Set(k, v)
+	}
+	return values
+}
+
+func valuesToMap(values url.Values) map[string]string {
+	params := make(map[string]string, len(values))
+	for key, item := range values {
+		if len(item) > 0 {
+			params[key] = item[0]
+		}
+	}
+	return params
+}
+
+func postNotifyForm(t *testing.T, router http.Handler, values url.Values) (int, string) {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodPost, "/api/billing/epay/notify", strings.NewReader(values.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	res := httptest.NewRecorder()
+	router.ServeHTTP(res, req)
+	return res.Code, res.Body.String()
+}

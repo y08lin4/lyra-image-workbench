@@ -13,12 +13,12 @@ import (
 
 	"github.com/y08lin4/lyra-image-workbench/internal/adminauth"
 	"github.com/y08lin4/lyra-image-workbench/internal/apikeys"
+	"github.com/y08lin4/lyra-image-workbench/internal/billing"
 	"github.com/y08lin4/lyra-image-workbench/internal/config"
 	"github.com/y08lin4/lyra-image-workbench/internal/events"
 	"github.com/y08lin4/lyra-image-workbench/internal/gifrender"
 	"github.com/y08lin4/lyra-image-workbench/internal/jobs"
 	"github.com/y08lin4/lyra-image-workbench/internal/llm"
-	"github.com/y08lin4/lyra-image-workbench/internal/minimax"
 	"github.com/y08lin4/lyra-image-workbench/internal/newapi"
 	"github.com/y08lin4/lyra-image-workbench/internal/output"
 	"github.com/y08lin4/lyra-image-workbench/internal/promptlibrary"
@@ -379,12 +379,10 @@ func TestUserLoginReusesAccountStorage(t *testing.T) {
 func TestAdminConfigAPIUpdatesURLAndTimeout(t *testing.T) {
 	router := newTestRouter(t)
 	adminToken := createAdminToken(t, router)
-	minimaxKey := "minimax-secret-1234567890"
 	body := doAdminJSON(t, router, http.MethodPost, "/api/admin/config", adminToken, map[string]any{
 		"newApiBaseUrl": "http://127.0.0.1:3010/v1/images/edits",
 		"timeoutSec":    600,
 		"debugEnabled":  true,
-		"minimaxApiKey": minimaxKey,
 	})
 	if !strings.Contains(body, `"newApiBaseUrl":"http://127.0.0.1:3010/v1"`) {
 		t.Fatalf("admin URL was not normalized: %s", body)
@@ -395,30 +393,31 @@ func TestAdminConfigAPIUpdatesURLAndTimeout(t *testing.T) {
 	if !strings.Contains(body, `"debugEnabled":true`) {
 		t.Fatalf("admin response missing debug flag: %s", body)
 	}
-	if strings.Contains(body, minimaxKey) || !strings.Contains(body, `"minimaxApiKeySet":true`) {
-		t.Fatalf("admin response should only expose MiniMax key status: %s", body)
+	if strings.Contains(strings.ToLower(body), "mini"+"max") {
+		t.Fatalf("admin config response should not include removed video config: %s", body)
 	}
 }
 
-func TestAdminUsersCanAddVideoQuota(t *testing.T) {
+func TestAdminUsersCanAddCreditsAndReadLedger(t *testing.T) {
 	router := newTestRouter(t)
-	userToken := createNamedUserSession(t, router, "videoUser01", "R7!Video#Vault$2026", "")
+	createNamedUserSession(t, router, "creditUser01", "R7!Credit#Vault$2026", "")
 	adminToken := createAdminToken(t, router)
 
-	body := doAdminJSON(t, router, http.MethodPost, "/api/admin/users/video-quota", adminToken, map[string]any{
-		"username": "VIDEOUSER01",
-		"delta":    4,
+	body := doAdminJSON(t, router, http.MethodPost, "/api/admin/users/credits/add", adminToken, map[string]any{
+		"username": "CREDITUSER01",
+		"amount":   4,
+		"reason":   "test credit grant",
 	})
 	if strings.Contains(body, "storageToken") {
 		t.Fatalf("admin users response leaked storage token: %s", body)
 	}
-	if !strings.Contains(body, `"videoQuota":4`) {
-		t.Fatalf("admin users response missing updated quota: %s", body)
+	if !strings.Contains(body, `"creditsBalance":4`) {
+		t.Fatalf("admin users response missing updated credits: %s", body)
 	}
 
-	body = doJSON(t, router, http.MethodGet, "/api/minimax/video-quota", userToken, nil)
-	if !strings.Contains(body, `"remaining":4`) || !strings.Contains(body, `"costPerVideo":1`) {
-		t.Fatalf("video quota response missing remaining quota: %s", body)
+	body = doAdminJSON(t, router, http.MethodGet, "/api/admin/users/creditUser01/ledger", adminToken, nil)
+	if !strings.Contains(body, `"balanceAfter":4`) || !strings.Contains(body, `"reason":"test credit grant"`) {
+		t.Fatalf("admin ledger response missing credit entry: %s", body)
 	}
 }
 
@@ -503,12 +502,14 @@ func TestOutputRouteRequiresAuthenticatedOwner(t *testing.T) {
 }
 
 type testAPIEnv struct {
-	Router  http.Handler
-	APIKeys *apikeys.Store
-	Users   *users.Store
-	Spaces  *spaces.FileStore
-	Jobs    *jobs.Store
-	Output  *output.Store
+	Router   http.Handler
+	APIKeys  *apikeys.Store
+	Billing  *billing.Store
+	Settings *settings.FileStore
+	Users    *users.Store
+	Spaces   *spaces.FileStore
+	Jobs     *jobs.Store
+	Output   *output.Store
 }
 
 func newTestRouter(t *testing.T) http.Handler {
@@ -548,6 +549,10 @@ func newTestAPIEnv(t *testing.T) testAPIEnv {
 	if err != nil {
 		t.Fatalf("apikeys.NewStore() error = %v", err)
 	}
+	billingStore, err := billing.NewStore(filepath.Join(cfg.DataDir, "topups.json"))
+	if err != nil {
+		t.Fatalf("billing.NewStore() error = %v", err)
+	}
 	spaceStore, err := spaces.NewFileStore(cfg.DataDir)
 	if err != nil {
 		t.Fatalf("spaces.NewFileStore() error = %v", err)
@@ -575,19 +580,19 @@ func newTestAPIEnv(t *testing.T) testAPIEnv {
 		AdminAuth:     adminAuthStore,
 		Users:         userStore,
 		APIKeys:       apiKeyStore,
+		Billing:       billingStore,
 		Settings:      settingsStore,
 		Spaces:        spaceStore,
 		SpaceConfig:   spaceConfigStore,
 		Uploads:       uploadStore,
 		Jobs:          jobManager,
-		MiniMax:       minimax.NewClient(),
 		Output:        outputStore,
 		PromptLibrary: promptLibraryService,
 		PromptSquare:  promptSquareStore,
 		PromptTools:   promptService,
 		LLM:           llmClient,
 		GIF:           gifService})
-	return testAPIEnv{Router: router, APIKeys: apiKeyStore, Users: userStore, Spaces: spaceStore, Jobs: jobStore, Output: outputStore}
+	return testAPIEnv{Router: router, APIKeys: apiKeyStore, Billing: billingStore, Settings: settingsStore, Users: userStore, Spaces: spaceStore, Jobs: jobStore, Output: outputStore}
 }
 
 func createV1BearerSecret(t *testing.T, router http.Handler, token string) string {

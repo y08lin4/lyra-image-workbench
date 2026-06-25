@@ -19,14 +19,24 @@ type UserHandler struct {
 
 type userRegisterRequest struct {
 	Username            string `json:"username"`
+	Email               string `json:"email"`
 	Password            string `json:"password"`
+	ReferralCode        string `json:"referralCode"`
 	LegacySpacePassword string `json:"legacySpacePassword"`
 }
 
 type userLoginRequest struct {
+	Identifier    string `json:"identifier"`
 	Username      string `json:"username"`
 	Password      string `json:"password"`
 	TwoFactorCode string `json:"twoFactorCode"`
+	TOTPCode      string `json:"totpCode"`
+}
+
+type userProfileUpdateRequest struct {
+	DisplayName string `json:"displayName"`
+	Email       string `json:"email"`
+	AvatarURL   string `json:"avatarUrl"`
 }
 
 type twoFactorCodeRequest struct {
@@ -57,7 +67,7 @@ func (h UserHandler) Register(w http.ResponseWriter, r *http.Request) {
 		}
 		storageToken = token
 	}
-	session, err := h.store.Register(payload.Username, payload.Password, storageToken)
+	session, err := h.store.Register(payload.Username, payload.Email, payload.Password, payload.ReferralCode, storageToken)
 	if err != nil {
 		writeUserError(w, err)
 		return
@@ -73,7 +83,15 @@ func (h UserHandler) Login(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "BAD_JSON", "请求体不是有效 JSON")
 		return
 	}
-	session, err := h.store.Login(payload.Username, payload.Password, payload.TwoFactorCode)
+	identifier := payload.Identifier
+	if identifier == "" {
+		identifier = payload.Username
+	}
+	twoFactorCode := payload.TwoFactorCode
+	if twoFactorCode == "" {
+		twoFactorCode = payload.TOTPCode
+	}
+	session, err := h.store.Login(identifier, payload.Password, twoFactorCode)
 	if err != nil {
 		writeUserError(w, err)
 		return
@@ -89,6 +107,72 @@ func (h UserHandler) Current(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "session": session})
+}
+
+func (h UserHandler) Profile(w http.ResponseWriter, r *http.Request) {
+	session, ok := currentUserSession(h.store, r)
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "USER_AUTH_REQUIRED", "请先登录")
+		return
+	}
+	profile, err := h.store.Profile(session.User.Username)
+	if err != nil {
+		writeUserError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "user": profile})
+}
+
+func (h UserHandler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
+	defer r.Body.Close()
+	session, ok := currentUserSession(h.store, r)
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "USER_AUTH_REQUIRED", "请先登录")
+		return
+	}
+	var payload userProfileUpdateRequest
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		writeError(w, http.StatusBadRequest, "BAD_JSON", "请求体不是有效 JSON")
+		return
+	}
+	profile, err := h.store.UpdateProfile(session.User.Username, users.ProfileUpdate{
+		DisplayName: payload.DisplayName,
+		Email:       payload.Email,
+		AvatarURL:   payload.AvatarURL,
+	})
+	if err != nil {
+		writeUserError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "user": profile})
+}
+
+func (h UserHandler) Ledger(w http.ResponseWriter, r *http.Request) {
+	session, ok := currentUserSession(h.store, r)
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "USER_AUTH_REQUIRED", "请先登录")
+		return
+	}
+	entries, err := h.store.ListCreditLedger(session.User.Username)
+	if err != nil {
+		writeUserError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "ledger": entries})
+}
+
+func (h UserHandler) ReferralCode(w http.ResponseWriter, r *http.Request) {
+	session, ok := currentUserSession(h.store, r)
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "USER_AUTH_REQUIRED", "请先登录")
+		return
+	}
+	profile, err := h.store.EnsureReferralCode(session.User.Username)
+	if err != nil {
+		writeUserError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "referralCode": profile.ReferralCode, "user": profile})
 }
 
 func (h UserHandler) Logout(w http.ResponseWriter, r *http.Request) {
@@ -205,7 +289,7 @@ func writeUserError(w http.ResponseWriter, err error) {
 		if code == "USER_LOGIN_INVALID" || code == "USER_AUTH_REQUIRED" || code == "USER_TOTP_REQUIRED" || code == "USER_TOTP_INVALID" {
 			status = http.StatusUnauthorized
 		}
-		if code == "USER_ALREADY_EXISTS" {
+		if code == "USER_ALREADY_EXISTS" || code == "USER_EMAIL_ALREADY_EXISTS" || code == "USER_CREDITS_SOURCE_CONFLICT" {
 			status = http.StatusConflict
 		}
 	}

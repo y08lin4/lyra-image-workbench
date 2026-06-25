@@ -43,6 +43,12 @@ const categoryOptions = ['随机', '人像', '场景', '产品', '海报', '插�
 const moodOptions = ['随机', '治愈', '孤独', '高级', '梦幻', '压迫感', '温暖', '荒诞', '浪漫']
 const inspirationStyleOptions = ['随机', '写实摄影', '电影感', '日系胶片', '二次元', '3D 渲染', '极简设计', '国风']
 const quickRefines = ['更写实', '更电影感', '更简洁', '更高级', '更梦幻', '增强光影', '减少元素', '改成竖屏构图', '改成商业海报']
+const promptTabs: Array<{ id: Tab; label: string }> = [
+  { id: 'text', label: '文生图' },
+  { id: 'image', label: '图片还原' },
+  { id: 'inspiration', label: '灵感模式' },
+  { id: 'history', label: '历史' },
+]
 const observationLabels: Record<string, string> = {
   subject: '主体',
   composition: '构图',
@@ -340,26 +346,36 @@ export function PromptAssistantModal({ tasks, uploads, provider, bananaModel, on
   }
 
   const content = (
-      <section className={`prompt-assistant ${embedded ? 'prompt-assistant-inline' : ''}`} role={embedded ? undefined : 'dialog'} aria-modal={embedded ? undefined : true} aria-label="提示词助手" onMouseDown={(event) => event.stopPropagation()}>
+      <section className={`prompt-assistant ${embedded ? 'prompt-assistant-inline' : 'prompt-assistant-modal'}`} role={embedded ? undefined : 'dialog'} aria-modal={embedded ? undefined : true} aria-label="提示词助手" onMouseDown={(event) => event.stopPropagation()}>
         <header className="prompt-assistant-header">
           <div>
             <p className="eyebrow">Prompt Assistant</p>
             <h2>提示词助手</h2>
-            <p>调用 gpt-5.5 生成、还原、找灵感，也可以像聊天一样继续改提示词。</p>
+            <p>生成、还原、找灵感；会话可继续修改版本。</p>
           </div>
           {embedded ? null : <button type="button" onClick={onClose}>关闭</button>}
         </header>
 
         <div className="prompt-tabs" role="tablist" aria-label="提示词工具">
-          <button type="button" className={tab === 'text' ? 'active' : ''} onClick={() => setTab('text')}>文字生成图片提示词</button>
-          <button type="button" className={tab === 'image' ? 'active' : ''} onClick={() => setTab('image')}>图片还原提示词</button>
-          <button type="button" className={tab === 'inspiration' ? 'active' : ''} onClick={() => setTab('inspiration')}>灵感模式</button>
-          <button type="button" className={tab === 'history' ? 'active' : ''} onClick={() => setTab('history')}>历史/会话</button>
+          {promptTabs.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              role="tab"
+              id={`prompt-tab-${item.id}`}
+              aria-selected={tab === item.id}
+              aria-controls={`prompt-panel-${item.id}`}
+              className={tab === item.id ? 'active' : ''}
+              onClick={() => setTab(item.id)}
+            >
+              {item.label}
+            </button>
+          ))}
         </div>
 
         <div className={`prompt-assistant-body ${tab === 'inspiration' ? 'is-inspiration' : ''}`}>
           {tab === 'text' ? (
-            <section className="prompt-tool-panel">
+            <section className="prompt-tool-panel" id="prompt-panel-text" role="tabpanel" aria-labelledby="prompt-tab-text">
               <label>
                 <span>一句话想法</span>
                 <textarea value={idea} onChange={(event) => setIdea(event.target.value)} placeholder="例如：雨夜东京街头的赛博朋克少女" rows={4} />
@@ -383,10 +399,10 @@ export function PromptAssistantModal({ tasks, uploads, provider, bananaModel, on
           ) : null}
 
           {tab === 'image' ? (
-            <section className="prompt-tool-panel">
-              <div className="prompt-source-tabs">
-                <button type="button" className={sourceType === 'upload' ? 'active' : ''} onClick={() => setSourceType('upload')}>参考图</button>
-                <button type="button" className={sourceType === 'result' ? 'active' : ''} onClick={() => setSourceType('result')}>历史结果图</button>
+            <section className="prompt-tool-panel" id="prompt-panel-image" role="tabpanel" aria-labelledby="prompt-tab-image">
+              <div className="prompt-source-tabs" role="tablist" aria-label="图片来源">
+                <button type="button" role="tab" aria-selected={sourceType === 'upload'} className={sourceType === 'upload' ? 'active' : ''} onClick={() => setSourceType('upload')}>参考图</button>
+                <button type="button" role="tab" aria-selected={sourceType === 'result'} className={sourceType === 'result' ? 'active' : ''} onClick={() => setSourceType('result')}>历史结果图</button>
               </div>
               {sourceType === 'upload' ? (
                 <>
@@ -416,7 +432,7 @@ export function PromptAssistantModal({ tasks, uploads, provider, bananaModel, on
           ) : null}
 
           {tab === 'inspiration' ? (
-            <section className="prompt-tool-panel inspiration-panel">
+            <section className="prompt-tool-panel inspiration-panel" id="prompt-panel-inspiration" role="tabpanel" aria-labelledby="prompt-tab-inspiration">
               <div className="prompt-tool-grid">
                 <label>
                   <span>类别</span>
@@ -468,7 +484,7 @@ export function PromptAssistantModal({ tasks, uploads, provider, bananaModel, on
           ) : null}
 
           {tab === 'history' ? (
-            <section className="prompt-history-list">
+            <section className="prompt-history-list" id="prompt-panel-history" role="tabpanel" aria-labelledby="prompt-tab-history">
               {!sessions.length && !records.length ? <div className="prompt-empty">还没有提示词历史</div> : null}
               {sessions.length ? <p className="prompt-history-heading">可继续修改的会话</p> : null}
               {sessions.map((session) => (

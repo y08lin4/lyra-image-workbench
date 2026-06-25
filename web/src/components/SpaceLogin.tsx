@@ -9,7 +9,10 @@ type Mode = 'login' | 'register'
 
 export function SpaceLogin({ onSession, theme, onToggleTheme }: { onSession: (session: UserSession) => void; theme: ThemeMode; onToggleTheme: () => void }) {
   const [mode, setMode] = useState<Mode>('login')
+  const [identifier, setIdentifier] = useState('')
   const [username, setUsername] = useState('')
+  const [email, setEmail] = useState('')
+  const [referralCode, setReferralCode] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [twoFactorCode, setTwoFactorCode] = useState('')
@@ -24,14 +27,32 @@ export function SpaceLogin({ onSession, theme, onToggleTheme }: { onSession: (se
   async function submit(event: FormEvent) {
     event.preventDefault()
     setError('')
+    if (isRegister && !username.trim()) {
+      setError('请输入用户名')
+      return
+    }
+    if (!isRegister && !identifier.trim()) {
+      setError('请输入用户名或邮箱')
+      return
+    }
+    if (isRegister && !email.trim()) {
+      setError('请输入邮箱')
+      return
+    }
     if (isRegister && password !== confirmPassword) {
       setError('两次输入的密码不一致')
       return
     }
     try {
       const session = isRegister
-        ? await registerUser(username, password, importLegacy ? legacySpacePassword : '')
-        : await loginUser(username, password, twoFactorCode)
+        ? await registerUser({
+          username: username.trim(),
+          email: email.trim(),
+          password,
+          referralCode: referralCode.trim(),
+          legacySpacePassword: importLegacy ? legacySpacePassword : '',
+        })
+        : await loginUser(identifier.trim(), password, twoFactorCode)
       onSession(session)
     } catch (err) {
       if (err instanceof ApiError && (err.code === 'USER_TOTP_REQUIRED' || err.code === 'USER_TOTP_INVALID')) {
@@ -68,7 +89,15 @@ export function SpaceLogin({ onSession, theme, onToggleTheme }: { onSession: (se
             <li>新设备登录后可重新填写本地 Key，或使用已授权保存的云端 Key。</li>
           </ul>
         </div>
-        <input value={username} onChange={(e) => setUsername(e.target.value)} placeholder="用户名，大小写字母/数字/._-" autoFocus />
+        {isRegister ? (
+          <>
+            <input value={username} onChange={(e) => setUsername(e.target.value)} placeholder="用户名，大小写字母/数字/._-" autoComplete="username" autoFocus />
+            <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="邮箱，用于账号和通知" autoComplete="email" />
+            <input value={referralCode} onChange={(e) => setReferralCode(e.target.value)} placeholder="邀请码，可留空" autoComplete="off" />
+          </>
+        ) : (
+          <input value={identifier} onChange={(e) => setIdentifier(e.target.value)} placeholder="用户名或邮箱" autoComplete="username" autoFocus />
+        )}
         <PasswordField
           value={password}
           onChange={setPassword}

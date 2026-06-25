@@ -1,11 +1,16 @@
-export type ThemeMode = 'light' | 'dark'
+import { THEME_OPTIONS, type ThemeMode } from '../lib/themes'
 
-export function ThemeToggle({ theme, onToggle }: { theme: ThemeMode; onToggle: () => void }) {
-  const isDark = theme === 'dark'
+export type { ThemeMode }
+
+export function ThemeToggle({ theme, onToggle }: { theme: ThemeMode; onToggle: (theme?: ThemeMode) => void }) {
   return (
-    <button type="button" className="theme-toggle" onClick={onToggle} aria-pressed={isDark} title={isDark ? '切换到白天模式' : '切换到黑夜模式'}>
-      <span aria-hidden="true">{isDark ? '☀' : '☾'}</span>
-      <strong>{isDark ? '白天模式' : '黑夜模式'}</strong>
-    </button>
+    <label className="theme-toggle" title="选择界面主题">
+      <span>主题</span>
+      <select value={theme} aria-label="选择界面主题" onChange={(event) => onToggle(event.target.value as ThemeMode)}>
+        {THEME_OPTIONS.map((item) => (
+          <option key={item.key} value={item.key}>{item.label}</option>
+        ))}
+      </select>
+    </label>
   )
 }

@@ -160,8 +160,7 @@ cmd/local-server              Go 服务入口
 - Go 1.22+
 - Node.js 20+
 - npm
-- FFmpeg 8.1.2+ (required only for final GIF rendering; when missing, unsafe, or unknown, `/gif` can still generate frames but cannot merge GIF)
-æç» GIF åæåè½éè¦ï¼ç¼ºå¤±æ¶ `/gif` ä»å¯çæå¸§ï¼ä½ä¸è½åå¹¶ GIFï¼
+- FFmpeg 8.1.2+ (only for final GIF merging; `/gif` can still generate PNG frames when FFmpeg is missing, unsafe, or unknown)
 
 ### 本机生产形态运行
 
@@ -420,6 +419,8 @@ scripts/                部署和本地重启脚本
 
 GIF rendering depends on a patched system FFmpeg installation. The project does not bundle FFmpeg into the Go binary and does not use cgo; the backend calls the external `ffmpeg` command with `exec.CommandContext`. FFmpeg must report version `8.1.2` or newer; older or unparsable versions are treated as unavailable for GIF merging.
 
+The GIF workflow only sends generated PNG frames to FFmpeg for final merging. It does not accept user-uploaded videos for FFmpeg decoding, and production deployments should keep FFmpeg at `8.1.2` or newer with current security patches.
+
 Install FFmpeg:
 
 ```bash
@@ -457,7 +458,7 @@ Environment variables:
 
 Troubleshooting:
 
-- FFmpeg 8.1.2+ (required only for final GIF rendering; when missing, unsafe, or unknown, `/gif` can still generate frames but cannot merge GIF)
+- FFmpeg 8.1.2+ is required only for final GIF merging; when FFmpeg is missing, unsafe, or unknown, `/gif` can still generate PNG frames but cannot merge the final GIF.
 - Preview works but merge fails: verify all selected frames succeeded and the service can write to `GIF_WORK_DIR`.
 - GIF is too large: lower frame count, FPS, or export width.
 - Why not Go `image/gif`: MVP uses FFmpeg for final export to get better palette handling and compatibility; preview is direct frame rotation in the frontend.
@@ -488,7 +489,6 @@ CI 会在 push 和 PR 时运行：
 - [`docs/DOCKER.md`](docs/DOCKER.md)：Docker 镜像、Docker Compose、GHCR 拉取和数据卷说明。
 - [`docs/DEPLOY_LINUX.md`](docs/DEPLOY_LINUX.md)：Linux 服务器部署、systemd、Nginx/Caddy、升级和备份。
 - [`docs/DEPLOY_BAOTA.md`](docs/DEPLOY_BAOTA.md)：宝塔面板 Go 项目部署教程。
-- [`docs/MINIMAX_VIDEO.md`](docs/MINIMAX_VIDEO.md)：MiniMax 文生视频、Admin Key 与用户额度设计。
 - [`docs/CHANGES_FROM_AI_IMAGE_GENERATE.md`](docs/CHANGES_FROM_AI_IMAGE_GENERATE.md)：相较参考项目的架构和功能更新。
 - [`docs/STACK.md`](docs/STACK.md)：Go 后端与 React/Vite 前端选型。
 - [`docs/PROJECT_REQUIREMENTS.md`](docs/PROJECT_REQUIREMENTS.md)：项目模块化和稳定性要求。

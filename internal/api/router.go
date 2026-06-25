@@ -5,11 +5,11 @@ import (
 
 	"github.com/y08lin4/lyra-image-workbench/internal/adminauth"
 	"github.com/y08lin4/lyra-image-workbench/internal/apikeys"
+	"github.com/y08lin4/lyra-image-workbench/internal/billing"
 	"github.com/y08lin4/lyra-image-workbench/internal/config"
 	"github.com/y08lin4/lyra-image-workbench/internal/gifrender"
 	"github.com/y08lin4/lyra-image-workbench/internal/jobs"
 	"github.com/y08lin4/lyra-image-workbench/internal/llm"
-	"github.com/y08lin4/lyra-image-workbench/internal/minimax"
 	"github.com/y08lin4/lyra-image-workbench/internal/output"
 	"github.com/y08lin4/lyra-image-workbench/internal/promptlibrary"
 	"github.com/y08lin4/lyra-image-workbench/internal/promptsquare"
@@ -26,12 +26,12 @@ type Dependencies struct {
 	AdminAuth     *adminauth.Store
 	Users         *users.Store
 	APIKeys       *apikeys.Store
+	Billing       *billing.Store
 	Settings      *settings.FileStore
 	Spaces        *spaces.FileStore
 	SpaceConfig   *spaceconfig.Store
 	Uploads       *uploads.Store
 	Jobs          *jobs.Manager
-	MiniMax       *minimax.Client
 	Output        *output.Store
 	PromptLibrary *promptlibrary.Service
 	PromptSquare  *promptsquare.Store
@@ -44,7 +44,7 @@ func NewRouter(deps Dependencies) http.Handler {
 	mux := http.NewServeMux()
 	health := NewHealthHandler(deps.Config)
 	adminAuth := NewAdminAuthHandler(deps.AdminAuth)
-	adminConfig := NewAdminConfigHandler(deps.Settings, deps.AdminAuth)
+	adminConfig := NewAdminConfigHandler(deps.Settings, deps.AdminAuth, deps.Users)
 	adminUsers := NewAdminUsersHandler(deps.Users, deps.AdminAuth)
 	userHandler := NewUserHandler(deps.Users, deps.Spaces)
 	userConfig := NewUserConfigHandler(deps.SpaceConfig)
@@ -53,12 +53,12 @@ func NewRouter(deps Dependencies) http.Handler {
 	uploadHandler := NewUploadHandler(deps.Uploads)
 	taskHandler := NewTaskHandler(deps.Jobs, deps.Output)
 	v1ImageTaskHandler := NewV1ImageTaskHandler(deps.APIKeys, deps.SpaceConfig, deps.Jobs, deps.Output)
-	minimaxVideoHandler := NewMiniMaxVideoHandler(deps.MiniMax, deps.Settings, deps.Users)
 	promptToolsHandler := NewPromptToolsHandler(deps.PromptTools)
 	promptLibraryHandler := NewPromptLibraryHandler(deps.PromptLibrary)
 	outputHandler := NewOutputHandler(deps.Output)
-	promptSquareHandler := NewPromptSquareHandler(deps.PromptSquare)
+	promptSquareHandler := NewPromptSquareHandlerWithResults(deps.PromptSquare, deps.Jobs, deps.Output)
 	gifHandler := NewGIFHandler(deps.Config, deps.Jobs, deps.Output, deps.Uploads, deps.Settings, deps.SpaceConfig, deps.LLM, deps.GIF)
+	billingHandler := NewBillingHandler(deps.Settings, deps.Billing, deps.Users)
 	staticHandler := NewStaticHandler(deps.Config.WebDir)
 
 	mux.HandleFunc("GET /api/health", health.ServeHTTP)
@@ -68,12 +68,24 @@ func NewRouter(deps Dependencies) http.Handler {
 	mux.HandleFunc("DELETE /api/admin/auth/session", adminAuth.Logout)
 	mux.HandleFunc("GET /api/admin/config", adminConfig.Get)
 	mux.HandleFunc("POST /api/admin/config", adminConfig.Update)
+	mux.HandleFunc("PUT /api/admin/config", adminConfig.Update)
 	mux.HandleFunc("GET /api/admin/users", adminUsers.List)
-	mux.HandleFunc("POST /api/admin/users/video-quota", adminUsers.AddVideoQuota)
+	mux.HandleFunc("POST /api/admin/users/credits/add", adminUsers.AddCredits)
+	mux.HandleFunc("GET /api/admin/users/{username}/ledger", adminUsers.Ledger)
+	mux.HandleFunc("POST /api/admin/users/{username}/role", adminUsers.SetRole)
 	mux.HandleFunc("POST /api/users/register", userHandler.Register)
 	mux.HandleFunc("POST /api/users/session", userHandler.Login)
 	mux.HandleFunc("GET /api/users/session", userHandler.Current)
 	mux.HandleFunc("DELETE /api/users/session", userHandler.Logout)
+	mux.HandleFunc("GET /api/users/profile", userHandler.Profile)
+	mux.HandleFunc("PUT /api/users/profile", userHandler.UpdateProfile)
+	mux.HandleFunc("GET /api/users/ledger", userHandler.Ledger)
+	mux.HandleFunc("GET /api/billing/topup/options", billingHandler.Options)
+	mux.HandleFunc("POST /api/billing/epay/orders", billingHandler.CreateEpayOrder)
+	mux.HandleFunc("GET /api/billing/epay/notify", billingHandler.Notify)
+	mux.HandleFunc("POST /api/billing/epay/notify", billingHandler.Notify)
+	mux.HandleFunc("GET /api/billing/topups", billingHandler.ListTopUps)
+	mux.HandleFunc("POST /api/users/referral-code", userHandler.ReferralCode)
 	mux.HandleFunc("POST /api/users/2fa/setup", userHandler.SetupTwoFactor)
 	mux.HandleFunc("POST /api/users/2fa/enable", userHandler.EnableTwoFactor)
 	mux.HandleFunc("POST /api/users/2fa/disable", userHandler.DisableTwoFactor)
@@ -102,10 +114,6 @@ func NewRouter(deps Dependencies) http.Handler {
 	mux.HandleFunc("GET /v1/image-tasks/{id}", v1ImageTaskHandler.Get)
 	mux.HandleFunc("POST /v1/image-tasks/{id}/cancel", v1ImageTaskHandler.Cancel)
 	mux.HandleFunc("GET /v1/image-tasks/{id}/images/{index}", v1ImageTaskHandler.Image)
-	mux.HandleFunc("POST /api/minimax/videos", minimaxVideoHandler.Create)
-	mux.HandleFunc("GET /api/minimax/video-quota", minimaxVideoHandler.Quota)
-	mux.HandleFunc("GET /api/minimax/videos/{taskID}", minimaxVideoHandler.Query)
-	mux.HandleFunc("GET /api/minimax/files/{fileID}", minimaxVideoHandler.File)
 	mux.HandleFunc("POST /api/prompt-tools/text-to-prompt", promptToolsHandler.TextToPrompt)
 	mux.HandleFunc("POST /api/prompt-tools/image-to-prompt", promptToolsHandler.ImageToPrompt)
 	mux.HandleFunc("POST /api/prompt-tools/sessions", promptToolsHandler.CreateSession)
@@ -121,6 +129,10 @@ func NewRouter(deps Dependencies) http.Handler {
 	mux.HandleFunc("POST /api/prompt-library/refresh", promptLibraryHandler.Refresh)
 	mux.HandleFunc("GET /api/prompt-square/items", promptSquareHandler.List)
 	mux.HandleFunc("POST /api/prompt-square/items", promptSquareHandler.Create)
+	mux.HandleFunc("POST /api/prompt-square/from-result", promptSquareHandler.FromResult)
+	mux.HandleFunc("POST /api/prompt-square/items/{id}/like", promptSquareHandler.Like)
+	mux.HandleFunc("GET /api/prompt-square/daily", promptSquareHandler.Daily)
+	mux.HandleFunc("GET /api/prompt-square/mine", promptSquareHandler.Mine)
 	mux.HandleFunc("GET /api/prompt-square/images/{file}", promptSquareHandler.Image)
 	mux.HandleFunc("GET /api/gif/status", gifHandler.Status)
 	mux.HandleFunc("POST /api/gif/plans", gifHandler.Plan)

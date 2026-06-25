@@ -11,15 +11,16 @@ type ResultCanvasProps = {
   onUseAsReference?: (src: string, index: number) => Promise<void>
   onUploadPixhost?: (taskId: string, index: number) => Promise<void>
   onOpenGenerate?: () => void
-  onOpenQueue?: () => void
   onReuse?: (task: Task) => void
   onRetry?: (id: string) => void
+  submittedSquareKeys?: Set<string>
+  onSubmitToSquare?: (task: Task, result: TaskResult, index: number) => Promise<boolean>
 }
 
-export function ResultCanvas({ task, onUseAsReference, onUploadPixhost, onOpenGenerate, onOpenQueue, onReuse, onRetry }: ResultCanvasProps) {
+export function ResultCanvas({ task, onUseAsReference, onUploadPixhost, onOpenGenerate, onReuse, onRetry, submittedSquareKeys, onSubmitToSquare }: ResultCanvasProps) {
   const okCount = task?.results.filter((item) => item.ok).length || 0
   const hasFailed = task?.results.some((item) => !item.ok) || ['failed', 'partial_failed', 'cancelled', 'interrupted'].includes(task?.status || '')
-  const hasTaskActions = Boolean(onReuse || onOpenQueue || (hasFailed && onRetry))
+  const hasTaskActions = Boolean(onReuse || (hasFailed && onRetry))
   const layoutClass = task ? resultLayoutClass(task.count) : ''
   return (
     <section className="result-canvas">
@@ -32,14 +33,15 @@ export function ResultCanvas({ task, onUseAsReference, onUploadPixhost, onOpenGe
         {task ? <span className={`status-pill ${task.status}`}>{task.statusText} / {task.statusCode}</span> : null}
       </header>
 
+      <p className="result-retention-note">未提交到广场的结果会在 30 天后清理；提交后将永久保留。</p>
+
       {!task ? (
         <div className="empty-state">
           <strong>先到“生成”标签提交任务</strong>
           <span>提交文生图或图生图后，当前任务的图片、进度和操作会固定显示在这里。刷新页面也能恢复历史结果。</span>
-          {onOpenGenerate || onOpenQueue ? (
+          {onOpenGenerate ? (
             <div className="empty-actions">
-              {onOpenGenerate ? <button type="button" className="primary" onClick={onOpenGenerate}>去生成</button> : null}
-              {onOpenQueue ? <button type="button" onClick={onOpenQueue}>查看队列</button> : null}
+              <button type="button" className="primary" onClick={onOpenGenerate}>去生成</button>
             </div>
           ) : null}
         </div>
@@ -50,14 +52,24 @@ export function ResultCanvas({ task, onUseAsReference, onUploadPixhost, onOpenGe
           {hasTaskActions ? (
             <div className="result-action-row">
               {onReuse ? <button type="button" onClick={() => onReuse(task)}>复用参数</button> : null}
-              {onOpenQueue ? <button type="button" onClick={onOpenQueue}>查看队列</button> : null}
               {hasFailed && onRetry ? <button type="button" onClick={() => onRetry(task.id)}>重试失败任务</button> : null}
             </div>
           ) : null}
           <div className={`result-grid ${layoutClass}`}>
             {Array.from({ length: task.count }, (_, index) => {
               const result = task.results.find((item) => item.index === index)
-              return <ResultCard key={index} task={task} index={index} result={result} onUseAsReference={onUseAsReference} onUploadPixhost={onUploadPixhost} />
+              return (
+                <ResultCard
+                  key={index}
+                  task={task}
+                  index={index}
+                  result={result}
+                  submittedToSquare={submittedSquareKeys?.has(`${task.id}:${index}`) || false}
+                  onUseAsReference={onUseAsReference}
+                  onUploadPixhost={onUploadPixhost}
+                  onSubmitToSquare={onSubmitToSquare}
+                />
+              )
             })}
           </div>
         </>
@@ -130,9 +142,18 @@ function DebugLogPanel({ task }: { task: Task }) {
   )
 }
 
-function ResultCard({ task, index, result, onUseAsReference, onUploadPixhost }: { task: Task; index: number; result?: TaskResult; onUseAsReference?: (src: string, index: number) => Promise<void>; onUploadPixhost?: (taskId: string, index: number) => Promise<void> }) {
+function ResultCard({ task, index, result, submittedToSquare, onUseAsReference, onUploadPixhost, onSubmitToSquare }: {
+  task: Task
+  index: number
+  result?: TaskResult
+  submittedToSquare: boolean
+  onUseAsReference?: (src: string, index: number) => Promise<void>
+  onUploadPixhost?: (taskId: string, index: number) => Promise<void>
+  onSubmitToSquare?: (task: Task, result: TaskResult, index: number) => Promise<boolean>
+}) {
   const [previewOpen, setPreviewOpen] = useState(false)
   const [notice, setNotice] = useState('')
+  const [submittingToSquare, setSubmittingToSquare] = useState(false)
 
   if (!result) {
     return (
@@ -162,6 +183,11 @@ function ResultCard({ task, index, result, onUseAsReference, onUploadPixhost }: 
               <button type="button" onClick={() => void downloadImage(imageUrl, index, setNotice)}>下载</button>
               <button type="button" onClick={() => void copyImage(imageUrl, setNotice)}>复制图片</button>
               <button type="button" onClick={() => void copyURL(copyableURL, setNotice)}>复制链接</button>
+              {onSubmitToSquare ? (
+                <button type="button" className="primary square-submit-button" disabled={submittingToSquare || submittedToSquare} onClick={() => void submitResultToSquare(task, result, index, onSubmitToSquare, setNotice, setSubmittingToSquare)}>
+                  {submittedToSquare ? '已提交广场' : submittingToSquare ? '提交中...' : '提交到广场'}
+                </button>
+              ) : null}
               {!result.remoteUrl ? (
                 <button type="button" className={result.uploadError ? 'danger-text' : ''} onClick={() => void uploadPixhost(task.id, index, onUploadPixhost, setNotice)}>
                   {result.uploadError ? '重试图床' : '上传图床'}
@@ -170,6 +196,7 @@ function ResultCard({ task, index, result, onUseAsReference, onUploadPixhost }: 
               <button type="button" onClick={() => void useAsReference(imageUrl, index, onUseAsReference, setNotice)}>作为参考图</button>
             </div>
             <small className="card-meta">#{index + 1} · {result.elapsedMs ? `${(result.elapsedMs / 1000).toFixed(1)}s` : '完成'} · {formatBytes(result.bytes)}{result.remoteUrl ? ' · 已上传图床' : result.uploadError ? ` · 图床失败：${result.uploadError}` : ''}</small>
+            <small className={`square-retention-state ${submittedToSquare ? 'is-permanent' : ''}`}>{submittedToSquare ? '已提交到广场：永久保留' : '未提交到广场：30 天后清理'}</small>
             {resultParameters(result).length ? (
               <div className="actual-chips" aria-label="上游实际参数">
                 {resultParameters(result).map((item) => <span key={item}>{item}</span>)}
@@ -202,6 +229,19 @@ function ResultCard({ task, index, result, onUseAsReference, onUploadPixhost }: 
       ) : null}
     </>
   )
+}
+
+async function submitResultToSquare(task: Task, result: TaskResult, index: number, onSubmitToSquare: (task: Task, result: TaskResult, index: number) => Promise<boolean>, setNotice: (value: string) => void, setSubmittingToSquare: (value: boolean) => void) {
+  try {
+    setSubmittingToSquare(true)
+    flash(setNotice, '正在提交到广场...')
+    const submitted = await onSubmitToSquare(task, result, index)
+    flash(setNotice, submitted ? '已提交到广场，图片将永久保留' : '已取消提交')
+  } catch (err) {
+    flash(setNotice, err instanceof Error ? err.message : '提交到广场失败')
+  } finally {
+    setSubmittingToSquare(false)
+  }
 }
 
 async function uploadPixhost(taskId: string, index: number, onUploadPixhost: ((taskId: string, index: number) => Promise<void>) | undefined, setNotice: (value: string) => void) {

@@ -1,6 +1,7 @@
 package settings
 
 import (
+	"encoding/json"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -55,29 +56,6 @@ func TestFileStoreUpdatePersistsAdminConfig(t *testing.T) {
 		t.Fatalf("model should be locked to %s, got %+v", config.DefaultModel, public)
 	}
 
-	minimaxKey := "  minimax-secret-1234567890  "
-	updated, err = reopened.Update(Update{MiniMaxAPIKey: &minimaxKey})
-	if err != nil {
-		t.Fatalf("Update(minimax key) error = %v", err)
-	}
-	if updated.MiniMaxAPIKey != "minimax-secret-1234567890" {
-		t.Fatalf("MiniMaxAPIKey was not trimmed: %q", updated.MiniMaxAPIKey)
-	}
-	public = reopened.Public()
-	if !public.MiniMaxAPIKeySet || public.MiniMaxAPIKeyPreview == "" {
-		t.Fatalf("public MiniMax key status missing: %+v", public)
-	}
-	if strings.Contains(public.MiniMaxAPIKeyPreview, "secret") || strings.Contains(public.MiniMaxAPIKeyPreview, updated.MiniMaxAPIKey) {
-		t.Fatalf("public MiniMax key preview leaked raw key: %q", public.MiniMaxAPIKeyPreview)
-	}
-	clearMiniMax := true
-	updated, err = reopened.Update(Update{ClearMiniMaxAPIKey: &clearMiniMax})
-	if err != nil {
-		t.Fatalf("Update(clear minimax key) error = %v", err)
-	}
-	if updated.MiniMaxAPIKey != "" || reopened.Public().MiniMaxAPIKeySet {
-		t.Fatalf("MiniMax key should be cleared: updated=%+v public=%+v", updated, reopened.Public())
-	}
 }
 
 func TestFileStoreRejectsInvalidAdminConfig(t *testing.T) {
@@ -104,5 +82,72 @@ func TestFileStoreRejectsInvalidAdminConfig(t *testing.T) {
 	badPublicURL := "ftp://example.com"
 	if _, err := store.Update(Update{PublicBaseURL: &badPublicURL}); err == nil {
 		t.Fatal("expected invalid public base URL error")
+	}
+}
+
+func TestFileStoreEpaySettingsMaskAndClearKey(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.local.json")
+	store, err := NewFileStore(path, RuntimeConfig{
+		NewAPIBaseURL: config.DefaultNewAPIBaseURL,
+		TimeoutSec:    config.DefaultTimeoutSec,
+		Model:         config.DefaultModel,
+	})
+	if err != nil {
+		t.Fatalf("NewFileStore() error = %v", err)
+	}
+
+	enabled := true
+	apiURL := "https://pay.example.com/submit.php/"
+	pid := " 1001 "
+	key := "merchant-secret-123456"
+	price := 25
+	minimum := 20
+	reward := 5
+	updated, err := store.Update(Update{
+		EpayEnabled:           &enabled,
+		EpayAPIURL:            &apiURL,
+		EpayPID:               &pid,
+		EpayKey:               &key,
+		EpayMethods:           []string{" ALIPAY ", "wxpay", "alipay", ""},
+		CreditPriceCents:      &price,
+		MinTopUpCredits:       &minimum,
+		ReferralRewardCredits: &reward,
+	})
+	if err != nil {
+		t.Fatalf("Update(epay) error = %v", err)
+	}
+	if !updated.EpayEnabled || updated.EpayAPIURL != "https://pay.example.com/submit.php" || updated.EpayPID != "1001" || updated.EpayKey != key {
+		t.Fatalf("epay settings not normalized/persisted privately: %+v", updated)
+	}
+	if len(updated.EpayMethods) != 2 || updated.EpayMethods[0] != "alipay" || updated.EpayMethods[1] != "wxpay" {
+		t.Fatalf("EpayMethods = %+v", updated.EpayMethods)
+	}
+
+	public := store.Public()
+	if !public.EpayKeySet || public.EpayKeyPreview != "merc********3456" || public.Billing.EpayKeyPreview != public.EpayKeyPreview {
+		t.Fatalf("Public() epay key status invalid: %+v", public)
+	}
+	payload, err := json.Marshal(public)
+	if err != nil {
+		t.Fatalf("Marshal public config: %v", err)
+	}
+	if strings.Contains(string(payload), key) || strings.Contains(string(payload), `"epayKey":`) {
+		t.Fatalf("public config leaked epay key: %s", payload)
+	}
+
+	reopened, err := NewFileStore(path, DefaultsFromConfig(config.Load()))
+	if err != nil {
+		t.Fatalf("reopen NewFileStore() error = %v", err)
+	}
+	if reopened.Get().EpayKey != key {
+		t.Fatalf("private epay key not persisted")
+	}
+	disabled := false
+	if _, err := reopened.Update(Update{EpayEnabled: &disabled, ClearEpayKey: true}); err != nil {
+		t.Fatalf("Update(clear epay key) error = %v", err)
+	}
+	cleared := reopened.Public()
+	if cleared.EpayKeySet || cleared.EpayKeyPreview != "" {
+		t.Fatalf("epay key should be cleared: %+v", cleared)
 	}
 }

@@ -9,12 +9,12 @@ import (
 	"github.com/y08lin4/lyra-image-workbench/internal/adminauth"
 	"github.com/y08lin4/lyra-image-workbench/internal/api"
 	"github.com/y08lin4/lyra-image-workbench/internal/apikeys"
+	"github.com/y08lin4/lyra-image-workbench/internal/billing"
 	"github.com/y08lin4/lyra-image-workbench/internal/config"
 	"github.com/y08lin4/lyra-image-workbench/internal/events"
 	"github.com/y08lin4/lyra-image-workbench/internal/gifrender"
 	"github.com/y08lin4/lyra-image-workbench/internal/jobs"
 	"github.com/y08lin4/lyra-image-workbench/internal/llm"
-	"github.com/y08lin4/lyra-image-workbench/internal/minimax"
 	"github.com/y08lin4/lyra-image-workbench/internal/newapi"
 	"github.com/y08lin4/lyra-image-workbench/internal/output"
 	"github.com/y08lin4/lyra-image-workbench/internal/promptlibrary"
@@ -45,6 +45,10 @@ func main() {
 	apiKeyStore, err := apikeys.NewStore(cfg.APIKeysPath())
 	if err != nil {
 		log.Fatalf("加载开发者 API Key 失败：%v", err)
+	}
+	billingStore, err := billing.NewStore(filepath.Join(cfg.DataDir, "topups.json"))
+	if err != nil {
+		log.Fatalf("加载充值订单失败：%v", err)
 	}
 	spaceStore, err := spaces.NewFileStore(cfg.DataDir)
 	if err != nil {
@@ -79,12 +83,12 @@ func main() {
 		AdminAuth:     adminAuthStore,
 		Users:         userStore,
 		APIKeys:       apiKeyStore,
+		Billing:       billingStore,
 		Settings:      settingsStore,
 		Spaces:        spaceStore,
 		SpaceConfig:   spaceConfigStore,
 		Uploads:       uploadStore,
 		Jobs:          jobManager,
-		MiniMax:       minimax.NewClient(),
 		Output:        outputStore,
 		PromptLibrary: promptLibraryService,
 		PromptSquare:  promptSquareStore,

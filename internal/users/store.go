@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/mail"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -20,6 +21,14 @@ import (
 
 const SessionTTL = 30 * 24 * time.Hour
 
+const (
+	creditLedgerTypeAdminAdd       = "admin_add"
+	creditLedgerTypePurchase       = "purchase"
+	creditLedgerTypeReferralReward = "referral_reward"
+	creditLedgerTypeTaskCharge     = "task_charge"
+	creditLedgerTypeRefund         = "refund"
+)
+
 var usernamePattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_.-]{2,31}$`)
 
 type Store struct {
@@ -30,21 +39,29 @@ type Store struct {
 }
 
 type persisted struct {
-	Users []record `json:"users"`
+	Users        []record            `json:"users"`
+	CreditLedger []CreditLedgerEntry `json:"creditLedger,omitempty"`
 }
 
 type record struct {
-	Username     string `json:"username"`
-	DisplayName  string `json:"displayName"`
-	StorageToken string `json:"storageToken"`
-	SaltHex      string `json:"saltHex"`
-	HashHex      string `json:"hashHex"`
-	TOTPSecret   string `json:"totpSecret,omitempty"`
-	TOTPEnabled  bool   `json:"totpEnabled,omitempty"`
-	VideoQuota   int    `json:"videoQuota,omitempty"`
-	CreatedAt    string `json:"createdAt"`
-	UpdatedAt    string `json:"updatedAt"`
-	LastLoginAt  string `json:"lastLoginAt,omitempty"`
+	Username           string `json:"username"`
+	DisplayName        string `json:"displayName"`
+	Email              string `json:"email,omitempty"`
+	AvatarURL          string `json:"avatarUrl,omitempty"`
+	IsAdmin            bool   `json:"isAdmin,omitempty"`
+	CreditsBalance     int    `json:"creditsBalance,omitempty"`
+	ReferralCode       string `json:"referralCode,omitempty"`
+	ReferredByCode     string `json:"referredByCode,omitempty"`
+	ReferredByUsername string `json:"referredByUsername,omitempty"`
+	ReferralRewardedAt string `json:"referralRewardedAt,omitempty"`
+	StorageToken       string `json:"storageToken"`
+	SaltHex            string `json:"saltHex"`
+	HashHex            string `json:"hashHex"`
+	TOTPSecret         string `json:"totpSecret,omitempty"`
+	TOTPEnabled        bool   `json:"totpEnabled,omitempty"`
+	CreatedAt          string `json:"createdAt"`
+	UpdatedAt          string `json:"updatedAt"`
+	LastLoginAt        string `json:"lastLoginAt,omitempty"`
 }
 
 type sessionRecord struct {
@@ -53,21 +70,59 @@ type sessionRecord struct {
 }
 
 type PublicUser struct {
-	Username         string `json:"username"`
-	DisplayName      string `json:"displayName"`
-	TwoFactorEnabled bool   `json:"twoFactorEnabled"`
-	VideoQuota       int    `json:"videoQuota"`
-	CreatedAt        string `json:"createdAt"`
-	LastLoginAt      string `json:"lastLoginAt,omitempty"`
+	Username           string `json:"username"`
+	DisplayName        string `json:"displayName"`
+	Email              string `json:"email"`
+	AvatarURL          string `json:"avatarUrl"`
+	IsAdmin            bool   `json:"isAdmin"`
+	CreditsBalance     int    `json:"creditsBalance"`
+	ReferralCode       string `json:"referralCode"`
+	ReferredByUsername string `json:"referredByUsername,omitempty"`
+	TwoFactorEnabled   bool   `json:"twoFactorEnabled"`
+	CreatedAt          string `json:"createdAt"`
+	LastLoginAt        string `json:"lastLoginAt,omitempty"`
 }
 
 type AdminUser struct {
-	Username         string `json:"username"`
-	DisplayName      string `json:"displayName"`
-	TwoFactorEnabled bool   `json:"twoFactorEnabled"`
-	VideoQuota       int    `json:"videoQuota"`
-	CreatedAt        string `json:"createdAt"`
-	LastLoginAt      string `json:"lastLoginAt,omitempty"`
+	Username           string `json:"username"`
+	DisplayName        string `json:"displayName"`
+	Email              string `json:"email"`
+	AvatarURL          string `json:"avatarUrl"`
+	IsAdmin            bool   `json:"isAdmin"`
+	CreditsBalance     int    `json:"creditsBalance"`
+	ReferralCode       string `json:"referralCode"`
+	ReferredByCode     string `json:"referredByCode,omitempty"`
+	ReferredByUsername string `json:"referredByUsername,omitempty"`
+	ReferralRewardedAt string `json:"referralRewardedAt,omitempty"`
+	TwoFactorEnabled   bool   `json:"twoFactorEnabled"`
+	CreatedAt          string `json:"createdAt"`
+	LastLoginAt        string `json:"lastLoginAt,omitempty"`
+}
+
+type ProfileUpdate struct {
+	DisplayName string
+	Email       string
+	AvatarURL   string
+}
+
+type CreditLedgerEntry struct {
+	ID              string `json:"id"`
+	Username        string `json:"username"`
+	Delta           int    `json:"delta"`
+	BalanceAfter    int    `json:"balanceAfter"`
+	Type            string `json:"type"`
+	Reason          string `json:"reason,omitempty"`
+	SourceID        string `json:"sourceId,omitempty"`
+	AdminActor      string `json:"adminActor,omitempty"`
+	RelatedUsername string `json:"relatedUsername,omitempty"`
+	CreatedAt       string `json:"createdAt"`
+}
+
+type PurchaseCreditResult struct {
+	User          AdminUser          `json:"user"`
+	Entry         CreditLedgerEntry  `json:"entry"`
+	Created       bool               `json:"created"`
+	ReferralEntry *CreditLedgerEntry `json:"referralEntry,omitempty"`
 }
 
 type Session struct {
@@ -92,8 +147,12 @@ func NewStore(path string) (*Store, error) {
 	return store, nil
 }
 
-func (s *Store) Register(username string, password string, storageToken string) (Session, error) {
+func (s *Store) Register(username string, email string, password string, referralCode string, storageToken string) (Session, error) {
 	normalized, displayName, err := normalizeUsername(username)
+	if err != nil {
+		return Session{}, err
+	}
+	normalizedEmail, err := normalizeEmail(email)
 	if err != nil {
 		return Session{}, err
 	}
@@ -116,20 +175,46 @@ func (s *Store) Register(username string, password string, storageToken string) 
 	if _, ok := s.findLocked(normalized); ok {
 		return Session{}, NewError("USER_ALREADY_EXISTS", "用户名已存在，请直接登录或换一个用户名")
 	}
+	if normalizedEmail != "" {
+		if _, ok := s.findByEmailLocked(normalizedEmail); ok {
+			return Session{}, NewError("USER_EMAIL_ALREADY_EXISTS", "邮箱已被使用，请直接登录或换一个邮箱")
+		}
+	}
+
+	normalizedReferralCode := normalizeReferralCode(referralCode)
+	referredByUsername := ""
+	if normalizedReferralCode != "" {
+		index, ok := s.findByReferralCodeLocked(normalizedReferralCode)
+		if !ok {
+			return Session{}, NewError("REFERRAL_CODE_INVALID", "邀请码无效")
+		}
+		referredByUsername = s.current.Users[index].Username
+	}
+
 	salt, err := randomHex(16)
+	if err != nil {
+		return Session{}, err
+	}
+	newReferralCode, err := s.generateReferralCodeLocked()
 	if err != nil {
 		return Session{}, err
 	}
 	now := time.Now().Format(time.RFC3339)
 	s.current.Users = append(s.current.Users, record{
-		Username:     displayName,
-		DisplayName:  displayName,
-		StorageToken: storageToken,
-		SaltHex:      salt,
-		HashHex:      hashPassword(salt, password),
-		CreatedAt:    now,
-		UpdatedAt:    now,
-		LastLoginAt:  now,
+		Username:           displayName,
+		DisplayName:        displayName,
+		Email:              normalizedEmail,
+		IsAdmin:            len(s.current.Users) == 0,
+		CreditsBalance:     0,
+		ReferralCode:       newReferralCode,
+		ReferredByCode:     normalizedReferralCode,
+		ReferredByUsername: referredByUsername,
+		StorageToken:       storageToken,
+		SaltHex:            salt,
+		HashHex:            hashPassword(salt, password),
+		CreatedAt:          now,
+		UpdatedAt:          now,
+		LastLoginAt:        now,
 	})
 	if err := s.saveLocked(); err != nil {
 		return Session{}, err
@@ -137,14 +222,14 @@ func (s *Store) Register(username string, password string, storageToken string) 
 	return s.newSessionLocked(normalized)
 }
 
-func (s *Store) Login(username string, password string, twoFactorCode string) (Session, error) {
-	normalized, _, err := normalizeUsername(username)
-	if err != nil {
-		return Session{}, err
+func (s *Store) Login(identifier string, password string, twoFactorCode string) (Session, error) {
+	identifier = strings.TrimSpace(identifier)
+	if identifier == "" {
+		return Session{}, NewError("USER_LOGIN_INVALID", "用户名或密码错误")
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	index, ok := s.findLocked(normalized)
+	index, ok := s.findByIdentifierLocked(identifier)
 	if !ok {
 		return Session{}, NewError("USER_LOGIN_INVALID", "用户名或密码错误")
 	}
@@ -166,7 +251,7 @@ func (s *Store) Login(username string, password string, twoFactorCode string) (S
 	if err := s.saveLocked(); err != nil {
 		return Session{}, err
 	}
-	return s.newSessionLocked(normalized)
+	return s.newSessionLocked(s.current.Users[index].Username)
 }
 
 func (s *Store) Current(token string) (Session, bool) {
@@ -200,16 +285,113 @@ func (s *Store) ListAdminUsers() []AdminUser {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	items := make([]AdminUser, 0, len(s.current.Users))
-	for _, user := range s.current.Users {
-		items = append(items, adminUserFromRecord(user))
+	for i := range s.current.Users {
+		items = append(items, adminUserFromRecord(s.current.Users[i]))
 	}
 	return items
 }
 
-func (s *Store) AddVideoQuota(username string, delta int) (AdminUser, error) {
-	if delta <= 0 {
-		return AdminUser{}, NewError("USER_VIDEO_QUOTA_DELTA_INVALID", "增加额度必须大于 0")
+func (s *Store) Profile(username string) (PublicUser, error) {
+	normalized, _, err := normalizeUsername(username)
+	if err != nil {
+		return PublicUser{}, err
 	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	index, ok := s.findLocked(normalized)
+	if !ok {
+		return PublicUser{}, NewError("USER_NOT_FOUND", "用户不存在")
+	}
+	return publicUserFromRecord(s.current.Users[index]), nil
+}
+
+func (s *Store) UpdateProfile(username string, update ProfileUpdate) (PublicUser, error) {
+	normalized, _, err := normalizeUsername(username)
+	if err != nil {
+		return PublicUser{}, err
+	}
+	displayName, err := normalizeDisplayName(update.DisplayName)
+	if err != nil {
+		return PublicUser{}, err
+	}
+	email, err := normalizeEmail(update.Email)
+	if err != nil {
+		return PublicUser{}, err
+	}
+	avatarURL, err := normalizeAvatarURL(update.AvatarURL)
+	if err != nil {
+		return PublicUser{}, err
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	index, ok := s.findLocked(normalized)
+	if !ok {
+		return PublicUser{}, NewError("USER_NOT_FOUND", "用户不存在")
+	}
+	if email != "" {
+		if existing, ok := s.findByEmailLocked(email); ok && existing != index {
+			return PublicUser{}, NewError("USER_EMAIL_ALREADY_EXISTS", "邮箱已被使用，请换一个邮箱")
+		}
+	}
+	if displayName == "" {
+		displayName = s.current.Users[index].Username
+	}
+	s.current.Users[index].DisplayName = displayName
+	s.current.Users[index].Email = email
+	s.current.Users[index].AvatarURL = avatarURL
+	s.current.Users[index].UpdatedAt = time.Now().Format(time.RFC3339)
+	if err := s.saveLocked(); err != nil {
+		return PublicUser{}, err
+	}
+	return publicUserFromRecord(s.current.Users[index]), nil
+}
+
+func (s *Store) EnsureReferralCode(username string) (PublicUser, error) {
+	normalized, _, err := normalizeUsername(username)
+	if err != nil {
+		return PublicUser{}, err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	index, ok := s.findLocked(normalized)
+	if !ok {
+		return PublicUser{}, NewError("USER_NOT_FOUND", "用户不存在")
+	}
+	if strings.TrimSpace(s.current.Users[index].ReferralCode) == "" {
+		code, err := s.generateReferralCodeLocked()
+		if err != nil {
+			return PublicUser{}, err
+		}
+		s.current.Users[index].ReferralCode = code
+		s.current.Users[index].UpdatedAt = time.Now().Format(time.RFC3339)
+		if err := s.saveLocked(); err != nil {
+			return PublicUser{}, err
+		}
+	}
+	return publicUserFromRecord(s.current.Users[index]), nil
+}
+
+func (s *Store) ListCreditLedger(username string) ([]CreditLedgerEntry, error) {
+	normalized, _, err := normalizeUsername(username)
+	if err != nil {
+		return nil, err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.findLocked(normalized); !ok {
+		return nil, NewError("USER_NOT_FOUND", "用户不存在")
+	}
+	items := make([]CreditLedgerEntry, 0)
+	for _, entry := range s.current.CreditLedger {
+		if normalizeUsernameKey(entry.Username) == normalized {
+			items = append(items, entry)
+		}
+	}
+	return items, nil
+}
+
+func (s *Store) SetAdmin(username string, isAdmin bool) (AdminUser, error) {
 	normalized, _, err := normalizeUsername(username)
 	if err != nil {
 		return AdminUser{}, err
@@ -220,7 +402,10 @@ func (s *Store) AddVideoQuota(username string, delta int) (AdminUser, error) {
 	if !ok {
 		return AdminUser{}, NewError("USER_NOT_FOUND", "用户不存在")
 	}
-	s.current.Users[index].VideoQuota += delta
+	if !isAdmin && s.current.Users[index].IsAdmin && s.countAdminsLocked() == 1 {
+		return AdminUser{}, NewError("USER_LAST_ADMIN_REQUIRED", "至少需要保留一个管理员")
+	}
+	s.current.Users[index].IsAdmin = isAdmin
 	s.current.Users[index].UpdatedAt = time.Now().Format(time.RFC3339)
 	if err := s.saveLocked(); err != nil {
 		return AdminUser{}, err
@@ -228,62 +413,93 @@ func (s *Store) AddVideoQuota(username string, delta int) (AdminUser, error) {
 	return adminUserFromRecord(s.current.Users[index]), nil
 }
 
-func (s *Store) ConsumeVideoQuota(username string, amount int) (int, error) {
+func (s *Store) AddCreditsByAdmin(username string, amount int, reason string, adminActor string) (AdminUser, CreditLedgerEntry, error) {
 	if amount <= 0 {
-		return 0, NewError("USER_VIDEO_QUOTA_AMOUNT_INVALID", "消耗额度必须大于 0")
+		return AdminUser{}, CreditLedgerEntry{}, NewError("USER_CREDITS_AMOUNT_INVALID", "增加次数必须大于 0")
+	}
+	reason = strings.TrimSpace(reason)
+	if reason == "" {
+		return AdminUser{}, CreditLedgerEntry{}, NewError("USER_CREDITS_REASON_REQUIRED", "管理员加次数必须填写原因")
 	}
 	normalized, _, err := normalizeUsername(username)
 	if err != nil {
-		return 0, err
+		return AdminUser{}, CreditLedgerEntry{}, err
+	}
+	adminActor = strings.TrimSpace(adminActor)
+	if adminActor == "" {
+		adminActor = "admin"
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	index, ok := s.findLocked(normalized)
 	if !ok {
-		return 0, NewError("USER_NOT_FOUND", "用户不存在")
+		return AdminUser{}, CreditLedgerEntry{}, NewError("USER_NOT_FOUND", "用户不存在")
 	}
-	if s.current.Users[index].VideoQuota < amount {
-		return s.current.Users[index].VideoQuota, NewError("USER_VIDEO_QUOTA_NOT_ENOUGH", "视频额度不足，请联系管理员增加额度")
+	now := time.Now().Format(time.RFC3339)
+	entry, err := s.appendCreditLedgerLocked(index, amount, creditLedgerTypeAdminAdd, reason, "", adminActor, "", now)
+	if err != nil {
+		return AdminUser{}, CreditLedgerEntry{}, err
 	}
-	s.current.Users[index].VideoQuota -= amount
-	s.current.Users[index].UpdatedAt = time.Now().Format(time.RFC3339)
 	if err := s.saveLocked(); err != nil {
-		return 0, err
+		return AdminUser{}, CreditLedgerEntry{}, err
 	}
-	return s.current.Users[index].VideoQuota, nil
+	return adminUserFromRecord(s.current.Users[index]), entry, nil
 }
 
-func (s *Store) RefundVideoQuota(username string, amount int) {
+func (s *Store) AddPurchaseCredits(username string, amount int, sourceID string, referralRewardCredits int) (PurchaseCreditResult, error) {
 	if amount <= 0 {
-		return
+		return PurchaseCreditResult{}, NewError("USER_CREDITS_AMOUNT_INVALID", "入账次数必须大于 0")
+	}
+	sourceID = strings.TrimSpace(sourceID)
+	if sourceID == "" {
+		return PurchaseCreditResult{}, NewError("USER_CREDITS_SOURCE_REQUIRED", "购买入账必须包含订单号")
 	}
 	normalized, _, err := normalizeUsername(username)
 	if err != nil {
-		return
+		return PurchaseCreditResult{}, err
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	index, ok := s.findLocked(normalized)
-	if !ok {
-		return
+	if existing, ok := s.findLedgerBySourceLocked(creditLedgerTypePurchase, sourceID); ok {
+		if normalizeUsernameKey(existing.Username) != normalized {
+			return PurchaseCreditResult{}, NewError("USER_CREDITS_SOURCE_CONFLICT", "订单号已被其他用户使用")
+		}
+		index, ok := s.findLocked(existing.Username)
+		if !ok {
+			return PurchaseCreditResult{}, NewError("USER_NOT_FOUND", "用户不存在")
+		}
+		return PurchaseCreditResult{User: adminUserFromRecord(s.current.Users[index]), Entry: existing, Created: false}, nil
 	}
-	s.current.Users[index].VideoQuota += amount
-	s.current.Users[index].UpdatedAt = time.Now().Format(time.RFC3339)
-	_ = s.saveLocked()
-}
 
-func (s *Store) VideoQuota(username string) (int, error) {
-	normalized, _, err := normalizeUsername(username)
-	if err != nil {
-		return 0, err
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
 	index, ok := s.findLocked(normalized)
 	if !ok {
-		return 0, NewError("USER_NOT_FOUND", "用户不存在")
+		return PurchaseCreditResult{}, NewError("USER_NOT_FOUND", "用户不存在")
 	}
-	return s.current.Users[index].VideoQuota, nil
+	now := time.Now().Format(time.RFC3339)
+	entry, err := s.appendCreditLedgerLocked(index, amount, creditLedgerTypePurchase, "购买入账", sourceID, "", "", now)
+	if err != nil {
+		return PurchaseCreditResult{}, err
+	}
+	result := PurchaseCreditResult{Entry: entry, Created: true}
+	buyerIndex := index
+	buyer := s.current.Users[buyerIndex]
+	if referralRewardCredits > 0 && buyer.ReferredByUsername != "" && buyer.ReferralRewardedAt == "" {
+		inviterIndex, ok := s.findLocked(buyer.ReferredByUsername)
+		if ok && inviterIndex != buyerIndex {
+			reward, err := s.appendCreditLedgerLocked(inviterIndex, referralRewardCredits, creditLedgerTypeReferralReward, "邀请用户首次充值奖励", "referral:"+sourceID, "", buyer.Username, now)
+			if err != nil {
+				return PurchaseCreditResult{}, err
+			}
+			result.ReferralEntry = &reward
+			s.current.Users[buyerIndex].ReferralRewardedAt = now
+			s.current.Users[buyerIndex].UpdatedAt = now
+		}
+	}
+	if err := s.saveLocked(); err != nil {
+		return PurchaseCreditResult{}, err
+	}
+	result.User = adminUserFromRecord(s.current.Users[index])
+	return result, nil
 }
 
 func (s *Store) BeginTOTPSetup(username string) (TOTPSetup, error) {
@@ -367,7 +583,7 @@ func (s *Store) newSessionLocked(username string) (Session, error) {
 		return Session{}, err
 	}
 	expires := time.Now().Add(SessionTTL)
-	s.sessions[token] = sessionRecord{Username: username, ExpiresAt: expires}
+	s.sessions[token] = sessionRecord{Username: s.current.Users[index].Username, ExpiresAt: expires}
 	return sessionFromRecord(s.current.Users[index], token, expires), nil
 }
 
@@ -379,6 +595,111 @@ func (s *Store) findLocked(username string) (int, bool) {
 		}
 	}
 	return -1, false
+}
+
+func (s *Store) findByIdentifierLocked(identifier string) (int, bool) {
+	if index, ok := s.findLocked(identifier); ok {
+		return index, true
+	}
+	return s.findByEmailLocked(normalizeEmailKey(identifier))
+}
+
+func (s *Store) findByEmailLocked(email string) (int, bool) {
+	email = normalizeEmailKey(email)
+	if email == "" {
+		return -1, false
+	}
+	for i := range s.current.Users {
+		if normalizeEmailKey(s.current.Users[i].Email) == email {
+			return i, true
+		}
+	}
+	return -1, false
+}
+
+func (s *Store) findByReferralCodeLocked(code string) (int, bool) {
+	code = normalizeReferralCode(code)
+	if code == "" {
+		return -1, false
+	}
+	for i := range s.current.Users {
+		if normalizeReferralCode(s.current.Users[i].ReferralCode) == code {
+			return i, true
+		}
+	}
+	return -1, false
+}
+
+func (s *Store) findLedgerBySourceLocked(entryType string, sourceID string) (CreditLedgerEntry, bool) {
+	entryType = strings.TrimSpace(entryType)
+	sourceID = strings.TrimSpace(sourceID)
+	if sourceID == "" {
+		return CreditLedgerEntry{}, false
+	}
+	for _, entry := range s.current.CreditLedger {
+		if entry.Type == entryType && strings.TrimSpace(entry.SourceID) == sourceID {
+			return entry, true
+		}
+	}
+	return CreditLedgerEntry{}, false
+}
+
+func (s *Store) appendCreditLedgerLocked(index int, delta int, entryType string, reason string, sourceID string, adminActor string, relatedUsername string, now string) (CreditLedgerEntry, error) {
+	entryType = strings.TrimSpace(entryType)
+	if entryType == "" {
+		return CreditLedgerEntry{}, NewError("USER_CREDIT_TYPE_REQUIRED", "额度流水类型不能为空")
+	}
+	if delta == 0 {
+		return CreditLedgerEntry{}, NewError("USER_CREDIT_DELTA_INVALID", "额度变动不能为 0")
+	}
+	nextBalance := s.current.Users[index].CreditsBalance + delta
+	if nextBalance < 0 {
+		return CreditLedgerEntry{}, NewError("USER_CREDITS_NOT_ENOUGH", "次数不足")
+	}
+	id, err := newLedgerID()
+	if err != nil {
+		return CreditLedgerEntry{}, err
+	}
+	s.current.Users[index].CreditsBalance = nextBalance
+	s.current.Users[index].UpdatedAt = now
+	entry := CreditLedgerEntry{
+		ID:              id,
+		Username:        s.current.Users[index].Username,
+		Delta:           delta,
+		BalanceAfter:    nextBalance,
+		Type:            entryType,
+		Reason:          strings.TrimSpace(reason),
+		SourceID:        strings.TrimSpace(sourceID),
+		AdminActor:      strings.TrimSpace(adminActor),
+		RelatedUsername: strings.TrimSpace(relatedUsername),
+		CreatedAt:       now,
+	}
+	s.current.CreditLedger = append(s.current.CreditLedger, entry)
+	return entry, nil
+}
+
+func (s *Store) generateReferralCodeLocked() (string, error) {
+	for i := 0; i < 16; i++ {
+		value, err := randomHex(4)
+		if err != nil {
+			return "", err
+		}
+		code := strings.ToUpper(value)
+		if _, ok := s.findByReferralCodeLocked(code); !ok {
+			return code, nil
+		}
+	}
+	return "", NewError("REFERRAL_CODE_GENERATE_FAILED", "生成邀请码失败，请稍后重试")
+}
+
+func (s *Store) countAdminsLocked() int {
+	count := 0
+	for _, user := range s.current.Users {
+		if user.IsAdmin {
+			count++
+		}
+	}
+	return count
 }
 
 func (s *Store) pruneLocked(now time.Time) {
@@ -406,28 +727,44 @@ func (s *Store) saveLocked() error {
 
 func sessionFromRecord(user record, token string, expires time.Time) Session {
 	return Session{
-		User: PublicUser{
-			Username:         user.Username,
-			DisplayName:      user.DisplayName,
-			TwoFactorEnabled: user.TOTPEnabled,
-			VideoQuota:       user.VideoQuota,
-			CreatedAt:        user.CreatedAt,
-			LastLoginAt:      user.LastLoginAt,
-		},
+		User:         publicUserFromRecord(user),
 		ExpiresAt:    expires.Format(time.RFC3339),
 		Token:        token,
 		StorageToken: user.StorageToken,
 	}
 }
 
+func publicUserFromRecord(user record) PublicUser {
+	return PublicUser{
+		Username:           user.Username,
+		DisplayName:        user.DisplayName,
+		Email:              user.Email,
+		AvatarURL:          user.AvatarURL,
+		IsAdmin:            user.IsAdmin,
+		CreditsBalance:     user.CreditsBalance,
+		ReferralCode:       user.ReferralCode,
+		ReferredByUsername: user.ReferredByUsername,
+		TwoFactorEnabled:   user.TOTPEnabled,
+		CreatedAt:          user.CreatedAt,
+		LastLoginAt:        user.LastLoginAt,
+	}
+}
+
 func adminUserFromRecord(user record) AdminUser {
 	return AdminUser{
-		Username:         user.Username,
-		DisplayName:      user.DisplayName,
-		TwoFactorEnabled: user.TOTPEnabled,
-		VideoQuota:       user.VideoQuota,
-		CreatedAt:        user.CreatedAt,
-		LastLoginAt:      user.LastLoginAt,
+		Username:           user.Username,
+		DisplayName:        user.DisplayName,
+		Email:              user.Email,
+		AvatarURL:          user.AvatarURL,
+		IsAdmin:            user.IsAdmin,
+		CreditsBalance:     user.CreditsBalance,
+		ReferralCode:       user.ReferralCode,
+		ReferredByCode:     user.ReferredByCode,
+		ReferredByUsername: user.ReferredByUsername,
+		ReferralRewardedAt: user.ReferralRewardedAt,
+		TwoFactorEnabled:   user.TOTPEnabled,
+		CreatedAt:          user.CreatedAt,
+		LastLoginAt:        user.LastLoginAt,
 	}
 }
 
@@ -444,6 +781,45 @@ func normalizeUsernameKey(username string) string {
 	return strings.ToLower(strings.TrimSpace(username))
 }
 
+func normalizeEmail(email string) (string, error) {
+	email = strings.TrimSpace(email)
+	if email == "" {
+		return "", nil
+	}
+	address, err := mail.ParseAddress(email)
+	if err != nil || address.Name != "" || address.Address != email || !strings.Contains(address.Address, "@") {
+		return "", NewError("EMAIL_INVALID", "邮箱格式无效")
+	}
+	if len(address.Address) > 254 {
+		return "", NewError("EMAIL_INVALID", "邮箱长度不能超过 254 个字符")
+	}
+	return normalizeEmailKey(address.Address), nil
+}
+
+func normalizeEmailKey(email string) string {
+	return strings.ToLower(strings.TrimSpace(email))
+}
+
+func normalizeDisplayName(displayName string) (string, error) {
+	displayName = strings.TrimSpace(displayName)
+	if len([]rune(displayName)) > 64 {
+		return "", NewError("USER_DISPLAY_NAME_INVALID", "昵称不能超过 64 个字符")
+	}
+	return displayName, nil
+}
+
+func normalizeAvatarURL(avatarURL string) (string, error) {
+	avatarURL = strings.TrimSpace(avatarURL)
+	if len(avatarURL) > 2048 {
+		return "", NewError("USER_AVATAR_URL_INVALID", "头像地址不能超过 2048 个字符")
+	}
+	return avatarURL, nil
+}
+
+func normalizeReferralCode(code string) string {
+	return strings.ToUpper(strings.TrimSpace(code))
+}
+
 func hashPassword(saltHex string, password string) string {
 	sum := sha256.Sum256([]byte(strings.TrimSpace(saltHex) + ":" + strings.TrimSpace(password)))
 	return hex.EncodeToString(sum[:])
@@ -455,6 +831,14 @@ func randomHex(size int) (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(data), nil
+}
+
+func newLedgerID() (string, error) {
+	value, err := randomHex(12)
+	if err != nil {
+		return "", err
+	}
+	return "ledger_" + value, nil
 }
 
 type Error struct {
