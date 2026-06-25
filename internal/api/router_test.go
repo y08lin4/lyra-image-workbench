@@ -13,6 +13,7 @@ import (
 	"github.com/y08lin4/lyra-image-workbench/internal/adminauth"
 	"github.com/y08lin4/lyra-image-workbench/internal/config"
 	"github.com/y08lin4/lyra-image-workbench/internal/events"
+	"github.com/y08lin4/lyra-image-workbench/internal/gifrender"
 	"github.com/y08lin4/lyra-image-workbench/internal/jobs"
 	"github.com/y08lin4/lyra-image-workbench/internal/llm"
 	"github.com/y08lin4/lyra-image-workbench/internal/newapi"
@@ -90,6 +91,27 @@ func TestPromptLibraryAPIRequiresLogin(t *testing.T) {
 		{http.MethodPost, "/api/prompt-library/refresh"},
 	} {
 		req := httptest.NewRequest(tc.method, tc.path, nil)
+		res := httptest.NewRecorder()
+		router.ServeHTTP(res, req)
+		if res.Code != http.StatusUnauthorized {
+			t.Fatalf("%s %s without login code=%d body=%s", tc.method, tc.path, res.Code, res.Body.String())
+		}
+	}
+}
+
+func TestGIFAPIsRequireLogin(t *testing.T) {
+	router := newTestRouter(t)
+	for _, tc := range []struct {
+		method string
+		path   string
+		body   string
+	}{
+		{http.MethodGet, "/api/gif/status", ""},
+		{http.MethodPost, "/api/gif/plans", `{}`},
+		{http.MethodPost, "/api/gif-renders", `{}`},
+		{http.MethodGet, "/api/gif-renders/gifrender_missing", ""},
+	} {
+		req := httptest.NewRequest(tc.method, tc.path, strings.NewReader(tc.body))
 		res := httptest.NewRecorder()
 		router.ServeHTTP(res, req)
 		if res.Code != http.StatusUnauthorized {
@@ -307,13 +329,15 @@ func newTestAPIEnv(t *testing.T) testAPIEnv {
 	}
 	jobStore := jobs.NewStore(spaceStore)
 	jobManager := jobs.NewManager(jobStore, events.NewHub(), settingsStore, spaceConfigStore, uploadStore, outputStore, newapi.NewClient())
+	llmClient := llm.NewClient()
 	promptStore := prompttools.NewStore(spaceStore)
-	promptService := prompttools.NewService(promptStore, settingsStore, spaceConfigStore, uploadStore, jobManager, outputStore, llm.NewClient())
+	promptService := prompttools.NewService(promptStore, settingsStore, spaceConfigStore, uploadStore, jobManager, outputStore, llmClient)
 	promptLibraryService := promptlibrary.NewService(filepath.Join(cfg.DataDir, "cache", "prompt-library"))
 	promptSquareStore, err := promptsquare.NewStore(cfg.DataDir)
 	if err != nil {
 		t.Fatalf("promptsquare.NewStore() error = %v", err)
 	}
+	gifService := gifrender.NewService(gifrender.NewFFmpegRenderer(gifrender.ConfigFromApp(cfg)), gifrender.NewStore(spaceStore))
 
 	router := NewRouter(Dependencies{
 		Config:        cfg,
@@ -328,6 +352,8 @@ func newTestAPIEnv(t *testing.T) testAPIEnv {
 		PromptLibrary: promptLibraryService,
 		PromptSquare:  promptSquareStore,
 		PromptTools:   promptService,
+		LLM:           llmClient,
+		GIF:           gifService,
 	})
 	return testAPIEnv{Router: router, Spaces: spaceStore, Output: outputStore}
 }

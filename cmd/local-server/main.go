@@ -10,6 +10,7 @@ import (
 	"github.com/y08lin4/lyra-image-workbench/internal/api"
 	"github.com/y08lin4/lyra-image-workbench/internal/config"
 	"github.com/y08lin4/lyra-image-workbench/internal/events"
+	"github.com/y08lin4/lyra-image-workbench/internal/gifrender"
 	"github.com/y08lin4/lyra-image-workbench/internal/jobs"
 	"github.com/y08lin4/lyra-image-workbench/internal/llm"
 	"github.com/y08lin4/lyra-image-workbench/internal/newapi"
@@ -56,9 +57,13 @@ func main() {
 	eventHub := events.NewHub()
 	jobStore := jobs.NewStore(spaceStore)
 	jobManager := jobs.NewManager(jobStore, eventHub, settingsStore, spaceConfigStore, uploadStore, outputStore, newapi.NewClient())
+	llmClient := llm.NewClient()
 	promptStore := prompttools.NewStore(spaceStore)
-	promptService := prompttools.NewService(promptStore, settingsStore, spaceConfigStore, uploadStore, jobManager, outputStore, llm.NewClient())
+	promptService := prompttools.NewService(promptStore, settingsStore, spaceConfigStore, uploadStore, jobManager, outputStore, llmClient)
 	promptLibraryService := promptlibrary.NewService(filepath.Join(cfg.DataDir, "cache", "prompt-library"))
+	gifStore := gifrender.NewStore(spaceStore)
+	gifRenderer := gifrender.NewFFmpegRenderer(gifrender.ConfigFromApp(cfg))
+	gifService := gifrender.NewService(gifRenderer, gifStore)
 	if err := jobManager.Recover(); err != nil {
 		log.Printf("恢复任务状态失败：%v", err)
 	}
@@ -76,6 +81,8 @@ func main() {
 		PromptLibrary: promptLibraryService,
 		PromptSquare:  promptSquareStore,
 		PromptTools:   promptService,
+		LLM:           llmClient,
+		GIF:           gifService,
 	})
 	httpServer := server.New(cfg, router)
 

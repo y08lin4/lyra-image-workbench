@@ -5,7 +5,9 @@ import (
 
 	"github.com/y08lin4/lyra-image-workbench/internal/adminauth"
 	"github.com/y08lin4/lyra-image-workbench/internal/config"
+	"github.com/y08lin4/lyra-image-workbench/internal/gifrender"
 	"github.com/y08lin4/lyra-image-workbench/internal/jobs"
+	"github.com/y08lin4/lyra-image-workbench/internal/llm"
 	"github.com/y08lin4/lyra-image-workbench/internal/output"
 	"github.com/y08lin4/lyra-image-workbench/internal/promptlibrary"
 	"github.com/y08lin4/lyra-image-workbench/internal/promptsquare"
@@ -30,6 +32,8 @@ type Dependencies struct {
 	PromptLibrary *promptlibrary.Service
 	PromptSquare  *promptsquare.Store
 	PromptTools   *prompttools.Service
+	LLM           *llm.Client
+	GIF           *gifrender.Service
 }
 
 func NewRouter(deps Dependencies) http.Handler {
@@ -46,6 +50,7 @@ func NewRouter(deps Dependencies) http.Handler {
 	promptLibraryHandler := NewPromptLibraryHandler(deps.PromptLibrary)
 	outputHandler := NewOutputHandler(deps.Output)
 	promptSquareHandler := NewPromptSquareHandler(deps.PromptSquare)
+	gifHandler := NewGIFHandler(deps.Config, deps.Jobs, deps.Output, deps.Uploads, deps.Settings, deps.SpaceConfig, deps.LLM, deps.GIF)
 	staticHandler := NewStaticHandler(deps.Config.WebDir)
 
 	mux.HandleFunc("GET /api/health", health.ServeHTTP)
@@ -96,6 +101,11 @@ func NewRouter(deps Dependencies) http.Handler {
 	mux.HandleFunc("GET /api/prompt-square/items", promptSquareHandler.List)
 	mux.HandleFunc("POST /api/prompt-square/items", promptSquareHandler.Create)
 	mux.HandleFunc("GET /api/prompt-square/images/{file}", promptSquareHandler.Image)
+	mux.HandleFunc("GET /api/gif/status", gifHandler.Status)
+	mux.HandleFunc("POST /api/gif/plans", gifHandler.Plan)
+	mux.HandleFunc("POST /api/gif-renders", gifHandler.CreateRender)
+	mux.HandleFunc("GET /api/gif-renders/{id}", gifHandler.GetRender)
+	mux.HandleFunc("GET /api/gif-renders/{id}/file", gifHandler.File)
 	mux.HandleFunc("GET /outputs/{space}/{date}/{file}", outputHandler.Serve)
 	mux.HandleFunc("GET /", staticHandler.Serve)
 

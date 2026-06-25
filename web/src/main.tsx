@@ -1,6 +1,7 @@
 ﻿import { useEffect, useState } from 'react'
 import ReactDOM from 'react-dom/client'
 import { AdminPage } from './components/AdminPage'
+import { GifWorkbenchPage } from './components/GifWorkbenchPage'
 import { WorkbenchPage } from './components/WorkbenchPage'
 import type { ThemeMode } from './components/ThemeToggle'
 import './styles.css'
@@ -20,9 +21,9 @@ function App() {
   }, [theme])
 
   const toggleTheme = () => setTheme((current) => current === 'dark' ? 'light' : 'dark')
-  return window.location.pathname === '/admin'
-    ? <AdminPage theme={theme} onToggleTheme={toggleTheme} />
-    : <WorkbenchPage theme={theme} onToggleTheme={toggleTheme} />
+  if (window.location.pathname === '/admin') return <AdminPage theme={theme} onToggleTheme={toggleTheme} />
+  if (window.location.pathname === '/gif') return <GifWorkbenchPage theme={theme} onToggleTheme={toggleTheme} />
+  return <WorkbenchPage theme={theme} onToggleTheme={toggleTheme} />
 }
 
 ReactDOM.createRoot(document.getElementById('root')!).render(<App />)

@@ -104,6 +104,7 @@ export interface Task {
   model?: string
   mode: Mode
   prompt: string
+  framePrompts?: string[]
   ratio: string
   resolution: string
   quality: string
@@ -143,6 +144,7 @@ export interface CreateTaskRequest {
   model: string
   mode: Mode
   prompt: string
+  framePrompts?: string[]
   ratio: string
   resolution: string
   quality: string

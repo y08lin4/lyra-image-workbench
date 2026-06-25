@@ -96,6 +96,9 @@ services:
       LOCAL_IMAGE_PORT: 8787
       NEWAPI_BASE_URL: http://host.docker.internal:3000/v1
       NEWAPI_TIMEOUT_SEC: 600
+      GIF_ENABLED: "true"
+      FFMPEG_BIN: ffmpeg
+      GIF_WORK_DIR: /app/data/gif_work
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
@@ -119,6 +122,9 @@ services:
       LOCAL_IMAGE_PORT: 8787
       NEWAPI_BASE_URL: http://host.docker.internal:3000/v1
       NEWAPI_TIMEOUT_SEC: 600
+      GIF_ENABLED: "true"
+      FFMPEG_BIN: ffmpeg
+      GIF_WORK_DIR: /app/data/gif_work
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
@@ -174,3 +180,28 @@ docker run --rm -p 8787:8787 \
   -v "$(pwd)/outputs:/app/outputs" \
   lyra-image-workbench:local
 ```
+
+## GIF / FFmpeg
+
+The Docker image installs `ffmpeg` in the Alpine runtime stage, and the backend verifies it before allowing final GIF merging. FFmpeg is still treated as an external command dependency: it is not bundled into the Go binary and cgo is not used. The runtime FFmpeg must report version `8.1.2` or newer; older or unparsable versions disable only GIF merging.
+
+If you build a custom runtime image, include:
+
+```dockerfile
+RUN apk add --no-cache ffmpeg
+```
+
+Useful environment variables:
+
+```yaml
+environment:
+  GIF_ENABLED: "true"
+  FFMPEG_BIN: ffmpeg
+  GIF_WORK_DIR: /app/data/gif_work
+  GIF_MAX_FRAMES: 24
+  GIF_MAX_FPS: 15
+  GIF_MAX_SIZE: 1024
+  GIF_RENDER_TIMEOUT_SEC: 60
+```
+
+If `ffmpeg -version` is not available inside the container, or if the reported version is below `8.1.2`, `/gif` can still generate frames but the merge button is disabled.
