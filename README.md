@@ -488,6 +488,7 @@ CI 会在 push 和 PR 时运行：
 - [`docs/DOCKER.md`](docs/DOCKER.md)：Docker 镜像、Docker Compose、GHCR 拉取和数据卷说明。
 - [`docs/DEPLOY_LINUX.md`](docs/DEPLOY_LINUX.md)：Linux 服务器部署、systemd、Nginx/Caddy、升级和备份。
 - [`docs/DEPLOY_BAOTA.md`](docs/DEPLOY_BAOTA.md)：宝塔面板 Go 项目部署教程。
+- [`docs/MINIMAX_VIDEO.md`](docs/MINIMAX_VIDEO.md)：MiniMax 文生视频、Admin Key 与用户额度设计。
 - [`docs/CHANGES_FROM_AI_IMAGE_GENERATE.md`](docs/CHANGES_FROM_AI_IMAGE_GENERATE.md)：相较参考项目的架构和功能更新。
 - [`docs/STACK.md`](docs/STACK.md)：Go 后端与 React/Vite 前端选型。
 - [`docs/PROJECT_REQUIREMENTS.md`](docs/PROJECT_REQUIREMENTS.md)：项目模块化和稳定性要求。

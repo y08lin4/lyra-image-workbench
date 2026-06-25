@@ -20,19 +20,22 @@ type RuntimeConfig struct {
 	DebugEnabled  bool   `json:"debugEnabled"`
 	TimeoutSec    int    `json:"timeoutSec"`
 	Model         string `json:"model"`
+	MiniMaxAPIKey string `json:"minimaxApiKey,omitempty"`
 	UpdatedAt     string `json:"updatedAt"`
 }
 
 type PublicRuntimeConfig struct {
-	NewAPIBaseURL string `json:"newApiBaseUrl"`
-	PublicBaseURL string `json:"publicBaseUrl"`
-	DebugEnabled  bool   `json:"debugEnabled"`
-	TimeoutSec    int    `json:"timeoutSec"`
-	Model         string `json:"model"`
-	ModelLocked   bool   `json:"modelLocked"`
-	TimeoutCode   string `json:"timeoutCode"`
-	UpdatedAt     string `json:"updatedAt"`
-	Limits        Limits `json:"limits"`
+	NewAPIBaseURL        string `json:"newApiBaseUrl"`
+	PublicBaseURL        string `json:"publicBaseUrl"`
+	DebugEnabled         bool   `json:"debugEnabled"`
+	TimeoutSec           int    `json:"timeoutSec"`
+	Model                string `json:"model"`
+	ModelLocked          bool   `json:"modelLocked"`
+	MiniMaxAPIKeySet     bool   `json:"minimaxApiKeySet"`
+	MiniMaxAPIKeyPreview string `json:"minimaxApiKeyPreview"`
+	TimeoutCode          string `json:"timeoutCode"`
+	UpdatedAt            string `json:"updatedAt"`
+	Limits               Limits `json:"limits"`
 }
 
 type Limits struct {
@@ -41,10 +44,12 @@ type Limits struct {
 }
 
 type Update struct {
-	NewAPIBaseURL *string `json:"newApiBaseUrl"`
-	PublicBaseURL *string `json:"publicBaseUrl"`
-	DebugEnabled  *bool   `json:"debugEnabled"`
-	TimeoutSec    *int    `json:"timeoutSec"`
+	NewAPIBaseURL      *string `json:"newApiBaseUrl"`
+	PublicBaseURL      *string `json:"publicBaseUrl"`
+	DebugEnabled       *bool   `json:"debugEnabled"`
+	TimeoutSec         *int    `json:"timeoutSec"`
+	MiniMaxAPIKey      *string `json:"minimaxApiKey"`
+	ClearMiniMaxAPIKey *bool   `json:"clearMinimaxApiKey"`
 }
 
 type FileStore struct {
@@ -113,6 +118,12 @@ func (s *FileStore) Update(update Update) (RuntimeConfig, error) {
 	if update.TimeoutSec != nil {
 		next.TimeoutSec = *update.TimeoutSec
 	}
+	if update.MiniMaxAPIKey != nil && strings.TrimSpace(*update.MiniMaxAPIKey) != "" {
+		next.MiniMaxAPIKey = strings.TrimSpace(*update.MiniMaxAPIKey)
+	}
+	if update.ClearMiniMaxAPIKey != nil && *update.ClearMiniMaxAPIKey {
+		next.MiniMaxAPIKey = ""
+	}
 
 	normalized, err := validate(next)
 	if err != nil {
@@ -155,6 +166,9 @@ func merge(base RuntimeConfig, loaded RuntimeConfig) RuntimeConfig {
 	if strings.TrimSpace(loaded.UpdatedAt) != "" {
 		base.UpdatedAt = loaded.UpdatedAt
 	}
+	if strings.TrimSpace(loaded.MiniMaxAPIKey) != "" {
+		base.MiniMaxAPIKey = strings.TrimSpace(loaded.MiniMaxAPIKey)
+	}
 	base.Model = config.DefaultModel
 	return base
 }
@@ -193,6 +207,7 @@ func validate(value RuntimeConfig) (RuntimeConfig, error) {
 		DebugEnabled:  value.DebugEnabled,
 		TimeoutSec:    value.TimeoutSec,
 		Model:         config.DefaultModel,
+		MiniMaxAPIKey: strings.TrimSpace(value.MiniMaxAPIKey),
 		UpdatedAt:     strings.TrimSpace(value.UpdatedAt),
 	}, nil
 }
@@ -233,17 +248,30 @@ func normalizeBaseURL(raw string) (string, error) {
 
 func toPublic(value RuntimeConfig) PublicRuntimeConfig {
 	return PublicRuntimeConfig{
-		NewAPIBaseURL: value.NewAPIBaseURL,
-		PublicBaseURL: value.PublicBaseURL,
-		DebugEnabled:  value.DebugEnabled,
-		TimeoutSec:    value.TimeoutSec,
-		Model:         config.DefaultModel,
-		ModelLocked:   true,
-		TimeoutCode:   fmt.Sprintf("TIMEOUT_%dS", value.TimeoutSec),
-		UpdatedAt:     value.UpdatedAt,
+		NewAPIBaseURL:        value.NewAPIBaseURL,
+		PublicBaseURL:        value.PublicBaseURL,
+		DebugEnabled:         value.DebugEnabled,
+		TimeoutSec:           value.TimeoutSec,
+		Model:                config.DefaultModel,
+		ModelLocked:          true,
+		MiniMaxAPIKeySet:     strings.TrimSpace(value.MiniMaxAPIKey) != "",
+		MiniMaxAPIKeyPreview: maskSecret(value.MiniMaxAPIKey),
+		TimeoutCode:          fmt.Sprintf("TIMEOUT_%dS", value.TimeoutSec),
+		UpdatedAt:            value.UpdatedAt,
 		Limits: Limits{
 			MinTimeoutSec: config.MinTimeoutSec,
 			MaxTimeoutSec: config.MaxTimeoutSec,
 		},
 	}
+}
+
+func maskSecret(value string) string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return ""
+	}
+	if len(trimmed) <= 8 {
+		return "********"
+	}
+	return trimmed[:4] + "********" + trimmed[len(trimmed)-4:]
 }

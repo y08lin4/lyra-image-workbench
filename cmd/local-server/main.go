@@ -14,6 +14,7 @@ import (
 	"github.com/y08lin4/lyra-image-workbench/internal/gifrender"
 	"github.com/y08lin4/lyra-image-workbench/internal/jobs"
 	"github.com/y08lin4/lyra-image-workbench/internal/llm"
+	"github.com/y08lin4/lyra-image-workbench/internal/minimax"
 	"github.com/y08lin4/lyra-image-workbench/internal/newapi"
 	"github.com/y08lin4/lyra-image-workbench/internal/output"
 	"github.com/y08lin4/lyra-image-workbench/internal/promptlibrary"
@@ -83,13 +84,13 @@ func main() {
 		SpaceConfig:   spaceConfigStore,
 		Uploads:       uploadStore,
 		Jobs:          jobManager,
+		MiniMax:       minimax.NewClient(),
 		Output:        outputStore,
 		PromptLibrary: promptLibraryService,
 		PromptSquare:  promptSquareStore,
 		PromptTools:   promptService,
 		LLM:           llmClient,
-		GIF:           gifService,
-	})
+		GIF:           gifService})
 	httpServer := server.New(cfg, router)
 
 	log.Printf("Lyra Image Workbench 后端启动：http://%s", cfg.Addr)

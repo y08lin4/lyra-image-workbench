@@ -41,6 +41,7 @@ type record struct {
 	HashHex      string `json:"hashHex"`
 	TOTPSecret   string `json:"totpSecret,omitempty"`
 	TOTPEnabled  bool   `json:"totpEnabled,omitempty"`
+	VideoQuota   int    `json:"videoQuota,omitempty"`
 	CreatedAt    string `json:"createdAt"`
 	UpdatedAt    string `json:"updatedAt"`
 	LastLoginAt  string `json:"lastLoginAt,omitempty"`
@@ -55,6 +56,16 @@ type PublicUser struct {
 	Username         string `json:"username"`
 	DisplayName      string `json:"displayName"`
 	TwoFactorEnabled bool   `json:"twoFactorEnabled"`
+	VideoQuota       int    `json:"videoQuota"`
+	CreatedAt        string `json:"createdAt"`
+	LastLoginAt      string `json:"lastLoginAt,omitempty"`
+}
+
+type AdminUser struct {
+	Username         string `json:"username"`
+	DisplayName      string `json:"displayName"`
+	TwoFactorEnabled bool   `json:"twoFactorEnabled"`
+	VideoQuota       int    `json:"videoQuota"`
 	CreatedAt        string `json:"createdAt"`
 	LastLoginAt      string `json:"lastLoginAt,omitempty"`
 }
@@ -185,6 +196,96 @@ func (s *Store) Logout(token string) {
 	delete(s.sessions, strings.TrimSpace(token))
 }
 
+func (s *Store) ListAdminUsers() []AdminUser {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	items := make([]AdminUser, 0, len(s.current.Users))
+	for _, user := range s.current.Users {
+		items = append(items, adminUserFromRecord(user))
+	}
+	return items
+}
+
+func (s *Store) AddVideoQuota(username string, delta int) (AdminUser, error) {
+	if delta <= 0 {
+		return AdminUser{}, NewError("USER_VIDEO_QUOTA_DELTA_INVALID", "增加额度必须大于 0")
+	}
+	normalized, _, err := normalizeUsername(username)
+	if err != nil {
+		return AdminUser{}, err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	index, ok := s.findLocked(normalized)
+	if !ok {
+		return AdminUser{}, NewError("USER_NOT_FOUND", "用户不存在")
+	}
+	s.current.Users[index].VideoQuota += delta
+	s.current.Users[index].UpdatedAt = time.Now().Format(time.RFC3339)
+	if err := s.saveLocked(); err != nil {
+		return AdminUser{}, err
+	}
+	return adminUserFromRecord(s.current.Users[index]), nil
+}
+
+func (s *Store) ConsumeVideoQuota(username string, amount int) (int, error) {
+	if amount <= 0 {
+		return 0, NewError("USER_VIDEO_QUOTA_AMOUNT_INVALID", "消耗额度必须大于 0")
+	}
+	normalized, _, err := normalizeUsername(username)
+	if err != nil {
+		return 0, err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	index, ok := s.findLocked(normalized)
+	if !ok {
+		return 0, NewError("USER_NOT_FOUND", "用户不存在")
+	}
+	if s.current.Users[index].VideoQuota < amount {
+		return s.current.Users[index].VideoQuota, NewError("USER_VIDEO_QUOTA_NOT_ENOUGH", "视频额度不足，请联系管理员增加额度")
+	}
+	s.current.Users[index].VideoQuota -= amount
+	s.current.Users[index].UpdatedAt = time.Now().Format(time.RFC3339)
+	if err := s.saveLocked(); err != nil {
+		return 0, err
+	}
+	return s.current.Users[index].VideoQuota, nil
+}
+
+func (s *Store) RefundVideoQuota(username string, amount int) {
+	if amount <= 0 {
+		return
+	}
+	normalized, _, err := normalizeUsername(username)
+	if err != nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	index, ok := s.findLocked(normalized)
+	if !ok {
+		return
+	}
+	s.current.Users[index].VideoQuota += amount
+	s.current.Users[index].UpdatedAt = time.Now().Format(time.RFC3339)
+	_ = s.saveLocked()
+}
+
+func (s *Store) VideoQuota(username string) (int, error) {
+	normalized, _, err := normalizeUsername(username)
+	if err != nil {
+		return 0, err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	index, ok := s.findLocked(normalized)
+	if !ok {
+		return 0, NewError("USER_NOT_FOUND", "用户不存在")
+	}
+	return s.current.Users[index].VideoQuota, nil
+}
+
 func (s *Store) BeginTOTPSetup(username string) (TOTPSetup, error) {
 	normalized, _, err := normalizeUsername(username)
 	if err != nil {
@@ -309,12 +410,24 @@ func sessionFromRecord(user record, token string, expires time.Time) Session {
 			Username:         user.Username,
 			DisplayName:      user.DisplayName,
 			TwoFactorEnabled: user.TOTPEnabled,
+			VideoQuota:       user.VideoQuota,
 			CreatedAt:        user.CreatedAt,
 			LastLoginAt:      user.LastLoginAt,
 		},
 		ExpiresAt:    expires.Format(time.RFC3339),
 		Token:        token,
 		StorageToken: user.StorageToken,
+	}
+}
+
+func adminUserFromRecord(user record) AdminUser {
+	return AdminUser{
+		Username:         user.Username,
+		DisplayName:      user.DisplayName,
+		TwoFactorEnabled: user.TOTPEnabled,
+		VideoQuota:       user.VideoQuota,
+		CreatedAt:        user.CreatedAt,
+		LastLoginAt:      user.LastLoginAt,
 	}
 }
 

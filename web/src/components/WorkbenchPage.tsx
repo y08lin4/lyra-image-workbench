@@ -12,6 +12,7 @@ import { TaskSidebar } from './TaskSidebar'
 import { PromptAssistantModal } from './PromptAssistantModal'
 import { PromptLibraryPage } from './PromptLibraryPage'
 import { PromptSquarePanel } from './PromptSquarePanel'
+import { MiniMaxVideoPanel } from './MiniMaxVideoPanel'
 import { ResultCanvas } from './ResultCanvas'
 import { ThemeToggle, type ThemeMode } from './ThemeToggle'
 import { GitHubLink } from './GitHubLink'
@@ -22,7 +23,7 @@ import { nativeExitApp, nativeSaveImage } from '../lib/nativeBridge'
 import { ensureAppBackBridge, installEdgeBackGesture, registerAppBackHandler } from '../lib/appBack'
 
 type NumericInputValue = number | ''
-type WorkbenchTab = 'generate' | 'library' | 'square' | 'result' | 'queue' | 'settings'
+type WorkbenchTab = 'generate' | 'library' | 'square' | 'video' | 'result' | 'queue' | 'settings'
 type WorkbenchTabItem = { id: WorkbenchTab; label: string; hint: string; badge?: string; tone?: 'normal' | 'danger' | 'active' }
 
 const MAX_REFERENCE_IMAGES = 8
@@ -34,6 +35,7 @@ const workflowTabs: WorkbenchTabItem[] = [
   { id: 'generate', label: '生成', hint: '请求' },
   { id: 'library', label: '提示词库', hint: '灵感' },
   { id: 'square', label: '广场', hint: 'Prompt' },
+  { id: 'video', label: '视频', hint: 'MiniMax' },
   { id: 'result', label: '结果', hint: '图片' },
   { id: 'queue', label: '队列', hint: '历史' },
   { id: 'settings', label: '设置', hint: 'Key' },
@@ -85,6 +87,7 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
     if (tab.id === 'generate') return { ...tab, hint: currentKeyReady ? '可提交' : '缺 Key', tone: currentKeyReady ? 'normal' : 'danger' }
     if (tab.id === 'library') return { ...tab, hint: 'GitHub', tone: 'normal' }
     if (tab.id === 'square') return { ...tab, hint: '试验版' }
+    if (tab.id === 'video') return { ...tab, hint: 'MiniMax' }
     if (tab.id === 'result') return { ...tab, hint: activeTask ? activeTask.statusText : '图片', badge: activeTask ? `${activeTask.progress}%` : undefined, tone: activeTask && !isFinal(activeTask) ? 'active' : 'normal' }
     if (tab.id === 'queue') return { ...tab, hint: activeCount ? `${activeCount} 进行中` : '历史', badge: activeCount ? String(activeCount) : undefined, tone: activeCount ? 'active' : 'normal' }
     if (tab.id === 'settings') return { ...tab, hint: missingKeyCount ? `${missingKeyCount} 个未设` : '已配置', badge: missingKeyCount ? '!' : undefined, tone: missingKeyCount ? 'danger' : 'normal' }
@@ -628,6 +631,12 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
         {activeTab === 'square' ? (
           <section className="workflow-page prompt-square-page">
             <PromptSquarePanel onUsePrompt={handleUseSquarePrompt} />
+          </section>
+        ) : null}
+
+        {activeTab === 'video' ? (
+          <section className="workflow-page video-page">
+            <MiniMaxVideoPanel seedPrompt={prompt} />
           </section>
         ) : null}
 

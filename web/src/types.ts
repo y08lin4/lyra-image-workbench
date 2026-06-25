@@ -42,6 +42,15 @@ export interface DeveloperApiKey {
   lastUsedAt?: string
 }
 
+export interface AdminUser {
+  username: string
+  displayName: string
+  twoFactorEnabled: boolean
+  videoQuota: number
+  createdAt: string
+  lastLoginAt?: string
+}
+
 export interface AdminConfig {
   newApiBaseUrl: string
   publicBaseUrl: string
@@ -49,6 +58,8 @@ export interface AdminConfig {
   timeoutSec: number
   model: string
   modelLocked: boolean
+  minimaxApiKeySet: boolean
+  minimaxApiKeyPreview: string
   timeoutCode: string
   updatedAt: string
   limits: { minTimeoutSec: number; maxTimeoutSec: number }
@@ -239,6 +250,56 @@ export interface CreatePromptSquareItemRequest {
   quality?: string
   outputFormat?: string
   image?: File | null
+}
+
+export interface MiniMaxVideoCreateRequest {
+  model: string
+  prompt: string
+  duration?: number
+  resolution?: string
+  prompt_optimizer: boolean
+  fast_pretreatment?: boolean
+  aigc_watermark?: boolean
+}
+
+export interface MiniMaxBase {
+  status_code: number
+  status_msg: string
+}
+
+export interface MiniMaxVideoTask {
+  task_id: string
+  base: MiniMaxBase
+  raw?: unknown
+}
+
+export interface MiniMaxVideoStatus {
+  task_id: string
+  status: string
+  file_id?: string
+  video_width?: number
+  video_height?: number
+  base: MiniMaxBase
+  raw?: unknown
+}
+
+export interface MiniMaxFileResult {
+  file: {
+    file_id?: string
+    bytes?: number
+    created_at?: number
+    filename?: string
+    purpose?: string
+    download_url?: string
+  }
+  base: MiniMaxBase
+  raw?: unknown
+}
+
+export interface MiniMaxVideoQuota {
+  remaining: number
+  costPerVideo: number
+  minimaxApiKeySet: boolean
 }
 
 export type PromptToolMode = 'text-to-prompt' | 'image-to-prompt'

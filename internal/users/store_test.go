@@ -52,3 +52,38 @@ func TestRegisterAllowsUppercaseUsername(t *testing.T) {
 		t.Fatal("Register() should reject case-insensitive duplicate username")
 	}
 }
+
+func TestVideoQuotaLifecycle(t *testing.T) {
+	store, err := NewStore(filepath.Join(t.TempDir(), "users.json"))
+	if err != nil {
+		t.Fatalf("NewStore() error = %v", err)
+	}
+	if _, err := store.Register("Alice_01", "R7!Blue#Vault$2026", ""); err != nil {
+		t.Fatalf("Register() error = %v", err)
+	}
+	user, err := store.AddVideoQuota("alice_01", 3)
+	if err != nil {
+		t.Fatalf("AddVideoQuota() error = %v", err)
+	}
+	if user.VideoQuota != 3 {
+		t.Fatalf("VideoQuota after add = %d", user.VideoQuota)
+	}
+	remaining, err := store.ConsumeVideoQuota("ALICE_01", 2)
+	if err != nil {
+		t.Fatalf("ConsumeVideoQuota() error = %v", err)
+	}
+	if remaining != 1 {
+		t.Fatalf("remaining = %d", remaining)
+	}
+	if _, err := store.ConsumeVideoQuota("Alice_01", 2); err == nil {
+		t.Fatal("ConsumeVideoQuota() should fail when quota is not enough")
+	}
+	store.RefundVideoQuota("Alice_01", 1)
+	quota, err := store.VideoQuota("alice_01")
+	if err != nil {
+		t.Fatalf("VideoQuota() error = %v", err)
+	}
+	if quota != 2 {
+		t.Fatalf("quota after refund = %d", quota)
+	}
+}
