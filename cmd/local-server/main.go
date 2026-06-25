@@ -15,6 +15,7 @@ import (
 	"github.com/y08lin4/lyra-image-workbench/internal/newapi"
 	"github.com/y08lin4/lyra-image-workbench/internal/output"
 	"github.com/y08lin4/lyra-image-workbench/internal/promptlibrary"
+	"github.com/y08lin4/lyra-image-workbench/internal/promptsquare"
 	"github.com/y08lin4/lyra-image-workbench/internal/prompttools"
 	"github.com/y08lin4/lyra-image-workbench/internal/server"
 	"github.com/y08lin4/lyra-image-workbench/internal/settings"
@@ -48,6 +49,10 @@ func main() {
 	if err != nil {
 		log.Fatalf("加载输出目录失败：%v", err)
 	}
+	promptSquareStore, err := promptsquare.NewStore(cfg.DataDir)
+	if err != nil {
+		log.Fatalf("加载提示词广场失败：%v", err)
+	}
 	eventHub := events.NewHub()
 	jobStore := jobs.NewStore(spaceStore)
 	jobManager := jobs.NewManager(jobStore, eventHub, settingsStore, spaceConfigStore, uploadStore, outputStore, newapi.NewClient())
@@ -69,6 +74,7 @@ func main() {
 		Jobs:          jobManager,
 		Output:        outputStore,
 		PromptLibrary: promptLibraryService,
+		PromptSquare:  promptSquareStore,
 		PromptTools:   promptService,
 	})
 	httpServer := server.New(cfg, router)

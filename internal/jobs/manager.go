@@ -1058,6 +1058,10 @@ func bananaModelSpec(model string) bananaSpec {
 		"gemini-3.1-flash-image-preview-4x3-4k":  {Ratio: "4:3", Resolution: "4k", Size: imageSize("4:3", "4k")},
 		"gemini-3.1-flash-image-preview-3x4-2k":  {Ratio: "3:4", Resolution: "2k", Size: imageSize("3:4", "2k")},
 		"gemini-3.1-flash-image-preview-3x4-4k":  {Ratio: "3:4", Resolution: "4k", Size: imageSize("3:4", "4k")},
+		"gemini-3.1-flash-image-preview-3x2-2k":  {Ratio: "3:2", Resolution: "2k", Size: imageSize("3:2", "2k")},
+		"gemini-3.1-flash-image-preview-3x2-4k":  {Ratio: "3:2", Resolution: "4k", Size: imageSize("3:2", "4k")},
+		"gemini-3.1-flash-image-preview-2x3-2k":  {Ratio: "2:3", Resolution: "2k", Size: imageSize("2:3", "2k")},
+		"gemini-3.1-flash-image-preview-2x3-4k":  {Ratio: "2:3", Resolution: "4k", Size: imageSize("2:3", "4k")},
 		"gemini-3.1-flash-image-preview-1x1-2k":  {Ratio: "1:1", Resolution: "2k", Size: imageSize("1:1", "2k")},
 		"gemini-3.1-flash-image-preview-1x1-4k":  {Ratio: "1:1", Resolution: "4k", Size: imageSize("1:1", "4k")},
 	}

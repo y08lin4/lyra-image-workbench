@@ -11,17 +11,18 @@ import { TaskDetailModal } from './TaskDetailModal'
 import { TaskSidebar } from './TaskSidebar'
 import { PromptAssistantModal } from './PromptAssistantModal'
 import { PromptLibraryPage } from './PromptLibraryPage'
+import { PromptSquarePanel } from './PromptSquarePanel'
 import { ResultCanvas } from './ResultCanvas'
 import { ThemeToggle, type ThemeMode } from './ThemeToggle'
 import { GitHubLink } from './GitHubLink'
 import { useTaskEvents } from '../hooks/useTaskEvents'
-import { BANANA_PROVIDER, DEFAULT_BANANA_MODEL, DEFAULT_IMAGE2_MODEL, getBananaModelOption } from '../lib/models'
+import { BANANA_PROVIDER, DEFAULT_BANANA_MODEL, DEFAULT_IMAGE2_MODEL, getBananaModelForRatio, getBananaModelOption } from '../lib/models'
 import { formatBytes } from '../lib/format'
 import { nativeExitApp, nativeSaveImage } from '../lib/nativeBridge'
 import { ensureAppBackBridge, installEdgeBackGesture, registerAppBackHandler } from '../lib/appBack'
 
 type NumericInputValue = number | ''
-type WorkbenchTab = 'generate' | 'library' | 'result' | 'queue' | 'settings'
+type WorkbenchTab = 'generate' | 'library' | 'square' | 'result' | 'queue' | 'settings'
 type WorkbenchTabItem = { id: WorkbenchTab; label: string; hint: string; badge?: string; tone?: 'normal' | 'danger' | 'active' }
 
 const MAX_REFERENCE_IMAGES = 8
@@ -32,6 +33,7 @@ const ALLOWED_REFERENCE_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp'
 const workflowTabs: WorkbenchTabItem[] = [
   { id: 'generate', label: '生成', hint: '请求' },
   { id: 'library', label: '提示词库', hint: '灵感' },
+  { id: 'square', label: '广场', hint: 'Prompt' },
   { id: 'result', label: '结果', hint: '图片' },
   { id: 'queue', label: '队列', hint: '历史' },
   { id: 'settings', label: '设置', hint: 'Key' },
@@ -82,6 +84,7 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
   const tabItems = useMemo<WorkbenchTabItem[]>(() => workflowTabs.map((tab) => {
     if (tab.id === 'generate') return { ...tab, hint: currentKeyReady ? '可提交' : '缺 Key', tone: currentKeyReady ? 'normal' : 'danger' }
     if (tab.id === 'library') return { ...tab, hint: 'GitHub', tone: 'normal' }
+    if (tab.id === 'square') return { ...tab, hint: '试验版' }
     if (tab.id === 'result') return { ...tab, hint: activeTask ? activeTask.statusText : '图片', badge: activeTask ? `${activeTask.progress}%` : undefined, tone: activeTask && !isFinal(activeTask) ? 'active' : 'normal' }
     if (tab.id === 'queue') return { ...tab, hint: activeCount ? `${activeCount} 进行中` : '历史', badge: activeCount ? String(activeCount) : undefined, tone: activeCount ? 'active' : 'normal' }
     if (tab.id === 'settings') return { ...tab, hint: missingKeyCount ? `${missingKeyCount} 个未设` : '已配置', badge: missingKeyCount ? '!' : undefined, tone: missingKeyCount ? 'danger' : 'normal' }
@@ -291,12 +294,18 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
     setMessage(data.result.remoteUrl ? 'PiXhost 图床上传成功' : 'PiXhost 图床上传完成')
   }
 
-  function handleUseAssistantPrompt(nextPrompt: string, options?: { provider: ModelProvider; model: string }) {
+  function handleUseAssistantPrompt(nextPrompt: string, options?: { provider: ModelProvider; model: string; ratio?: string }) {
     setPrompt(nextPrompt)
     if (options) {
       setProvider(options.provider)
       if (options.provider === BANANA_PROVIDER) {
-        setBananaModel(getBananaModelOption(options.model).id)
+        const preferredResolution = getBananaModelOption(options.model).resolution
+        const nextBanana = options.ratio && options.ratio !== 'auto'
+          ? getBananaModelForRatio(options.ratio, preferredResolution === 'auto' ? '2k' : preferredResolution)
+          : getBananaModelOption(options.model)
+        setBananaModel(nextBanana.id)
+      } else if (options.ratio && options.ratio !== 'auto') {
+        setRatio(options.ratio)
       }
     }
     goToTab('generate')
@@ -314,6 +323,15 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
     }
     goToTab('generate')
     setMessage('提示词库已填入主输入框，并同步模型选择')
+    window.setTimeout(() => {
+      document.querySelector('[data-generation-composer] textarea')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }, 0)
+  }
+
+  function handleUseSquarePrompt(nextPrompt: string) {
+    setPrompt(nextPrompt)
+    goToTab('generate')
+    setMessage('已从提示词广场填入主输入框')
     window.setTimeout(() => {
       document.querySelector('[data-generation-composer] textarea')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
     }, 0)
@@ -604,6 +622,12 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
               onReuse={handleReuseTask}
               onRetry={(id) => void handleRetry(id)}
             />
+          </section>
+        ) : null}
+
+        {activeTab === 'square' ? (
+          <section className="workflow-page prompt-square-page">
+            <PromptSquarePanel onUsePrompt={handleUseSquarePrompt} />
           </section>
         ) : null}
 

@@ -8,6 +8,7 @@ import (
 	"github.com/y08lin4/lyra-image-workbench/internal/jobs"
 	"github.com/y08lin4/lyra-image-workbench/internal/output"
 	"github.com/y08lin4/lyra-image-workbench/internal/promptlibrary"
+	"github.com/y08lin4/lyra-image-workbench/internal/promptsquare"
 	"github.com/y08lin4/lyra-image-workbench/internal/prompttools"
 	"github.com/y08lin4/lyra-image-workbench/internal/settings"
 	"github.com/y08lin4/lyra-image-workbench/internal/spaceconfig"
@@ -27,6 +28,7 @@ type Dependencies struct {
 	Jobs          *jobs.Manager
 	Output        *output.Store
 	PromptLibrary *promptlibrary.Service
+	PromptSquare  *promptsquare.Store
 	PromptTools   *prompttools.Service
 }
 
@@ -43,6 +45,7 @@ func NewRouter(deps Dependencies) http.Handler {
 	promptToolsHandler := NewPromptToolsHandler(deps.PromptTools)
 	promptLibraryHandler := NewPromptLibraryHandler(deps.PromptLibrary)
 	outputHandler := NewOutputHandler(deps.Output)
+	promptSquareHandler := NewPromptSquareHandler(deps.PromptSquare)
 	staticHandler := NewStaticHandler(deps.Config.WebDir)
 
 	mux.HandleFunc("GET /api/health", health.ServeHTTP)
@@ -90,6 +93,9 @@ func NewRouter(deps Dependencies) http.Handler {
 	mux.HandleFunc("DELETE /api/prompt-tools/history/{id}", promptToolsHandler.Delete)
 	mux.HandleFunc("GET /api/prompt-library", promptLibraryHandler.List)
 	mux.HandleFunc("POST /api/prompt-library/refresh", promptLibraryHandler.Refresh)
+	mux.HandleFunc("GET /api/prompt-square/items", promptSquareHandler.List)
+	mux.HandleFunc("POST /api/prompt-square/items", promptSquareHandler.Create)
+	mux.HandleFunc("GET /api/prompt-square/images/{file}", promptSquareHandler.Image)
 	mux.HandleFunc("GET /outputs/{space}/{date}/{file}", outputHandler.Serve)
 	mux.HandleFunc("GET /", staticHandler.Serve)
 
