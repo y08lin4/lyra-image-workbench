@@ -64,16 +64,10 @@ type Config struct {
 	BuiltinNewAPIBaseURL string
 	DefaultModel         string
 	DefaultTimeoutSec    int
-	GIFEnabled           bool
-	FFmpegBin            string
-	GIFWorkDir           string
-	GIFMaxFrames         int
-	GIFMaxFPS            int
-	GIFMaxSize           int
-	GIFRenderTimeoutSec  int
 	ReadTimeout          time.Duration
 	WriteTimeout         time.Duration
 	IdleTimeout          time.Duration
+	AdminSetupToken      string
 }
 
 func Load() Config {
@@ -88,16 +82,10 @@ func Load() Config {
 		BuiltinNewAPIBaseURL: getenv("NEWAPI_BASE_URL", DefaultNewAPIBaseURL),
 		DefaultModel:         DefaultModel,
 		DefaultTimeoutSec:    getenvBoundedInt("NEWAPI_TIMEOUT_SEC", DefaultTimeoutSec, MinTimeoutSec, MaxTimeoutSec),
-		GIFEnabled:           getenvBool("GIF_ENABLED", true),
-		FFmpegBin:            getenv("FFMPEG_BIN", "ffmpeg"),
-		GIFWorkDir:           filepath.Clean(getenv("GIF_WORK_DIR", filepath.Join("data", "gif_work"))),
-		GIFMaxFrames:         getenvBoundedInt("GIF_MAX_FRAMES", 24, 2, 120),
-		GIFMaxFPS:            getenvBoundedInt("GIF_MAX_FPS", 15, 1, 60),
-		GIFMaxSize:           getenvBoundedInt("GIF_MAX_SIZE", 1024, 128, 4096),
-		GIFRenderTimeoutSec:  getenvBoundedInt("GIF_RENDER_TIMEOUT_SEC", 60, 5, 600),
 		ReadTimeout:          30 * time.Second,
 		WriteTimeout:         0, // SSE 和长连接响应不能被固定写超时切断。
 		IdleTimeout:          120 * time.Second,
+		AdminSetupToken:      strings.TrimSpace(os.Getenv("LOCAL_IMAGE_ADMIN_SETUP_TOKEN")),
 	}
 }
 

@@ -7,7 +7,6 @@ import (
 	"github.com/y08lin4/lyra-image-workbench/internal/apikeys"
 	"github.com/y08lin4/lyra-image-workbench/internal/billing"
 	"github.com/y08lin4/lyra-image-workbench/internal/config"
-	"github.com/y08lin4/lyra-image-workbench/internal/gifrender"
 	"github.com/y08lin4/lyra-image-workbench/internal/jobs"
 	"github.com/y08lin4/lyra-image-workbench/internal/llm"
 	"github.com/y08lin4/lyra-image-workbench/internal/output"
@@ -37,27 +36,25 @@ type Dependencies struct {
 	PromptSquare  *promptsquare.Store
 	PromptTools   *prompttools.Service
 	LLM           *llm.Client
-	GIF           *gifrender.Service
 }
 
 func NewRouter(deps Dependencies) http.Handler {
 	mux := http.NewServeMux()
 	health := NewHealthHandler(deps.Config)
-	adminAuth := NewAdminAuthHandler(deps.AdminAuth)
+	adminAuth := NewAdminAuthHandler(deps.AdminAuth, deps.Config.AdminSetupToken)
 	adminConfig := NewAdminConfigHandler(deps.Settings, deps.AdminAuth, deps.Users)
 	adminUsers := NewAdminUsersHandler(deps.Users, deps.AdminAuth)
-	userHandler := NewUserHandler(deps.Users, deps.Spaces)
+	userHandler := NewUserHandler(deps.Users, deps.Spaces, deps.Settings)
 	userConfig := NewUserConfigHandler(deps.SpaceConfig)
 	developerKeyHandler := NewDeveloperAPIKeyHandler(deps.APIKeys, deps.SpaceConfig)
 	statusMetadata := NewStatusMetadataHandler()
 	uploadHandler := NewUploadHandler(deps.Uploads)
-	taskHandler := NewTaskHandler(deps.Jobs, deps.Output)
-	v1ImageTaskHandler := NewV1ImageTaskHandler(deps.APIKeys, deps.SpaceConfig, deps.Jobs, deps.Output)
+	taskHandler := NewTaskHandler(deps.Jobs, deps.Output, deps.Users)
+	v1ImageTaskHandler := NewV1ImageTaskHandler(deps.APIKeys, deps.SpaceConfig, deps.Jobs, deps.Output, deps.Users)
 	promptToolsHandler := NewPromptToolsHandler(deps.PromptTools)
 	promptLibraryHandler := NewPromptLibraryHandler(deps.PromptLibrary)
 	outputHandler := NewOutputHandler(deps.Output)
 	promptSquareHandler := NewPromptSquareHandlerWithResults(deps.PromptSquare, deps.Jobs, deps.Output)
-	gifHandler := NewGIFHandler(deps.Config, deps.Jobs, deps.Output, deps.Uploads, deps.Settings, deps.SpaceConfig, deps.LLM, deps.GIF)
 	billingHandler := NewBillingHandler(deps.Settings, deps.Billing, deps.Users)
 	staticHandler := NewStaticHandler(deps.Config.WebDir)
 
@@ -80,6 +77,7 @@ func NewRouter(deps Dependencies) http.Handler {
 	mux.HandleFunc("GET /api/users/profile", userHandler.Profile)
 	mux.HandleFunc("PUT /api/users/profile", userHandler.UpdateProfile)
 	mux.HandleFunc("GET /api/users/ledger", userHandler.Ledger)
+	mux.HandleFunc("POST /api/users/credits/daily", userHandler.ClaimDailyCredits)
 	mux.HandleFunc("GET /api/billing/topup/options", billingHandler.Options)
 	mux.HandleFunc("POST /api/billing/epay/orders", billingHandler.CreateEpayOrder)
 	mux.HandleFunc("GET /api/billing/epay/notify", billingHandler.Notify)
@@ -110,6 +108,7 @@ func NewRouter(deps Dependencies) http.Handler {
 	mux.HandleFunc("POST /api/background-tasks/{id}/images/{index}/pixhost", taskHandler.UploadPixhost)
 	mux.HandleFunc("GET /api/background-tasks/{id}/images/{index}", taskHandler.Image)
 	mux.HandleFunc("GET /api/stats", taskHandler.Stats)
+	mux.HandleFunc("POST /v1/images/generations", v1ImageTaskHandler.CreateGeneration)
 	mux.HandleFunc("POST /v1/image-tasks", v1ImageTaskHandler.Create)
 	mux.HandleFunc("GET /v1/image-tasks/{id}", v1ImageTaskHandler.Get)
 	mux.HandleFunc("POST /v1/image-tasks/{id}/cancel", v1ImageTaskHandler.Cancel)
@@ -127,6 +126,7 @@ func NewRouter(deps Dependencies) http.Handler {
 	mux.HandleFunc("DELETE /api/prompt-tools/history/{id}", promptToolsHandler.Delete)
 	mux.HandleFunc("GET /api/prompt-library", promptLibraryHandler.List)
 	mux.HandleFunc("POST /api/prompt-library/refresh", promptLibraryHandler.Refresh)
+	mux.HandleFunc("GET /api/prompt-library/images/{file}", promptLibraryHandler.Image)
 	mux.HandleFunc("GET /api/prompt-square/items", promptSquareHandler.List)
 	mux.HandleFunc("POST /api/prompt-square/items", promptSquareHandler.Create)
 	mux.HandleFunc("POST /api/prompt-square/from-result", promptSquareHandler.FromResult)
@@ -134,11 +134,6 @@ func NewRouter(deps Dependencies) http.Handler {
 	mux.HandleFunc("GET /api/prompt-square/daily", promptSquareHandler.Daily)
 	mux.HandleFunc("GET /api/prompt-square/mine", promptSquareHandler.Mine)
 	mux.HandleFunc("GET /api/prompt-square/images/{file}", promptSquareHandler.Image)
-	mux.HandleFunc("GET /api/gif/status", gifHandler.Status)
-	mux.HandleFunc("POST /api/gif/plans", gifHandler.Plan)
-	mux.HandleFunc("POST /api/gif-renders", gifHandler.CreateRender)
-	mux.HandleFunc("GET /api/gif-renders/{id}", gifHandler.GetRender)
-	mux.HandleFunc("GET /api/gif-renders/{id}/file", gifHandler.File)
 	mux.HandleFunc("GET /outputs/{space}/{date}/{file}", outputHandler.Serve)
 	mux.HandleFunc("GET /", staticHandler.Serve)
 

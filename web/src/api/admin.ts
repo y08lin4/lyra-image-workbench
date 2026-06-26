@@ -39,9 +39,12 @@ export async function getAdminAuthStatus() {
   return data.auth
 }
 
-export async function setupAdminPassword(password: string) {
+export async function setupAdminPassword(password: string, setupToken = '') {
+  const headers: Record<string, string> = {}
+  if (setupToken.trim()) headers['X-Admin-Setup-Token'] = setupToken.trim()
   const data = await requestJson<{ ok: boolean; session: AdminSession; auth: AdminAuthStatus }>('/api/admin/auth/setup', {
     method: 'POST',
+    headers,
     body: JSON.stringify({ password }),
   }, '')
   saveAdminToken(data.session.token)

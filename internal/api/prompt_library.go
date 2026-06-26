@@ -1,7 +1,9 @@
 package api
 
 import (
+	"mime"
 	"net/http"
+	"path/filepath"
 	"strconv"
 
 	"github.com/y08lin4/lyra-image-workbench/internal/promptlibrary"
@@ -52,6 +54,22 @@ func (h PromptLibraryHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "library": library})
+}
+func (h PromptLibraryHandler) Image(w http.ResponseWriter, r *http.Request) {
+	if h.service == nil {
+		writeError(w, http.StatusServiceUnavailable, "PROMPT_LIBRARY_DISABLED", "提示词库服务未启用")
+		return
+	}
+	path, ok := h.service.CachedImagePath(r.PathValue("file"))
+	if !ok {
+		writeError(w, http.StatusNotFound, "PROMPT_LIBRARY_IMAGE_NOT_FOUND", "提示词库图片不存在")
+		return
+	}
+	if contentType := mime.TypeByExtension(filepath.Ext(path)); contentType != "" {
+		w.Header().Set("Content-Type", contentType)
+	}
+	w.Header().Set("Cache-Control", "public, max-age=604800, immutable")
+	http.ServeFile(w, r, path)
 }
 
 func parsePromptLibraryLimit(value string) int {

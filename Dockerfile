@@ -32,7 +32,7 @@ RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
 FROM alpine:${ALPINE_VERSION} AS runtime
 WORKDIR /app
 
-RUN apk add --no-cache ca-certificates tzdata ffmpeg \
+RUN apk add --no-cache ca-certificates tzdata \
     && addgroup -S -g 10001 app \
     && adduser -S -D -H -u 10001 -G app app \
     && mkdir -p /app/data /app/outputs /app/web/dist \
@@ -44,10 +44,7 @@ COPY --from=web-builder /src/web/dist /app/web/dist
 ENV LOCAL_IMAGE_HOST=0.0.0.0 \
     LOCAL_IMAGE_PORT=8787 \
     LOCAL_IMAGE_DATA_DIR=/app/data \
-    LOCAL_IMAGE_WEB_DIR=/app/web/dist \
-    GIF_ENABLED=true \
-    FFMPEG_BIN=ffmpeg \
-    GIF_WORK_DIR=/app/data/gif_work
+    LOCAL_IMAGE_WEB_DIR=/app/web/dist
 
 EXPOSE 8787
 VOLUME ["/app/data", "/app/outputs"]

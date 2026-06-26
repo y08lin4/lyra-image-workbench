@@ -1,6 +1,7 @@
 package api
 
 import (
+	"crypto/subtle"
 	"encoding/json"
 	"net/http"
 	"strings"
@@ -10,15 +11,20 @@ import (
 )
 
 type AdminAuthHandler struct {
-	store *adminauth.Store
+	store      *adminauth.Store
+	setupToken string
 }
 
 type adminPasswordRequest struct {
 	Password string `json:"password"`
 }
 
-func NewAdminAuthHandler(store *adminauth.Store) AdminAuthHandler {
-	return AdminAuthHandler{store: store}
+func NewAdminAuthHandler(store *adminauth.Store, setupTokens ...string) AdminAuthHandler {
+	setupToken := ""
+	if len(setupTokens) > 0 {
+		setupToken = strings.TrimSpace(setupTokens[0])
+	}
+	return AdminAuthHandler{store: store, setupToken: setupToken}
 }
 
 func (h AdminAuthHandler) Status(w http.ResponseWriter, _ *http.Request) {
@@ -26,6 +32,15 @@ func (h AdminAuthHandler) Status(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (h AdminAuthHandler) Setup(w http.ResponseWriter, r *http.Request) {
+	if ok, retryAfter := authAttemptAllowed("admin-setup", r, "setup"); !ok {
+		writeAuthRateLimited(w, retryAfter)
+		return
+	}
+	if !h.setupAllowed(r) {
+		recordAuthAttempt("admin-setup", r, "setup", false)
+		writeError(w, http.StatusForbidden, "ADMIN_SETUP_TOKEN_REQUIRED", "公网首次设置 Admin 密码需要安装令牌")
+		return
+	}
 	defer r.Body.Close()
 	var payload adminPasswordRequest
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
@@ -37,10 +52,15 @@ func (h AdminAuthHandler) Setup(w http.ResponseWriter, r *http.Request) {
 		writeAdminAuthError(w, err)
 		return
 	}
+	recordAuthAttempt("admin-setup", r, "setup", true)
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "session": session, "auth": h.store.Status()})
 }
 
 func (h AdminAuthHandler) Login(w http.ResponseWriter, r *http.Request) {
+	if ok, retryAfter := authAttemptAllowed("admin-login", r, "admin"); !ok {
+		writeAuthRateLimited(w, retryAfter)
+		return
+	}
 	defer r.Body.Close()
 	var payload adminPasswordRequest
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
@@ -48,6 +68,7 @@ func (h AdminAuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	session, err := h.store.Login(payload.Password)
+	recordAuthAttempt("admin-login", r, "admin", err == nil)
 	if err != nil {
 		writeAdminAuthError(w, err)
 		return
@@ -85,4 +106,16 @@ func writeAdminAuthError(w http.ResponseWriter, err error) {
 		message = strings.ReplaceAll(validationErr.Chinese, "空间密码", "管理密码")
 	}
 	writeError(w, status, code, message)
+}
+
+func (h AdminAuthHandler) setupAllowed(r *http.Request) bool {
+	expected := strings.TrimSpace(h.setupToken)
+	if expected == "" {
+		return false
+	}
+	supplied := strings.TrimSpace(r.Header.Get("X-Admin-Setup-Token"))
+	if supplied == "" {
+		supplied = bearerToken(r.Header.Get("Authorization"))
+	}
+	return subtle.ConstantTimeCompare([]byte(supplied), []byte(expected)) == 1
 }

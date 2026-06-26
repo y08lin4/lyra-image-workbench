@@ -564,31 +564,5 @@ sudo journalctl -u image-workbench -n 100 --no-pager
 9. 提示词助手可调用 `gpt-5.5`，且错误显示中文、错误码、英文。
 
 
-### GIF / FFmpeg dependency
 
-The `/gif` page needs patched system FFmpeg only for final GIF rendering. FFmpeg is not compiled into the Go binary and cgo is not used; the backend calls the external command. FFmpeg must report version `8.1.2` or newer, otherwise GIF merging is disabled.
-
-```bash
-ffmpeg -version
-```
-
-Install on Ubuntu / Debian:
-
-```bash
-sudo apt update
-sudo apt install -y ffmpeg
-```
-
-Optional environment variables:
-
-```env
-GIF_ENABLED=true
-FFMPEG_BIN=ffmpeg
-GIF_WORK_DIR=/var/lib/image-workbench/data/gif_work
-GIF_MAX_FRAMES=24
-GIF_MAX_FPS=15
-GIF_MAX_SIZE=1024
-GIF_RENDER_TIMEOUT_SEC=60
-```
-
-If FFmpeg is unavailable, unsafe, or reports an unknown version, normal text-to-image and image-to-image still work. The `/gif` page can still generate frames, but the merge button is disabled.
+> 必须设置 LOCAL_IMAGE_ADMIN_SETUP_TOKEN，首次打开 /admin 时填写该令牌后再设置管理密码。

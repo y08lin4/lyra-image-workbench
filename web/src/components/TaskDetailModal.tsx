@@ -33,7 +33,7 @@ export function TaskDetailModal({
           <div>
             <p className="eyebrow">任务详情</p>
             <h2>{task.mode === 'image-to-image' ? '图生图结果' : '文生图结果'}</h2>
-            <span>{task.statusText} / {task.statusCode} · {task.stageText} / {task.stageCode}</span>
+            <span>{task.statusText} / {task.statusCode} · {task.stageText} / {task.stageCode} · 来源 {taskSourceLabel(task.source)} · ID {task.id}</span>
           </div>
           <div className="detail-actions">
             <button type="button" onClick={() => onReuse(task)}>复用配置</button>
@@ -55,4 +55,8 @@ export function TaskDetailModal({
 
 function isFinal(task: Task) {
   return ['succeeded', 'partial_failed', 'failed', 'cancelled', 'interrupted'].includes(task.status)
+}
+
+function taskSourceLabel(source?: string) {
+  return source === 'api' ? 'API' : 'Web'
 }

@@ -1,6 +1,9 @@
 package promptsquare
 
 import (
+	"os"
+	"path"
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -80,6 +83,64 @@ func TestPromptSquareStoreMineFiltersByAuthor(t *testing.T) {
 	}
 	if items[0].ID != secondAlice.ID || items[1].ID != firstAlice.ID {
 		t.Fatalf("mine should filter alice and sort newest first: %+v", items)
+	}
+}
+
+func TestPromptSquareStoreSubmitFromResultCreatesPermanentCopy(t *testing.T) {
+	store := newTestStore(t)
+	store.now = func() time.Time { return time.Date(2026, 6, 26, 11, 0, 0, 0, time.UTC) }
+
+	sourceDir := t.TempDir()
+	sourcePath := filepath.Join(sourceDir, "result.png")
+	sourceData := []byte("not-a-real-png-but-output-owned")
+	if err := os.WriteFile(sourcePath, sourceData, 0o644); err != nil {
+		t.Fatalf("write source image: %v", err)
+	}
+
+	item, err := store.SubmitFromResult(SubmitFromResultRequest{
+		Title:             "result title",
+		Prompt:            "result prompt",
+		Model:             "gpt-image-2",
+		Ratio:             "16:9",
+		Quality:           "high",
+		OutputFormat:      "png",
+		Tags:              []string{"daily", "result"},
+		Author:            "Alice",
+		AuthorDisplayName: "Alice A.",
+		SourceTaskID:      "img_task_01",
+		SourceImagePath:   sourcePath,
+		SourceImageMime:   "image/png",
+	})
+	if err != nil {
+		t.Fatalf("SubmitFromResult() error = %v", err)
+	}
+	if !item.Permanent || item.Source.Type != "task_result" || item.SourceTaskID != "img_task_01" {
+		t.Fatalf("submitted item should be permanent task result: %+v", item)
+	}
+	if item.ImageURL == "" || path.Dir(item.ImageURL) != "/api/prompt-square/images" {
+		t.Fatalf("submitted item should point at prompt-square copy, got %q", item.ImageURL)
+	}
+
+	copyPath, mime, err := store.ResolveImage(filepath.Base(item.ImageURL))
+	if err != nil {
+		t.Fatalf("ResolveImage(copy) error = %v", err)
+	}
+	if mime != "image/png" {
+		t.Fatalf("copy mime = %q, want image/png", mime)
+	}
+	copied, err := os.ReadFile(copyPath)
+	if err != nil {
+		t.Fatalf("read copied image: %v", err)
+	}
+	if string(copied) != string(sourceData) {
+		t.Fatalf("copied image data mismatch: got %q want %q", copied, sourceData)
+	}
+
+	if err := os.Remove(sourcePath); err != nil {
+		t.Fatalf("remove source image: %v", err)
+	}
+	if _, _, err := store.ResolveImage(filepath.Base(item.ImageURL)); err != nil {
+		t.Fatalf("permanent copy should remain after source removal: %v", err)
 	}
 }
 

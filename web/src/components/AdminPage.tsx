@@ -1,4 +1,4 @@
-import { type FormEvent, useEffect, useState } from 'react'
+import { type FormEvent, useEffect, useMemo, useState } from 'react'
 import {
   clearAdminToken,
   getAdminAuthStatus,
@@ -44,12 +44,16 @@ export function AdminPage({ theme, onToggleTheme }: { theme: ThemeMode; onToggle
   const [creditPriceCents, setCreditPriceCents] = useState<NumericInputValue>(10)
   const [minTopUpCredits, setMinTopUpCredits] = useState<NumericInputValue>(10)
   const [referralRewardCredits, setReferralRewardCredits] = useState<NumericInputValue>(0)
+  const [newUserInitialCredits, setNewUserInitialCredits] = useState<NumericInputValue>(0)
+  const [dailyFreeCredits, setDailyFreeCredits] = useState<NumericInputValue>(0)
   const [savingBilling, setSavingBilling] = useState(false)
   const [password, setPassword] = useState('')
+  const [setupToken, setSetupToken] = useState('')
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
   const [users, setUsers] = useState<AdminUser[]>([])
   const [usersLoading, setUsersLoading] = useState(false)
+  const [userQuery, setUserQuery] = useState('')
   const [selectedLedgerUser, setSelectedLedgerUser] = useState('')
   const [ledger, setLedger] = useState<CreditLedgerEntry[]>([])
   const [ledgerLoading, setLedgerLoading] = useState(false)
@@ -138,7 +142,7 @@ export function AdminPage({ theme, onToggleTheme }: { theme: ThemeMode; onToggle
     setMessage('')
     try {
       if (mode === 'setup') {
-        const next = await setupAdminPassword(password)
+        const next = await setupAdminPassword(password, setupToken)
         setAuth(next.auth)
         setMessage('Admin 管理密码已设置')
       } else {
@@ -147,6 +151,7 @@ export function AdminPage({ theme, onToggleTheme }: { theme: ThemeMode; onToggle
         setMessage('Admin 登录成功')
       }
       setPassword('')
+      setSetupToken('')
       await loadConfig()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Admin 鉴权失败')
@@ -181,14 +186,16 @@ export function AdminPage({ theme, onToggleTheme }: { theme: ThemeMode; onToggle
         creditPriceCents: numericOrDefault(creditPriceCents, 0),
         minTopUpCredits: numericOrDefault(minTopUpCredits, 0),
         referralRewardCredits: numericOrDefault(referralRewardCredits, 0),
+        newUserInitialCredits: numericOrDefault(newUserInitialCredits, 0),
+        dailyFreeCredits: numericOrDefault(dailyFreeCredits, 0),
         ...(epayKey.trim() ? { epayKey: epayKey.trim() } : {}),
         clearEpayKey,
       })
       setConfig(cfg)
       applyBillingConfig(cfg)
-      setMessage('易支付配置已保存')
+      setMessage('额度/易支付配置已保存')
     } catch (err) {
-      setError(err instanceof Error ? err.message : '易支付配置保存失败')
+      setError(err instanceof Error ? err.message : '额度/易支付配置保存失败')
     } finally {
       setSavingBilling(false)
     }
@@ -203,6 +210,8 @@ export function AdminPage({ theme, onToggleTheme }: { theme: ThemeMode; onToggle
     setCreditPriceCents(billing.creditPriceCents ?? 10)
     setMinTopUpCredits(billing.minTopUpCredits ?? 10)
     setReferralRewardCredits(billing.referralRewardCredits ?? 0)
+    setNewUserInitialCredits(billing.newUserInitialCredits ?? 0)
+    setDailyFreeCredits(billing.dailyFreeCredits ?? 0)
     setEpayKey('')
     setClearEpayKey(false)
   }
@@ -300,6 +309,9 @@ export function AdminPage({ theme, onToggleTheme }: { theme: ThemeMode; onToggle
     }
   }
 
+  const filteredUsers = useMemo(() => filterAdminUsers(users, userQuery), [users, userQuery])
+  const adminCount = useMemo(() => users.filter((user) => user.isAdmin).length, [users])
+
   if (mode === 'loading') {
     return (
       <main className="center-shell">
@@ -334,6 +346,9 @@ export function AdminPage({ theme, onToggleTheme }: { theme: ThemeMode; onToggle
               <li>后端只保存不可逆哈希，不保存明文密码。</li>
             </ul>
           </div>
+          {mode === 'setup' ? (
+            <label>安装令牌<input type="password" value={setupToken} onChange={(e) => setSetupToken(e.target.value)} placeholder="填写 LOCAL_IMAGE_ADMIN_SETUP_TOKEN 后再设置管理密码" autoComplete="one-time-code" /></label>
+          ) : null}
           <label>Admin 密码<input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="输入复杂管理密码" autoFocus /></label>
           <button className="primary" type="submit">{mode === 'setup' ? '设置并进入 Admin' : '登录 Admin'}</button>
           <a href="/">返回工作台</a>
@@ -353,6 +368,28 @@ export function AdminPage({ theme, onToggleTheme }: { theme: ThemeMode; onToggle
       <form className="admin-panel admin-panel-wide" onSubmit={submit}>
         <AdminBrand title="后台管理" />
         <div className="status-line">Admin 已登录 · 密码状态：{auth?.passwordSet ? '已设置' : '未设置'}</div>
+        <div className="admin-overview-grid" aria-label="后台运营概览">
+          <section>
+            <span>新用户免费</span>
+            <strong>{formatCredits(numericOrDefault(newUserInitialCredits, 0))}</strong>
+            <small>注册后初始次数</small>
+          </section>
+          <section>
+            <span>每日免费</span>
+            <strong>{formatCredits(numericOrDefault(dailyFreeCredits, 0))}</strong>
+            <small>自然日可领取次数</small>
+          </section>
+          <section>
+            <span>易支付</span>
+            <strong>{epayEnabled ? '已开启' : '未开启'}</strong>
+            <small>{billingConfigOf(config).epayKeySet ? '商户 Key 已保存' : '商户 Key 未设置'}</small>
+          </section>
+          <section>
+            <span>用户</span>
+            <strong>{formatCredits(users.length)}</strong>
+            <small>{adminCount} 个管理员</small>
+          </section>
+        </div>
         <label>NewAPI 请求 URL<input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="http://127.0.0.1:3000/v1" /></label>
         <label>对外访问域名<input value={publicBaseUrl} onChange={(e) => setPublicBaseUrl(e.target.value)} placeholder="https://image.example.com，可留空" /></label>
         <label>超时时间（秒）<input type="number" min={config?.limits.minTimeoutSec || 60} max={config?.limits.maxTimeoutSec || 3600} value={timeout} onChange={(e) => setTimeoutSec(readNumberInput(e.target.value))} /></label>
@@ -363,11 +400,11 @@ export function AdminPage({ theme, onToggleTheme }: { theme: ThemeMode; onToggle
         <div className="status-line">当前对外域名：{config?.publicBaseUrl || '未设置'}。用于记录部署域名，反代仍在宝塔/Nginx 里配置。</div>
         <div className="status-line">默认 Image-2 模型：{config?.model || 'gpt-image-2'}；Banana Nano 在工作台按规格路由到独立模型 ID。</div>
         <fieldset className="admin-billing-box">
-          <legend>易支付配置</legend>
+          <legend>额度与易支付配置</legend>
           <div className="admin-section-title">
             <div>
               <strong>用户充值支付</strong>
-              <span>配置易支付网关、单价和邀请奖励</span>
+              <span>配置易支付网关、免费次数和邀请奖励</span>
             </div>
             <span className={`admin-key-status ${billingConfigOf(config).epayKeySet ? 'ready' : 'missing'}`}>
               {billingConfigOf(config).epayKeySet ? `Key 已设置（${billingConfigOf(config).epayKeyPreview || '已隐藏'}）` : 'Key 未设置'}
@@ -384,6 +421,8 @@ export function AdminPage({ theme, onToggleTheme }: { theme: ThemeMode; onToggle
             <label>次数单价（分）<input type="number" min={0} value={creditPriceCents} onChange={(e) => setCreditPriceCents(readNumberInput(e.target.value))} /></label>
             <label>最小充值次数<input type="number" min={0} value={minTopUpCredits} onChange={(e) => setMinTopUpCredits(readNumberInput(e.target.value))} /></label>
             <label>邀请奖励次数<input type="number" min={0} value={referralRewardCredits} onChange={(e) => setReferralRewardCredits(readNumberInput(e.target.value))} /></label>
+            <label>新用户初始免费次数<input type="number" min={0} value={newUserInitialCredits} onChange={(e) => setNewUserInitialCredits(readNumberInput(e.target.value))} /></label>
+            <label>每日免费次数<input type="number" min={0} value={dailyFreeCredits} onChange={(e) => setDailyFreeCredits(readNumberInput(e.target.value))} /></label>
           </div>
           <label className="check-row admin-debug-toggle">
             <input type="checkbox" checked={clearEpayKey} onChange={(e) => setClearEpayKey(e.target.checked)} />
@@ -403,19 +442,25 @@ export function AdminPage({ theme, onToggleTheme }: { theme: ThemeMode; onToggle
           </div>
           <div className="admin-billing-actions">
             <button className="primary" type="button" onClick={() => void submitBillingConfig()} disabled={savingBilling}>
-              {savingBilling ? '保存中...' : '保存易支付配置'}
+              {savingBilling ? '保存中...' : '保存额度/易支付配置'}
             </button>
           </div>
         </fieldset>
         <button className="primary" type="submit">保存管理配置</button>
         <div className="admin-actions"><a href="/">返回工作台</a><button type="button" onClick={handleLogout}>退出 Admin</button></div>
         <section className="admin-users-section" aria-labelledby="admin-users-title">
-          <div className="admin-section-heading">
+          <div className="admin-section-heading admin-users-heading">
             <div>
               <h2 id="admin-users-title">用户管理</h2>
-              <p className="muted">查看余额、加次数流水和管理员角色。</p>
+              <p className="muted">查看余额、加次数流水和管理员角色。当前展示 {filteredUsers.length} / {users.length} 个用户。</p>
             </div>
-            <button type="button" onClick={() => void loadUsers()} disabled={usersLoading}>{usersLoading ? '刷新中...' : '刷新用户'}</button>
+            <div className="admin-users-tools">
+              <label className="admin-user-search">
+                <span>搜索用户</span>
+                <input value={userQuery} onChange={(event) => setUserQuery(event.target.value)} placeholder="用户名、显示名或邮箱" />
+              </label>
+              <button type="button" onClick={() => void loadUsers()} disabled={usersLoading}>{usersLoading ? '刷新中...' : '刷新用户'}</button>
+            </div>
           </div>
           <div
             className="admin-grant-form"
@@ -460,9 +505,9 @@ export function AdminPage({ theme, onToggleTheme }: { theme: ThemeMode; onToggle
               <tbody>
                 {usersLoading && users.length === 0 ? (
                   <tr><td colSpan={6}>正在读取用户...</td></tr>
-                ) : users.length === 0 ? (
-                  <tr><td colSpan={6}>暂无用户数据</td></tr>
-                ) : users.map((user) => (
+                ) : filteredUsers.length === 0 ? (
+                  <tr><td colSpan={6}>{users.length ? '没有匹配用户' : '暂无用户数据'}</td></tr>
+                ) : filteredUsers.map((user) => (
                   <tr key={user.username}>
                     <td>
                       <strong>{user.displayName || user.username}</strong>
@@ -556,7 +601,21 @@ function billingConfigOf(config: AdminConfig | null): AdminBillingConfig {
     creditPriceCents: billing.creditPriceCents ?? config?.creditPriceCents ?? 10,
     minTopUpCredits: billing.minTopUpCredits ?? config?.minTopUpCredits ?? 10,
     referralRewardCredits: billing.referralRewardCredits ?? config?.referralRewardCredits ?? 0,
+    newUserInitialCredits: billing.newUserInitialCredits ?? config?.newUserInitialCredits ?? 0,
+    dailyFreeCredits: billing.dailyFreeCredits ?? config?.dailyFreeCredits ?? 0,
   }
+}
+
+function filterAdminUsers(users: AdminUser[], query: string) {
+  const keyword = query.trim().toLowerCase()
+  if (!keyword) return users
+  return users.filter((user) => [
+    user.username,
+    user.displayName,
+    user.email,
+    user.role,
+    user.isAdmin ? 'admin 管理员' : 'user 普通用户',
+  ].join(' ').toLowerCase().includes(keyword))
 }
 
 function normalizeAdminEpayMethods(methods: string[] | undefined) {

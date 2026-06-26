@@ -24,7 +24,16 @@ func TestFileStoreUpdatePersistsAdminConfig(t *testing.T) {
 	publicURL := "https://image.example.com/"
 	timeout := 601
 	debugEnabled := true
-	updated, err := store.Update(Update{NewAPIBaseURL: &baseURL, PublicBaseURL: &publicURL, DebugEnabled: &debugEnabled, TimeoutSec: &timeout})
+	initialCredits := 7
+	dailyCredits := 2
+	updated, err := store.Update(Update{
+		NewAPIBaseURL:         &baseURL,
+		PublicBaseURL:         &publicURL,
+		DebugEnabled:          &debugEnabled,
+		TimeoutSec:            &timeout,
+		NewUserInitialCredits: &initialCredits,
+		DailyFreeCredits:      &dailyCredits,
+	})
 	if err != nil {
 		t.Fatalf("Update() error = %v", err)
 	}
@@ -43,6 +52,9 @@ func TestFileStoreUpdatePersistsAdminConfig(t *testing.T) {
 	if updated.Model != config.DefaultModel {
 		t.Fatalf("Model = %q", updated.Model)
 	}
+	if updated.NewUserInitialCredits != initialCredits || updated.DailyFreeCredits != dailyCredits {
+		t.Fatalf("free credit settings = initial %d daily %d", updated.NewUserInitialCredits, updated.DailyFreeCredits)
+	}
 
 	reopened, err := NewFileStore(path, DefaultsFromConfig(config.Load()))
 	if err != nil {
@@ -54,6 +66,9 @@ func TestFileStoreUpdatePersistsAdminConfig(t *testing.T) {
 	}
 	if !public.ModelLocked || public.Model != config.DefaultModel {
 		t.Fatalf("model should be locked to %s, got %+v", config.DefaultModel, public)
+	}
+	if public.NewUserInitialCredits != initialCredits || public.DailyFreeCredits != dailyCredits || public.Billing.NewUserInitialCredits != initialCredits || public.Billing.DailyFreeCredits != dailyCredits {
+		t.Fatalf("public free credit settings mismatch: %+v", public)
 	}
 
 }
@@ -82,6 +97,14 @@ func TestFileStoreRejectsInvalidAdminConfig(t *testing.T) {
 	badPublicURL := "ftp://example.com"
 	if _, err := store.Update(Update{PublicBaseURL: &badPublicURL}); err == nil {
 		t.Fatal("expected invalid public base URL error")
+	}
+
+	negative := -1
+	if _, err := store.Update(Update{NewUserInitialCredits: &negative}); err == nil {
+		t.Fatal("expected invalid initial free credits error")
+	}
+	if _, err := store.Update(Update{DailyFreeCredits: &negative}); err == nil {
+		t.Fatal("expected invalid daily free credits error")
 	}
 }
 

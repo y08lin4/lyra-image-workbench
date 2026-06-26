@@ -11,6 +11,7 @@ import (
 	"github.com/y08lin4/lyra-image-workbench/internal/jobs"
 	"github.com/y08lin4/lyra-image-workbench/internal/output"
 	"github.com/y08lin4/lyra-image-workbench/internal/spaceconfig"
+	"github.com/y08lin4/lyra-image-workbench/internal/users"
 )
 
 type V1ImageTaskHandler struct {
@@ -18,10 +19,15 @@ type V1ImageTaskHandler struct {
 	spaceConfig *spaceconfig.Store
 	manager     *jobs.Manager
 	output      *output.Store
+	users       *users.Store
 }
 
-func NewV1ImageTaskHandler(apiKeyStore *apikeys.Store, spaceConfigStore *spaceconfig.Store, manager *jobs.Manager, outputStore *output.Store) V1ImageTaskHandler {
-	return V1ImageTaskHandler{apiKeys: apiKeyStore, spaceConfig: spaceConfigStore, manager: manager, output: outputStore}
+func NewV1ImageTaskHandler(apiKeyStore *apikeys.Store, spaceConfigStore *spaceconfig.Store, manager *jobs.Manager, outputStore *output.Store, userStores ...*users.Store) V1ImageTaskHandler {
+	var userStore *users.Store
+	if len(userStores) > 0 {
+		userStore = userStores[0]
+	}
+	return V1ImageTaskHandler{apiKeys: apiKeyStore, spaceConfig: spaceConfigStore, manager: manager, output: outputStore, users: userStore}
 }
 
 func (h V1ImageTaskHandler) Create(w http.ResponseWriter, r *http.Request) {
@@ -40,16 +46,178 @@ func (h V1ImageTaskHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	payload.RuntimeSecrets = jobs.RuntimeSecrets{}
+	payload.Source = jobs.JobSourceAPI
+	payload.BeforeEnqueue = func(job jobs.Job) error { return h.chargeTask(scope.username, job) }
+	if err := h.ensureTaskCredits(scope.username, jobs.CreditCostForRequest(payload)); err != nil {
+		writeUserCreditError(w, err)
+		return
+	}
 	if err := h.requireCloudUpstreamKey(scope.storageToken, payload.Provider); err != nil {
 		writeError(w, http.StatusBadRequest, "UPSTREAM_KEY_REQUIRED", err.Error())
 		return
 	}
 	job, err := h.manager.Create(scope.storageToken, payload)
 	if err != nil {
+		if isUserCreditError(err) {
+			writeUserCreditError(w, err)
+			return
+		}
 		writeError(w, http.StatusBadRequest, "TASK_CREATE_FAILED", err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "task": publicV1Job(job)})
+
+	public := publicV1Job(job)
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":              true,
+		"task":            public,
+		"taskId":          public.ID,
+		"consumedCredits": public.ConsumedCredits,
+	})
+}
+
+func (h V1ImageTaskHandler) CreateGeneration(w http.ResponseWriter, r *http.Request) {
+	scope, ok := h.authenticate(w, r)
+	if !ok {
+		return
+	}
+	defer r.Body.Close()
+	var payload v1ImageGenerationRequest
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		writeError(w, http.StatusBadRequest, "BAD_JSON", "请求体不是有效 JSON")
+		return
+	}
+	createPayload := payload.createRequest()
+	createPayload.Source = jobs.JobSourceAPI
+	createPayload.BeforeEnqueue = func(job jobs.Job) error { return h.chargeTask(scope.username, job) }
+	if err := h.ensureTaskCredits(scope.username, jobs.CreditCostForRequest(createPayload)); err != nil {
+		writeUserCreditError(w, err)
+		return
+	}
+	if err := h.requireCloudUpstreamKey(scope.storageToken, createPayload.Provider); err != nil {
+		writeError(w, http.StatusBadRequest, "UPSTREAM_KEY_REQUIRED", err.Error())
+		return
+	}
+	job, err := h.manager.Create(scope.storageToken, createPayload)
+	if err != nil {
+		if isUserCreditError(err) {
+			writeUserCreditError(w, err)
+			return
+		}
+		writeError(w, http.StatusBadRequest, "TASK_CREATE_FAILED", err.Error())
+		return
+	}
+
+	public := publicV1Job(job)
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":              true,
+		"task":            public,
+		"taskId":          public.ID,
+		"consumedCredits": public.ConsumedCredits,
+	})
+}
+
+func (h V1ImageTaskHandler) ensureTaskCredits(username string, amount int) error {
+	return ensureTaskCredits(h.users, username, amount)
+}
+
+func (h V1ImageTaskHandler) chargeTask(username string, job jobs.Job) error {
+	return chargeTaskCredits(h.users, username, job)
+}
+
+type v1ImageGenerationRequest struct {
+	Provider          string `json:"provider,omitempty"`
+	Model             string `json:"model"`
+	Prompt            string `json:"prompt"`
+	Size              string `json:"size,omitempty"`
+	Ratio             string `json:"ratio,omitempty"`
+	Resolution        string `json:"resolution,omitempty"`
+	Quality           string `json:"quality,omitempty"`
+	OutputFormat      string `json:"output_format,omitempty"`
+	OutputFormatCamel string `json:"outputFormat,omitempty"`
+	Count             int    `json:"count,omitempty"`
+	N                 int    `json:"n,omitempty"`
+	Concurrency       int    `json:"concurrency,omitempty"`
+}
+
+func (req v1ImageGenerationRequest) createRequest() jobs.CreateRequest {
+	ratio, resolution := v1SizeSpec(req.Size)
+	if strings.TrimSpace(req.Ratio) != "" {
+		ratio = strings.TrimSpace(req.Ratio)
+	}
+	if strings.TrimSpace(req.Resolution) != "" {
+		resolution = strings.TrimSpace(req.Resolution)
+	}
+	outputFormat := strings.TrimSpace(req.OutputFormat)
+	if outputFormat == "" {
+		outputFormat = strings.TrimSpace(req.OutputFormatCamel)
+	}
+	count := req.N
+	if count == 0 {
+		count = req.Count
+	}
+	return jobs.CreateRequest{
+		Provider:     strings.TrimSpace(req.Provider),
+		Model:        strings.TrimSpace(req.Model),
+		Mode:         jobs.ModeTextToImage,
+		Prompt:       strings.TrimSpace(req.Prompt),
+		Ratio:        ratio,
+		Resolution:   resolution,
+		Quality:      strings.TrimSpace(req.Quality),
+		OutputFormat: outputFormat,
+		Count:        count,
+		Concurrency:  req.Concurrency,
+	}
+}
+
+func v1SizeSpec(size string) (string, string) {
+	switch strings.ToLower(strings.TrimSpace(size)) {
+	case "auto":
+		return "auto", "auto"
+	case "1024x1024":
+		return "1:1", "standard"
+	case "1024x1536":
+		return "2:3", "standard"
+	case "1536x1024":
+		return "3:2", "standard"
+	case "768x1024":
+		return "3:4", "standard"
+	case "1024x768":
+		return "4:3", "standard"
+	case "1008x1792":
+		return "9:16", "standard"
+	case "1792x1008":
+		return "16:9", "standard"
+	case "2048x2048":
+		return "1:1", "2k"
+	case "1344x2016":
+		return "2:3", "2k"
+	case "2016x1344":
+		return "3:2", "2k"
+	case "1536x2048":
+		return "3:4", "2k"
+	case "2048x1536":
+		return "4:3", "2k"
+	case "1152x2048":
+		return "9:16", "2k"
+	case "2048x1152":
+		return "16:9", "2k"
+	case "2880x2880":
+		return "1:1", "4k"
+	case "2336x3504":
+		return "2:3", "4k"
+	case "3504x2336":
+		return "3:2", "4k"
+	case "2448x3264":
+		return "3:4", "4k"
+	case "3264x2448":
+		return "4:3", "4k"
+	case "2160x3840":
+		return "9:16", "4k"
+	case "3840x2160":
+		return "16:9", "4k"
+	default:
+		return "", ""
+	}
 }
 
 func (h V1ImageTaskHandler) Get(w http.ResponseWriter, r *http.Request) {
@@ -123,7 +291,7 @@ func (h V1ImageTaskHandler) Image(w http.ResponseWriter, r *http.Request) {
 func (h V1ImageTaskHandler) authenticate(w http.ResponseWriter, r *http.Request) (v1Scope, bool) {
 	secret := bearerSecret(r.Header.Get("Authorization"))
 	if secret == "" {
-		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "Bearer API Key 缺失或无效")
+		h.writeInvalidBearer(w, r)
 		return v1Scope{}, false
 	}
 	record, ok, err := h.apiKeys.Authenticate(secret)
@@ -132,10 +300,26 @@ func (h V1ImageTaskHandler) authenticate(w http.ResponseWriter, r *http.Request)
 		return v1Scope{}, false
 	}
 	if !ok {
-		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "Bearer API Key 缺失或无效")
+		h.writeInvalidBearer(w, r)
 		return v1Scope{}, false
 	}
-	return v1Scope{storageToken: record.StorageToken, apiKeyID: record.ID}, true
+	username := strings.TrimSpace(record.Username)
+	if username == "" && h.users != nil {
+		if owner, found := h.users.FindByStorageToken(record.StorageToken); found {
+			username = owner.Username
+		}
+	}
+	return v1Scope{storageToken: record.StorageToken, username: username, apiKeyID: record.ID}, true
+}
+
+func (h V1ImageTaskHandler) writeInvalidBearer(w http.ResponseWriter, r *http.Request) {
+	identity := "api-bearer-invalid"
+	if ok, retryAfter := authAttemptAllowed("api-bearer", r, identity); !ok {
+		writeAuthRateLimited(w, retryAfter)
+		return
+	}
+	recordAuthAttempt("api-bearer", r, identity, false)
+	writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "Bearer API Key 缺失或无效")
 }
 
 func (h V1ImageTaskHandler) requireCloudUpstreamKey(storageToken string, providerValue string) error {
@@ -161,6 +345,7 @@ func (h V1ImageTaskHandler) requireCloudUpstreamKey(storageToken string, provide
 
 type v1Scope struct {
 	storageToken string
+	username     string
 	apiKeyID     string
 }
 

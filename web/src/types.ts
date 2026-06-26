@@ -1,5 +1,6 @@
 export type Mode = 'text-to-image' | 'image-to-image'
-export type ModelProvider = 'image-2' | 'banana'
+export type ModelProvider = 'image-2' | 'banana' | (string & {})
+export type TaskSource = 'web' | 'api' | (string & {})
 export type TaskStatus = 'queued' | 'running' | 'succeeded' | 'partial_failed' | 'failed' | 'cancelled' | 'interrupted'
 
 export interface PublicUser {
@@ -50,7 +51,16 @@ export interface DeveloperApiKey {
   lastUsedAt?: string
 }
 
-export type CreditLedgerType = 'admin_add' | 'purchase' | 'referral_reward' | 'task_charge' | 'refund' | string
+export type CreditLedgerType =
+  | 'initial_free'
+  | 'daily_free'
+  | 'admin_add'
+  | 'purchase'
+  | 'referral_reward'
+  | 'task_charge'
+  | 'task_refund'
+  | 'refund'
+  | string
 
 export interface CreditLedgerEntry {
   id: string
@@ -80,6 +90,8 @@ export interface AdminBillingConfig {
   creditPriceCents?: number
   minTopUpCredits?: number
   referralRewardCredits?: number
+  newUserInitialCredits?: number
+  dailyFreeCredits?: number
 }
 
 export interface AdminConfig {
@@ -99,6 +111,8 @@ export interface AdminConfig {
   creditPriceCents?: number
   minTopUpCredits?: number
   referralRewardCredits?: number
+  newUserInitialCredits?: number
+  dailyFreeCredits?: number
   timeoutCode: string
   updatedAt: string
   limits: { minTimeoutSec: number; maxTimeoutSec: number }
@@ -131,6 +145,8 @@ export interface TaskResult {
   statusText: string
   statusCode: string
   imageUrl?: string
+  outputDate?: string
+  outputFileName?: string
   remoteUrl?: string
   remoteThumbUrl?: string
   uploadError?: string
@@ -156,11 +172,20 @@ export interface DebugLog {
   fields?: Record<string, unknown>
 }
 
+export interface TaskReference {
+  uploadId?: string
+  originalName: string
+  fileName: string
+  mime: string
+  size?: number
+}
+
 export interface Task {
   id: string
   provider?: ModelProvider
   model?: string
   mode: Mode
+  source?: TaskSource
   prompt: string
   framePrompts?: string[]
   ratio: string
@@ -169,8 +194,10 @@ export interface Task {
   outputFormat: string
   size: string
   count: number
+  consumedCredits?: number
   concurrency: number
   uploadIds?: string[]
+  references?: TaskReference[]
   status: TaskStatus
   statusText: string
   statusCode: string
@@ -263,12 +290,13 @@ export interface PromptSquareItem {
   tags?: string[]
   authorUsername?: string
   authorDisplayName?: string
-  author: {
+  authorUrl?: string
+  author: string | {
     name: string
     url?: string
   }
   source: {
-    type: string
+    type: 'user_upload' | 'external' | 'task_result' | (string & {})
     name?: string
     url?: string
     license?: string
@@ -276,9 +304,11 @@ export interface PromptSquareItem {
   likeCount?: number
   likes?: number
   likedByMe?: boolean
+  dailyRank?: number
   permanent?: boolean
   submittedToSquare?: boolean
   taskId?: string
+  sourceTaskId?: string
   imageIndex?: number
   submittedAt?: string
   status: string
@@ -315,6 +345,12 @@ export interface TopUpOption {
   methods?: EpayMethod[]
 }
 
+export interface BillingTopUpOptions {
+  enabled: boolean
+  methods: EpayMethod[]
+  options: TopUpOption[]
+}
+
 export interface CreateEpayOrderRequest {
   credits: number
   method: EpayMethod
@@ -333,6 +369,7 @@ export interface EpayOrder {
 
 export interface BillingTopUp {
   tradeNo: string
+  payUrl?: string
   credits: number
   amountCents: number
   status: string
@@ -340,6 +377,15 @@ export interface BillingTopUp {
   createdAt: string
   paidAt?: string
   thirdPartyTradeNo?: string
+}
+
+export interface DailyCreditClaim {
+  claimed: boolean
+  alreadyClaimed: boolean
+  amount: number
+  claimDate?: string
+  user?: PublicUser
+  entry?: CreditLedgerEntry | null
 }
 
 export type PromptToolMode = 'text-to-prompt' | 'image-to-prompt'
@@ -426,7 +472,7 @@ export interface PromptSession {
   sourceImageUrl?: string
   target?: string
   ratio?: string
-  provider?: ModelProvider | string
+  provider?: ModelProvider
   model?: string
   messages: PromptMessage[]
   versions: PromptVersion[]

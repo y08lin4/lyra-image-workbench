@@ -39,7 +39,7 @@ func (h AdminUsersHandler) AddCredits(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "BAD_JSON", "请求体不是有效 JSON")
 		return
 	}
-	user, entry, err := h.store.AddCreditsByAdmin(payload.Username, payload.Amount, payload.Reason, adminActorFromRequest(r))
+	user, entry, err := h.store.AddCreditsByAdmin(payload.Username, payload.Amount, payload.Reason, h.adminActorFromRequest(r))
 	if err != nil {
 		writeUserError(w, err)
 		return
@@ -107,9 +107,12 @@ func (h AdminUsersHandler) requireAdminAccess(w http.ResponseWriter, r *http.Req
 	return false
 }
 
-func adminActorFromRequest(r *http.Request) string {
+func (h AdminUsersHandler) adminActorFromRequest(r *http.Request) string {
 	if actor := strings.TrimSpace(r.Header.Get("X-Admin-Actor")); actor != "" {
 		return actor
+	}
+	if session, ok := currentUserSession(h.store, r); ok && session.User.IsAdmin {
+		return session.User.Username
 	}
 	return "admin"
 }

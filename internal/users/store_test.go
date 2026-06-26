@@ -2,8 +2,11 @@ package users
 
 import (
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/y08lin4/lyra-image-workbench/internal/passwordhash"
 )
 
 const testPassword = "R7!Blue#Vault$2026"
@@ -129,6 +132,63 @@ func TestAdminCreditsRequireReasonAndAppendLedger(t *testing.T) {
 	}
 }
 
+func TestRegisterWithInitialCreditsAppendsLedger(t *testing.T) {
+	store := newTestStore(t)
+	session, err := store.RegisterWithInitialCredits("Alice_01", "", testPassword, "", "", 7)
+	if err != nil {
+		t.Fatalf("RegisterWithInitialCredits() error = %v", err)
+	}
+	if session.User.CreditsBalance != 7 {
+		t.Fatalf("initial credits balance = %d, want 7", session.User.CreditsBalance)
+	}
+	ledger, err := store.ListCreditLedger("alice_01")
+	if err != nil {
+		t.Fatalf("ListCreditLedger() error = %v", err)
+	}
+	if len(ledger) != 1 {
+		t.Fatalf("ledger length = %d, want 1", len(ledger))
+	}
+	entry := ledger[0]
+	if entry.Type != creditLedgerTypeInitialFree || entry.Delta != 7 || entry.BalanceAfter != 7 || entry.SourceID != "initial:alice_01" {
+		t.Fatalf("initial ledger entry mismatch: %+v", entry)
+	}
+}
+
+func TestClaimDailyCreditsIdempotentByDate(t *testing.T) {
+	store := newTestStore(t)
+	if _, err := store.Register("Alice_01", "", testPassword, "", ""); err != nil {
+		t.Fatalf("Register() error = %v", err)
+	}
+	day := time.Date(2026, 6, 26, 9, 30, 0, 0, time.Local)
+	first, err := store.ClaimDailyCredits("alice_01", 3, day)
+	if err != nil {
+		t.Fatalf("ClaimDailyCredits(first) error = %v", err)
+	}
+	if !first.Created || first.Entry.Type != creditLedgerTypeDailyFree || first.Entry.Delta != 3 || first.Entry.BalanceAfter != 3 || first.ClaimDate != "2026-06-26" {
+		t.Fatalf("first daily claim mismatch: %+v", first)
+	}
+	duplicate, err := store.ClaimDailyCredits("Alice_01", 3, day.Add(2*time.Hour))
+	if err != nil {
+		t.Fatalf("ClaimDailyCredits(duplicate) error = %v", err)
+	}
+	if duplicate.Created || duplicate.Entry.ID != first.Entry.ID || duplicate.User.CreditsBalance != 3 {
+		t.Fatalf("same-day duplicate should return existing entry without crediting again: %+v", duplicate)
+	}
+	next, err := store.ClaimDailyCredits("Alice_01", 3, day.AddDate(0, 0, 1))
+	if err != nil {
+		t.Fatalf("ClaimDailyCredits(next day) error = %v", err)
+	}
+	if !next.Created || next.Entry.BalanceAfter != 6 || next.User.CreditsBalance != 6 {
+		t.Fatalf("next-day claim mismatch: %+v", next)
+	}
+	ledger, err := store.ListCreditLedger("alice_01")
+	if err != nil {
+		t.Fatalf("ListCreditLedger() error = %v", err)
+	}
+	if len(ledger) != 2 {
+		t.Fatalf("ledger length = %d, want 2", len(ledger))
+	}
+}
 func TestPurchaseCreditsIdempotentAndReferralRewardOnce(t *testing.T) {
 	store := newTestStore(t)
 	inviter, err := store.Register("Inviter_01", "inviter@example.com", testPassword, "", "")
@@ -179,5 +239,90 @@ func TestPurchaseCreditsIdempotentAndReferralRewardOnce(t *testing.T) {
 	}
 	if inviterProfile.CreditsBalance != 3 {
 		t.Fatalf("inviter credits = %d, want 3", inviterProfile.CreditsBalance)
+	}
+}
+
+func TestTaskCreditsChargeRefundAndLedgerOrder(t *testing.T) {
+	store := newTestStore(t)
+	if _, err := store.RegisterWithInitialCredits("Alice_01", "", testPassword, "", "", 5); err != nil {
+		t.Fatalf("RegisterWithInitialCredits() error = %v", err)
+	}
+	charge, err := store.ChargeTaskCredits("alice_01", 2, "task_1", "")
+	if err != nil {
+		t.Fatalf("ChargeTaskCredits() error = %v", err)
+	}
+	if !charge.Created || charge.Entry.Type != creditLedgerTypeTaskCharge || charge.Entry.Delta != -2 || charge.Entry.BalanceAfter != 3 || charge.User.CreditsBalance != 3 {
+		t.Fatalf("charge result mismatch: %+v", charge)
+	}
+	duplicateCharge, err := store.ChargeTaskCredits("Alice_01", 2, "task_1", "duplicate retry")
+	if err != nil {
+		t.Fatalf("duplicate ChargeTaskCredits() error = %v", err)
+	}
+	if duplicateCharge.Created || duplicateCharge.Entry.ID != charge.Entry.ID || duplicateCharge.User.CreditsBalance != 3 {
+		t.Fatalf("duplicate charge should be idempotent: %+v", duplicateCharge)
+	}
+	if _, err := store.ChargeTaskCredits("Alice_01", 3, "task_1", "changed amount"); err == nil {
+		t.Fatal("same task ID with different amount should conflict")
+	}
+	if _, err := store.ChargeTaskCredits("Alice_01", 10, "task_2", "too much"); err == nil {
+		t.Fatal("charge should fail when balance is not enough")
+	}
+	refund, err := store.RefundTaskCredits("Alice_01", "task_1", "")
+	if err != nil {
+		t.Fatalf("RefundTaskCredits() error = %v", err)
+	}
+	if !refund.Created || refund.Entry.Type != creditLedgerTypeTaskRefund || refund.Entry.Delta != 2 || refund.Entry.BalanceAfter != 5 || refund.User.CreditsBalance != 5 {
+		t.Fatalf("refund result mismatch: %+v", refund)
+	}
+	duplicateRefund, err := store.RefundTaskCredits("alice_01", "task_1", "duplicate retry")
+	if err != nil {
+		t.Fatalf("duplicate RefundTaskCredits() error = %v", err)
+	}
+	if duplicateRefund.Created || duplicateRefund.Entry.ID != refund.Entry.ID || duplicateRefund.User.CreditsBalance != 5 {
+		t.Fatalf("duplicate refund should be idempotent: %+v", duplicateRefund)
+	}
+	if _, err := store.RefundTaskCredits("Alice_01", "task_missing", ""); err == nil {
+		t.Fatal("refund without a task charge should fail")
+	}
+	ledger, err := store.ListCreditLedger("alice_01")
+	if err != nil {
+		t.Fatalf("ListCreditLedger() error = %v", err)
+	}
+	if len(ledger) != 3 {
+		t.Fatalf("ledger length = %d, want 3: %+v", len(ledger), ledger)
+	}
+	if ledger[0].Type != creditLedgerTypeTaskRefund || ledger[1].Type != creditLedgerTypeTaskCharge || ledger[2].Type != creditLedgerTypeInitialFree {
+		t.Fatalf("ledger should be newest first, got %+v", ledger)
+	}
+}
+
+func TestLoginUpgradesLegacyPasswordHash(t *testing.T) {
+	store := newTestStore(t)
+	if _, err := store.Register("Alice_01", "", testPassword, "", ""); err != nil {
+		t.Fatalf("Register() error = %v", err)
+	}
+	store.mu.Lock()
+	index, ok := store.findLocked("alice_01")
+	if !ok {
+		store.mu.Unlock()
+		t.Fatal("registered user missing")
+	}
+	legacySalt := "00112233445566778899aabbccddeeff"
+	store.current.Users[index].SaltHex = legacySalt
+	store.current.Users[index].HashHex = passwordhash.LegacyHash(legacySalt, testPassword)
+	if err := store.saveLocked(); err != nil {
+		store.mu.Unlock()
+		t.Fatalf("save legacy hash: %v", err)
+	}
+	store.mu.Unlock()
+
+	if _, err := store.Login("alice_01", testPassword, ""); err != nil {
+		t.Fatalf("Login() legacy hash error = %v", err)
+	}
+	store.mu.Lock()
+	upgraded := store.current.Users[index].HashHex
+	store.mu.Unlock()
+	if !strings.HasPrefix(upgraded, passwordhash.Scheme+"$") {
+		t.Fatalf("legacy hash was not upgraded: %s", upgraded)
 	}
 }

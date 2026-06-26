@@ -37,7 +37,7 @@
   → 配置 data/outputs 写入权限
   → 用 systemd / 宝塔 Go 项目托管后端
   → 用 Nginx / Caddy / 宝塔反代到 127.0.0.1:8787
-  → 访问 /admin 配置 NewAPI Base URL
+  → 访问 /admin 设置 Admin 密码并配置 NewAPI Base URL
   → 注册普通账号并设置本地 Key 或云端 Key
 ```
 
@@ -73,12 +73,5 @@ Browser
 
 默认宝塔/systemd 路径的一键更新命令见 [`README.md#已部署服务器一键更新`](../README.md#已部署服务器一键更新)。如果你的目录或 systemd 服务名不同，请先替换命令里的路径和服务名。
 
-## GIF / FFmpeg note
 
-The `/gif` page can generate animation frames without FFmpeg, but final GIF merging requires the server to run patched `ffmpeg` version `8.1.2` or newer. Older or unparsable versions are treated as unavailable. For bare binary, systemd, or panel deployments, install FFmpeg on the host and verify:
-
-```bash
-ffmpeg -version
-```
-
-Set `FFMPEG_BIN=/path/to/ffmpeg` if the executable is not on `PATH`, or `GIF_ENABLED=false` to disable final GIF rendering while keeping normal image generation available.
+> 必须设置 LOCAL_IMAGE_ADMIN_SETUP_TOKEN，首次打开 /admin 时填写该令牌后再设置管理密码。

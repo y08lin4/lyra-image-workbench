@@ -2,8 +2,6 @@ package adminauth
 
 import (
 	"crypto/rand"
-	"crypto/sha256"
-	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -13,6 +11,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/y08lin4/lyra-image-workbench/internal/passwordhash"
 
 	"github.com/y08lin4/lyra-image-workbench/internal/spaces"
 )
@@ -78,14 +78,14 @@ func (s *Store) Setup(password string) (Session, error) {
 	if err := spaces.ValidatePassword(password); err != nil {
 		return Session{}, err
 	}
-	salt, err := randomHex(16)
+	salt, encodedHash, err := passwordhash.New(password)
 	if err != nil {
 		return Session{}, err
 	}
 	now := time.Now().Format(time.RFC3339)
 	s.current = record{
 		SaltHex:   salt,
-		HashHex:   hashPassword(salt, password),
+		HashHex:   encodedHash,
 		CreatedAt: now,
 		UpdatedAt: now,
 	}
@@ -101,8 +101,14 @@ func (s *Store) Login(password string) (Session, error) {
 	if !s.passwordSetLocked() {
 		return Session{}, NewError("ADMIN_PASSWORD_NOT_SET", "请先设置 Admin 管理密码")
 	}
-	if !s.matchPasswordLocked(password) {
+	passwordOK, needsPasswordUpgrade := s.matchPasswordLocked(password)
+	if !passwordOK {
 		return Session{}, NewError("ADMIN_PASSWORD_INVALID", "Admin 密码错误")
+	}
+	if needsPasswordUpgrade {
+		if err := s.upgradePasswordLocked(password); err != nil {
+			return Session{}, err
+		}
 	}
 	return s.newSessionLocked()
 }
@@ -130,9 +136,19 @@ func (s *Store) passwordSetLocked() bool {
 	return strings.TrimSpace(s.current.SaltHex) != "" && strings.TrimSpace(s.current.HashHex) != ""
 }
 
-func (s *Store) matchPasswordLocked(password string) bool {
-	got := hashPassword(s.current.SaltHex, password)
-	return subtle.ConstantTimeCompare([]byte(got), []byte(s.current.HashHex)) == 1
+func (s *Store) matchPasswordLocked(password string) (bool, bool) {
+	return passwordhash.Verify(s.current.SaltHex, s.current.HashHex, password)
+}
+
+func (s *Store) upgradePasswordLocked(password string) error {
+	salt, encodedHash, err := passwordhash.New(password)
+	if err != nil {
+		return err
+	}
+	s.current.SaltHex = salt
+	s.current.HashHex = encodedHash
+	s.current.UpdatedAt = time.Now().Format(time.RFC3339)
+	return s.saveLocked()
 }
 
 func (s *Store) newSessionLocked() (Session, error) {
@@ -166,11 +182,6 @@ func (s *Store) saveLocked() error {
 		return err
 	}
 	return os.Rename(tmp, s.path)
-}
-
-func hashPassword(saltHex string, password string) string {
-	sum := sha256.Sum256([]byte(strings.TrimSpace(saltHex) + ":" + strings.TrimSpace(password)))
-	return hex.EncodeToString(sum[:])
 }
 
 func randomHex(size int) (string, error) {

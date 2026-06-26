@@ -1,10 +1,11 @@
 import { clearLocalKeyScope, requestJson, saveLocalKeyScope } from './client'
-import type { CreditLedgerEntry, PromptSquareItem, PublicUser, UserSession } from '../types'
+import type { CreditLedgerEntry, DailyCreditClaim, PromptSquareItem, PublicUser, UserSession } from '../types'
 
 type UserSessionResponse = { ok: boolean; session: UserSession }
 type UserProfileResponse = { ok: boolean; user?: PublicUser; profile?: PublicUser; session?: UserSession }
 type UserLedgerResponse = { ok: boolean; ledger?: CreditLedgerEntry[]; entries?: CreditLedgerEntry[] }
 type UserPromptSquareItemsResponse = { ok: boolean; items?: PromptSquareItem[] }
+type DailyCreditClaimResponse = DailyCreditClaim & { ok: boolean }
 type ReferralCodeResponse = { ok: boolean; referralCode?: string; user?: PublicUser; profile?: PublicUser }
 
 export type TwoFactorSetup = { secret: string; otpauthUrl: string }
@@ -83,8 +84,20 @@ export async function listUserLedger() {
 }
 
 export async function listMyPromptSquareItems() {
-  const data = await requestJson<UserPromptSquareItemsResponse>('/api/users/me/prompt-square-items')
+  const data = await requestJson<UserPromptSquareItemsResponse>('/api/prompt-square/mine')
   return data.items || []
+}
+
+export async function claimDailyCredits(): Promise<DailyCreditClaim> {
+  const data = await requestJson<DailyCreditClaimResponse>('/api/users/credits/daily', { method: 'POST' })
+  return {
+    claimed: Boolean(data.claimed),
+    alreadyClaimed: Boolean(data.alreadyClaimed),
+    amount: data.amount || 0,
+    claimDate: data.claimDate,
+    user: data.user,
+    entry: data.entry || null,
+  }
 }
 
 export async function createReferralCode() {

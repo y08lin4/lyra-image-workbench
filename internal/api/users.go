@@ -6,6 +6,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/y08lin4/lyra-image-workbench/internal/settings"
 	"github.com/y08lin4/lyra-image-workbench/internal/spaces"
 	"github.com/y08lin4/lyra-image-workbench/internal/users"
 )
@@ -13,8 +14,9 @@ import (
 const userSessionCookie = "image_workbench_user_session"
 
 type UserHandler struct {
-	store  *users.Store
-	spaces *spaces.FileStore
+	store    *users.Store
+	spaces   *spaces.FileStore
+	settings *settings.FileStore
 }
 
 type userRegisterRequest struct {
@@ -43,8 +45,8 @@ type twoFactorCodeRequest struct {
 	Code string `json:"code"`
 }
 
-func NewUserHandler(store *users.Store, spaceStore *spaces.FileStore) UserHandler {
-	return UserHandler{store: store, spaces: spaceStore}
+func NewUserHandler(store *users.Store, spaceStore *spaces.FileStore, settingsStore *settings.FileStore) UserHandler {
+	return UserHandler{store: store, spaces: spaceStore, settings: settingsStore}
 }
 
 func (h UserHandler) Register(w http.ResponseWriter, r *http.Request) {
@@ -67,7 +69,11 @@ func (h UserHandler) Register(w http.ResponseWriter, r *http.Request) {
 		}
 		storageToken = token
 	}
-	session, err := h.store.Register(payload.Username, payload.Email, payload.Password, payload.ReferralCode, storageToken)
+	initialCredits := 0
+	if h.settings != nil {
+		initialCredits = h.settings.Get().NewUserInitialCredits
+	}
+	session, err := h.store.RegisterWithInitialCredits(payload.Username, payload.Email, payload.Password, payload.ReferralCode, storageToken, initialCredits)
 	if err != nil {
 		writeUserError(w, err)
 		return
@@ -87,11 +93,16 @@ func (h UserHandler) Login(w http.ResponseWriter, r *http.Request) {
 	if identifier == "" {
 		identifier = payload.Username
 	}
+	if ok, retryAfter := authAttemptAllowed("user-login", r, "client"); !ok {
+		writeAuthRateLimited(w, retryAfter)
+		return
+	}
 	twoFactorCode := payload.TwoFactorCode
 	if twoFactorCode == "" {
 		twoFactorCode = payload.TOTPCode
 	}
 	session, err := h.store.Login(identifier, payload.Password, twoFactorCode)
+	recordAuthAttempt("user-login", r, "client", err == nil)
 	if err != nil {
 		writeUserError(w, err)
 		return
@@ -159,6 +170,41 @@ func (h UserHandler) Ledger(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "ledger": entries})
+}
+
+func (h UserHandler) ClaimDailyCredits(w http.ResponseWriter, r *http.Request) {
+	session, ok := currentUserSession(h.store, r)
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "USER_AUTH_REQUIRED", "请先登录")
+		return
+	}
+	amount := 0
+	if h.settings != nil {
+		amount = h.settings.Get().DailyFreeCredits
+	}
+	if amount <= 0 {
+		profile, err := h.store.Profile(session.User.Username)
+		if err != nil {
+			writeUserError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "claimed": false, "alreadyClaimed": false, "amount": 0, "user": profile, "entry": nil})
+		return
+	}
+	result, err := h.store.ClaimDailyCredits(session.User.Username, amount, time.Now())
+	if err != nil {
+		writeUserError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":             true,
+		"claimed":        result.Created,
+		"alreadyClaimed": !result.Created,
+		"amount":         amount,
+		"claimDate":      result.ClaimDate,
+		"user":           result.User,
+		"entry":          result.Entry,
+	})
 }
 
 func (h UserHandler) ReferralCode(w http.ResponseWriter, r *http.Request) {

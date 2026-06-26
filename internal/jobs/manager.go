@@ -48,6 +48,10 @@ type jobSecret struct {
 	APIKey string
 }
 
+type RecoverOptions struct {
+	RefundQueued func(Job) error
+}
+
 func NewManager(store *Store, hub *events.Hub, settingsStore *settings.FileStore, spaceConfig *spaceconfig.Store, uploadStore *uploads.Store, outputStore *output.Store, newapiClient *newapi.Client) *Manager {
 	m := &Manager{
 		store:       store,
@@ -66,7 +70,11 @@ func NewManager(store *Store, hub *events.Hub, settingsStore *settings.FileStore
 	return m
 }
 
-func (m *Manager) Recover() error {
+func (m *Manager) Recover(options ...RecoverOptions) error {
+	var opts RecoverOptions
+	if len(options) > 0 {
+		opts = options[0]
+	}
 	bySpace, err := m.store.AllSpacesJobs()
 	if err != nil {
 		return err
@@ -74,7 +82,20 @@ func (m *Manager) Recover() error {
 	for token, list := range bySpace {
 		for _, job := range list {
 			switch job.Status {
-			case StatusQueued, StatusRunning:
+			case StatusQueued:
+				if opts.RefundQueued != nil && job.ConsumedCredits > 0 {
+					if err := opts.RefundQueued(job); err != nil {
+						return fmt.Errorf("recover queued job %s refund failed: %w", job.ID, err)
+					}
+				}
+				_, _, _ = m.store.Update(token, job.ID, func(j *Job) {
+					ApplyStatus(j, StatusInterrupted)
+					ApplyStage(j, StageInterrupted)
+					j.Progress = 100
+					j.Error = "Task was queued before the server restarted and has not been submitted upstream. Please retry. Charged credits are refunded automatically when account billing is enabled."
+					j.FinishedAt = time.Now()
+				})
+			case StatusRunning:
 				_, _, _ = m.store.Update(token, job.ID, func(j *Job) {
 					ApplyStatus(j, StatusInterrupted)
 					ApplyStage(j, StageInterrupted)
@@ -156,47 +177,59 @@ func (m *Manager) Create(spaceToken string, req CreateRequest) (Job, error) {
 		outputFormat = "auto"
 		size = spec.Size
 	}
+	count := clamp(req.Count, 1, 24, 1)
 	job := Job{
-		ID:           id,
-		SpaceToken:   spaceToken,
-		Provider:     provider,
-		Model:        model,
-		Mode:         req.Mode,
-		Prompt:       strings.TrimSpace(req.Prompt),
-		FramePrompts: normalizeFramePrompts(req.FramePrompts, clamp(req.Count, 1, 24, 1)),
-		Ratio:        ratio,
-		Resolution:   resolution,
-		Quality:      quality,
-		OutputFormat: outputFormat,
-		Size:         size,
-		Count:        clamp(req.Count, 1, 24, 1),
-		Concurrency:  clamp(req.Concurrency, 1, 0, 1),
-		UploadIDs:    append([]string{}, req.UploadIDs...),
-		References:   references,
-		Progress:     0,
-		Results:      []Result{},
-		DebugEnabled: adminCfg.DebugEnabled,
-		CreatedAt:    now,
-		UpdatedAt:    now,
+		ID:              id,
+		SpaceToken:      spaceToken,
+		Provider:        provider,
+		Model:           model,
+		Mode:            req.Mode,
+		Source:          normalizeSource(req.Source),
+		Prompt:          strings.TrimSpace(req.Prompt),
+		FramePrompts:    normalizeFramePrompts(req.FramePrompts, count),
+		Ratio:           ratio,
+		Resolution:      resolution,
+		Quality:         quality,
+		OutputFormat:    outputFormat,
+		Size:            size,
+		Count:           count,
+		ConsumedCredits: CreditCostForCount(count),
+		Concurrency:     clamp(req.Concurrency, 1, 0, 1),
+		UploadIDs:       append([]string{}, req.UploadIDs...),
+		References:      references,
+		Progress:        0,
+		Results:         []Result{},
+		DebugEnabled:    adminCfg.DebugEnabled,
+		CreatedAt:       now,
+		UpdatedAt:       now,
 	}
 	ApplyStatus(&job, StatusQueued)
 	ApplyStage(&job, StageQueued)
 	if job.DebugEnabled {
 		job.DebugLogs = append(job.DebugLogs, newDebugLog(-1, "info", "create", "任务已创建，Debug 日志已开启", map[string]any{
-			"provider":    job.Provider,
-			"model":       job.Model,
-			"mode":        job.Mode,
-			"ratio":       job.Ratio,
-			"resolution":  job.Resolution,
-			"quality":     job.Quality,
-			"format":      job.OutputFormat,
-			"size":        job.Size,
-			"count":       job.Count,
-			"concurrency": job.Concurrency,
+			"provider":        job.Provider,
+			"model":           job.Model,
+			"mode":            job.Mode,
+			"ratio":           job.Ratio,
+			"resolution":      job.Resolution,
+			"quality":         job.Quality,
+			"format":          job.OutputFormat,
+			"size":            job.Size,
+			"count":           job.Count,
+			"consumedCredits": job.ConsumedCredits,
+			"concurrency":     job.Concurrency,
 		}))
 	}
 	if err := m.store.Save(job); err != nil {
 		return Job{}, err
+	}
+	if req.BeforeEnqueue != nil {
+		if err := req.BeforeEnqueue(job); err != nil {
+			if deleted, ok, deleteErr := m.store.Delete(spaceToken, job.ID); deleteErr == nil && ok {
+				m.deleteReferenceSnapshots(spaceToken, deleted)
+			}
+			return Job{}, err
+		}
 	}
 	m.setJobSecret(job.ID, apiKey)
 	m.enqueue(spaceToken, job.ID)
@@ -292,7 +325,7 @@ func (m *Manager) UploadResultToPixhost(ctx context.Context, spaceToken string, 
 	return job, updated, nil
 }
 
-func (m *Manager) Retry(spaceToken string, id string, secrets RuntimeSecrets) (Job, error) {
+func (m *Manager) Retry(spaceToken string, id string, secrets RuntimeSecrets, beforeEnqueue ...func(Job) error) (Job, error) {
 	old, ok, err := m.store.Get(spaceToken, id)
 	if err != nil {
 		return Job{}, err
@@ -300,11 +333,16 @@ func (m *Manager) Retry(spaceToken string, id string, secrets RuntimeSecrets) (J
 	if !ok {
 		return Job{}, errors.New("任务不存在")
 	}
+	var callback func(Job) error
+	if len(beforeEnqueue) > 0 {
+		callback = beforeEnqueue[0]
+	}
 	return m.Create(spaceToken, CreateRequest{
 		RuntimeSecrets: secrets,
 		Provider:       old.Provider,
 		Model:          old.Model,
 		Mode:           old.Mode,
+		Source:         sourceOrWeb(old.Source),
 		Prompt:         old.Prompt,
 		FramePrompts:   old.FramePrompts,
 		Ratio:          old.Ratio,
@@ -315,6 +353,7 @@ func (m *Manager) Retry(spaceToken string, id string, secrets RuntimeSecrets) (J
 		Concurrency:    old.Concurrency,
 		UploadIDs:      old.UploadIDs,
 		References:     old.References,
+		BeforeEnqueue:  callback,
 	})
 }
 

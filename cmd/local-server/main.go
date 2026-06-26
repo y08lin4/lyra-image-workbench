@@ -12,7 +12,6 @@ import (
 	"github.com/y08lin4/lyra-image-workbench/internal/billing"
 	"github.com/y08lin4/lyra-image-workbench/internal/config"
 	"github.com/y08lin4/lyra-image-workbench/internal/events"
-	"github.com/y08lin4/lyra-image-workbench/internal/gifrender"
 	"github.com/y08lin4/lyra-image-workbench/internal/jobs"
 	"github.com/y08lin4/lyra-image-workbench/internal/llm"
 	"github.com/y08lin4/lyra-image-workbench/internal/newapi"
@@ -71,10 +70,20 @@ func main() {
 	promptStore := prompttools.NewStore(spaceStore)
 	promptService := prompttools.NewService(promptStore, settingsStore, spaceConfigStore, uploadStore, jobManager, outputStore, llmClient)
 	promptLibraryService := promptlibrary.NewService(filepath.Join(cfg.DataDir, "cache", "prompt-library"))
-	gifStore := gifrender.NewStore(spaceStore)
-	gifRenderer := gifrender.NewFFmpegRenderer(gifrender.ConfigFromApp(cfg))
-	gifService := gifrender.NewService(gifRenderer, gifStore)
-	if err := jobManager.Recover(); err != nil {
+	if err := jobManager.Recover(jobs.RecoverOptions{RefundQueued: func(job jobs.Job) error {
+		owner, ok := userStore.FindByStorageToken(job.SpaceToken)
+		if !ok {
+			return nil
+		}
+		_, err := userStore.RefundTaskCredits(owner.Username, job.ID, "服务重启前任务尚未提交，自动退回次数")
+		if err != nil {
+			var userErr users.Error
+			if users.AsError(err, &userErr) && userErr.Code == "USER_TASK_CHARGE_NOT_FOUND" {
+				return nil
+			}
+		}
+		return err
+	}}); err != nil {
 		log.Printf("恢复任务状态失败：%v", err)
 	}
 
@@ -93,8 +102,7 @@ func main() {
 		PromptLibrary: promptLibraryService,
 		PromptSquare:  promptSquareStore,
 		PromptTools:   promptService,
-		LLM:           llmClient,
-		GIF:           gifService})
+		LLM:           llmClient})
 	httpServer := server.New(cfg, router)
 
 	log.Printf("Lyra Image Workbench 后端启动：http://%s", cfg.Addr)

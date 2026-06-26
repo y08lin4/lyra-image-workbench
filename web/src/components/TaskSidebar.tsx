@@ -149,6 +149,7 @@ function TaskQueueItem({ task, active, favorite, selected, onSelect, onOpenDetai
   const okCount = task.results.filter((result) => result.ok).length
   const error = firstError(task)
   const modelLabel = task.provider === BANANA_PROVIDER ? getBananaModelOption(task.model || '').label : task.model || 'gpt-image-2'
+  const sourceLabel = taskSourceLabel(task.source)
 
   return (
     <article className={`queue-item ${active ? 'active' : ''} ${selected ? 'selected' : ''}`} onClick={onSelect}>
@@ -171,6 +172,8 @@ function TaskQueueItem({ task, active, favorite, selected, onSelect, onOpenDetai
           <span>{task.mode === 'image-to-image' ? '图生图' : '文生图'}</span>
           <span>{providerLabel(task.provider)}</span>
           <span>{modelLabel}</span>
+          <span>来源 {sourceLabel}</span>
+          <span>ID {compactTaskId(task.id)}</span>
         </div>
         <progress value={task.progress} max={100} />
         <div className="queue-meta">
@@ -213,6 +216,7 @@ function filterTasks(tasks: Task[], query: string, filter: SidebarFilter, favori
       task.stageText,
       task.stageCode,
       task.provider,
+      task.source,
       task.model,
       task.ratio,
       task.resolution,
@@ -246,4 +250,13 @@ function formatElapsed(task: Task) {
   const mm = String(Math.floor(seconds / 60)).padStart(2, '0')
   const ss = String(seconds % 60).padStart(2, '0')
   return `${mm}:${ss}`
+}
+
+function taskSourceLabel(source?: string) {
+  return source === 'api' ? 'API' : 'Web'
+}
+
+function compactTaskId(id: string) {
+  if (id.length <= 22) return id
+  return `${id.slice(0, 12)}...${id.slice(-6)}`
 }

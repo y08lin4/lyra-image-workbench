@@ -2,13 +2,15 @@ import { requestJson } from './client'
 import type { CreateTaskRequest, Task, TaskEvent } from '../types'
 import { withLocalApiKeyHeaders } from '../lib/localApiKeys'
 
+type TaskMutationResponse = { ok: boolean; job: Task; taskId?: string; consumedCredits?: number }
+
 export async function createTask(payload: CreateTaskRequest) {
-  const data = await requestJson<{ ok: boolean; job: Task }>('/api/background-tasks', {
+  const data = await requestJson<TaskMutationResponse>('/api/background-tasks', {
     method: 'POST',
     headers: withLocalApiKeyHeaders(),
     body: JSON.stringify(payload),
   })
-  return data.job
+  return taskFromMutationResponse(data)
 }
 
 export async function listTasks() {
@@ -32,11 +34,11 @@ export async function deleteTask(id: string) {
 }
 
 export async function retryTask(id: string) {
-  const data = await requestJson<{ ok: boolean; job: Task }>(`/api/background-tasks/${encodeURIComponent(id)}/retry`, {
+  const data = await requestJson<TaskMutationResponse>(`/api/background-tasks/${encodeURIComponent(id)}/retry`, {
     method: 'POST',
     headers: withLocalApiKeyHeaders(),
   })
-  return data.job
+  return taskFromMutationResponse(data)
 }
 
 export async function setTaskFavorite(id: string, favorite: boolean) {
@@ -79,4 +81,11 @@ export async function streamTaskEvents(id: string, onEvent: (event: TaskEvent) =
       index = buffer.indexOf('\n\n')
     }
   }
+}
+
+function taskFromMutationResponse(data: TaskMutationResponse) {
+  if (typeof data.consumedCredits === 'number' && typeof data.job.consumedCredits !== 'number') {
+    return { ...data.job, consumedCredits: data.consumedCredits }
+  }
+  return data.job
 }

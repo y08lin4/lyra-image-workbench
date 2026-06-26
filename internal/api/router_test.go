@@ -16,7 +16,6 @@ import (
 	"github.com/y08lin4/lyra-image-workbench/internal/billing"
 	"github.com/y08lin4/lyra-image-workbench/internal/config"
 	"github.com/y08lin4/lyra-image-workbench/internal/events"
-	"github.com/y08lin4/lyra-image-workbench/internal/gifrender"
 	"github.com/y08lin4/lyra-image-workbench/internal/jobs"
 	"github.com/y08lin4/lyra-image-workbench/internal/llm"
 	"github.com/y08lin4/lyra-image-workbench/internal/newapi"
@@ -89,6 +88,7 @@ func TestDeveloperAPIKeysRequireCloudUpstreamKey(t *testing.T) {
 
 	rawKey := "sk-cloud-for-developer-key-123456"
 	_ = doJSON(t, router, http.MethodPost, "/api/config", token, map[string]any{"apiKey": rawKey, "saveApiKeyToCloud": true})
+	grantTestCredits(t, router, token, "testuser01", 3)
 	body = doJSON(t, router, http.MethodPost, "/api/developer/api-keys", token, map[string]string{"name": "sdk"})
 	if strings.Contains(body, rawKey) || !strings.Contains(body, "lyra_sk_") {
 		t.Fatalf("developer key response invalid or leaked upstream key: %s", body)
@@ -119,7 +119,8 @@ func TestDeveloperAPIKeysRequireCloudUpstreamKey(t *testing.T) {
 }
 
 func TestV1ImageTasksUseBearerAndCloudKey(t *testing.T) {
-	router := newTestRouter(t)
+	env := newTestAPIEnv(t)
+	router := env.Router
 	token := createTestSession(t, router)
 
 	code, body := doJSONStatus(t, router, http.MethodPost, "/v1/image-tasks", "", map[string]any{"mode": "text-to-image", "prompt": "hello"}, "")
@@ -128,6 +129,7 @@ func TestV1ImageTasksUseBearerAndCloudKey(t *testing.T) {
 	}
 
 	_ = doJSON(t, router, http.MethodPost, "/api/config", token, map[string]any{"apiKey": "sk-cloud-v1-1234567890", "saveApiKeyToCloud": true})
+	grantTestCredits(t, router, token, "testuser01", 3)
 	body = doJSON(t, router, http.MethodPost, "/api/developer/api-keys", token, map[string]string{"name": "sdk"})
 	var created struct {
 		APIKey struct {
@@ -160,13 +162,18 @@ func TestV1ImageTasksUseBearerAndCloudKey(t *testing.T) {
 		t.Fatalf("v1 response leaked runtime key: %s", body)
 	}
 	var taskResponse struct {
-		Task struct {
-			ID string `json:"id"`
-		} `json:"task"`
+		Task            jobs.Job `json:"task"`
+		TaskID          string   `json:"taskId"`
+		ConsumedCredits int      `json:"consumedCredits"`
 	}
 	if err := json.Unmarshal([]byte(body), &taskResponse); err != nil || taskResponse.Task.ID == "" {
 		t.Fatalf("decode v1 task response error=%v body=%s", err, body)
 	}
+	if taskResponse.TaskID != taskResponse.Task.ID || taskResponse.Task.ConsumedCredits != 1 || taskResponse.ConsumedCredits != 1 {
+		t.Fatalf("v1 create task id/credits mismatch: %+v", taskResponse)
+	}
+	requireUserCredits(t, env, "testuser01", 2)
+	requireLatestTaskCharge(t, env, "testuser01", taskResponse.Task.ID, -1, 2)
 
 	code, body = doJSONStatus(t, router, http.MethodGet, "/v1/image-tasks/"+taskResponse.Task.ID, "", nil, "Bearer "+created.Secret)
 	if code != http.StatusOK || !strings.Contains(body, taskResponse.Task.ID) {
@@ -179,6 +186,7 @@ func TestV1ImageTasksUseBearerAndCloudKey(t *testing.T) {
 	if code != http.StatusBadRequest || !strings.Contains(body, "UPSTREAM_KEY_REQUIRED") {
 		t.Fatalf("v1 create after clearing cloud key code=%d body=%s", code, body)
 	}
+	requireUserCredits(t, env, "testuser01", 2)
 
 	_ = doJSON(t, router, http.MethodDelete, "/api/developer/api-keys/"+created.APIKey.ID, token, nil)
 	code, body = doJSONStatus(t, router, http.MethodGet, "/v1/image-tasks/"+taskResponse.Task.ID, "", nil, "Bearer "+created.Secret)
@@ -267,6 +275,80 @@ func TestV1ImageDownloadHidesInternalOutputPathErrors(t *testing.T) {
 	}
 }
 
+func TestTaskAPIsScopeHistoryStatusAndHideInternalFields(t *testing.T) {
+	env := newTestAPIEnv(t)
+	ownerToken := createNamedUserSession(t, env.Router, "taskowner01", "R7!Owner#Vault$2026", "")
+	ownerSession, ok := env.Users.Current(ownerToken)
+	if !ok {
+		t.Fatal("owner session missing")
+	}
+	intruderToken := createNamedUserSession(t, env.Router, "taskintruder01", "R7!Intruder#Vault$2026", "")
+	intruderSession, ok := env.Users.Current(intruderToken)
+	if !ok {
+		t.Fatal("intruder session missing")
+	}
+	_, ownerSecret, err := env.APIKeys.Create("owner sdk", ownerSession.User.Username, ownerSession.StorageToken)
+	if err != nil {
+		t.Fatalf("owner APIKeys.Create() error = %v", err)
+	}
+	_, intruderSecret, err := env.APIKeys.Create("intruder sdk", intruderSession.User.Username, intruderSession.StorageToken)
+	if err != nil {
+		t.Fatalf("intruder APIKeys.Create() error = %v", err)
+	}
+
+	now := time.Now().UTC()
+	olderOwnerJob := seededRouterTask(ownerSession.StorageToken, "img_history_old", jobs.StatusSucceeded, jobs.StageSucceeded, now.Add(-time.Hour))
+	result := jobs.NewResult(0, jobs.StatusSucceeded, "")
+	result.ImageURL = "/internal/should-be-rewritten"
+	result.OutputDate = "2026-06-26"
+	result.OutputFileName = "private.png"
+	olderOwnerJob.Results = []jobs.Result{result}
+	if err := env.Jobs.Save(olderOwnerJob); err != nil {
+		t.Fatalf("Save(older owner job) error = %v", err)
+	}
+	newerOwnerJob := seededRouterTask(ownerSession.StorageToken, "img_history_new", jobs.StatusRunning, jobs.StageWaitingUpstream, now)
+	if err := env.Jobs.Save(newerOwnerJob); err != nil {
+		t.Fatalf("Save(newer owner job) error = %v", err)
+	}
+	intruderJob := seededRouterTask(intruderSession.StorageToken, "img_history_intruder", jobs.StatusFailed, jobs.StageFailed, now.Add(time.Minute))
+	if err := env.Jobs.Save(intruderJob); err != nil {
+		t.Fatalf("Save(intruder job) error = %v", err)
+	}
+
+	historyBody := doJSON(t, env.Router, http.MethodGet, "/api/background-tasks?limit=10", ownerToken, nil)
+	if strings.Contains(historyBody, intruderJob.ID) || strings.Contains(historyBody, "spaceToken") || strings.Contains(historyBody, "outputDate") || strings.Contains(historyBody, "outputFileName") {
+		t.Fatalf("history response leaked another space or internal fields: %s", historyBody)
+	}
+	var history struct {
+		Tasks []jobs.Job `json:"tasks"`
+	}
+	if err := json.Unmarshal([]byte(historyBody), &history); err != nil {
+		t.Fatalf("decode history response: %v body=%s", err, historyBody)
+	}
+	if len(history.Tasks) != 2 || history.Tasks[0].ID != newerOwnerJob.ID || history.Tasks[1].ID != olderOwnerJob.ID {
+		t.Fatalf("history order/items mismatch: %+v", history.Tasks)
+	}
+	if history.Tasks[0].Status != jobs.StatusRunning || history.Tasks[0].StatusCode != "J200" || history.Tasks[0].Stage != jobs.StageWaitingUpstream || history.Tasks[0].StageCode != "S130" {
+		t.Fatalf("running task status metadata missing: %+v", history.Tasks[0])
+	}
+	if len(history.Tasks[1].Results) != 1 || history.Tasks[1].Results[0].ImageURL != "/api/background-tasks/img_history_old/images/0" {
+		t.Fatalf("internal history result URL not rewritten: %+v", history.Tasks[1].Results)
+	}
+
+	code, body := doJSONStatus(t, env.Router, http.MethodGet, "/api/background-tasks/"+intruderJob.ID, ownerToken, nil, "")
+	if code != http.StatusNotFound || !strings.Contains(body, "TASK_NOT_FOUND") {
+		t.Fatalf("owner should not see intruder task via internal API, code=%d body=%s", code, body)
+	}
+	code, body = doJSONStatus(t, env.Router, http.MethodGet, "/v1/image-tasks/"+olderOwnerJob.ID, "", nil, "Bearer "+ownerSecret)
+	if code != http.StatusOK || !strings.Contains(body, `"/v1/image-tasks/img_history_old/images/0"`) || strings.Contains(body, "/api/background-tasks/") || strings.Contains(body, "outputDate") {
+		t.Fatalf("owner v1 get should expose v1 image URL only, code=%d body=%s", code, body)
+	}
+	code, body = doJSONStatus(t, env.Router, http.MethodGet, "/v1/image-tasks/"+olderOwnerJob.ID, "", nil, "Bearer "+intruderSecret)
+	if code != http.StatusNotFound || !strings.Contains(body, "TASK_NOT_FOUND") {
+		t.Fatalf("intruder should not see owner task via v1 API, code=%d body=%s", code, body)
+	}
+}
+
 func TestUserConfigRequiresLogin(t *testing.T) {
 	router := newTestRouter(t)
 
@@ -296,7 +378,7 @@ func TestPromptLibraryAPIRequiresLogin(t *testing.T) {
 	}
 }
 
-func TestGIFAPIsRequireLogin(t *testing.T) {
+func TestGIFAPIsAreRemoved(t *testing.T) {
 	router := newTestRouter(t)
 	for _, tc := range []struct {
 		method string
@@ -309,10 +391,13 @@ func TestGIFAPIsRequireLogin(t *testing.T) {
 		{http.MethodGet, "/api/gif-renders/gifrender_missing", ""},
 	} {
 		req := httptest.NewRequest(tc.method, tc.path, strings.NewReader(tc.body))
+		if tc.body != "" {
+			req.Header.Set("Content-Type", "application/json")
+		}
 		res := httptest.NewRecorder()
 		router.ServeHTTP(res, req)
-		if res.Code != http.StatusUnauthorized {
-			t.Fatalf("%s %s without login code=%d body=%s", tc.method, tc.path, res.Code, res.Body.String())
+		if res.Code != http.StatusNotFound && res.Code != http.StatusMethodNotAllowed {
+			t.Fatalf("%s %s should be removed, code=%d body=%s", tc.method, tc.path, res.Code, res.Body.String())
 		}
 	}
 }
@@ -398,6 +483,66 @@ func TestAdminConfigAPIUpdatesURLAndTimeout(t *testing.T) {
 	}
 }
 
+func TestFreeCreditsConfigGrantsRegistrationAndDailyClaim(t *testing.T) {
+	env := newTestAPIEnv(t)
+	adminToken := createAdminToken(t, env.Router)
+	body := doAdminJSON(t, env.Router, http.MethodPut, "/api/admin/config", adminToken, map[string]any{
+		"newUserInitialCredits": 7,
+		"dailyFreeCredits":      2,
+	})
+	if !strings.Contains(body, `"newUserInitialCredits":7`) || !strings.Contains(body, `"dailyFreeCredits":2`) {
+		t.Fatalf("admin config response missing free credit settings: %s", body)
+	}
+
+	body, cookies := doJSONWithCookies(t, env.Router, http.MethodPost, "/api/users/register", "", map[string]string{
+		"username": "freeUser01",
+		"password": "R7!Free#Vault$2026",
+	})
+	token := userSessionFromCookies(t, cookies)
+	var registered struct {
+		Session users.Session `json:"session"`
+	}
+	if err := json.Unmarshal([]byte(body), &registered); err != nil {
+		t.Fatalf("decode register response: %v body=%s", err, body)
+	}
+	if registered.Session.User.CreditsBalance != 7 {
+		t.Fatalf("registered creditsBalance=%d, want 7 body=%s", registered.Session.User.CreditsBalance, body)
+	}
+
+	body = doJSON(t, env.Router, http.MethodGet, "/api/users/ledger", token, nil)
+	if !strings.Contains(body, `"type":"initial_free"`) || !strings.Contains(body, `"balanceAfter":7`) {
+		t.Fatalf("initial free credit ledger missing: %s", body)
+	}
+
+	body = doJSON(t, env.Router, http.MethodPost, "/api/users/credits/daily", token, nil)
+	var firstClaim struct {
+		Claimed        bool                    `json:"claimed"`
+		AlreadyClaimed bool                    `json:"alreadyClaimed"`
+		Amount         int                     `json:"amount"`
+		User           users.PublicUser        `json:"user"`
+		Entry          users.CreditLedgerEntry `json:"entry"`
+	}
+	if err := json.Unmarshal([]byte(body), &firstClaim); err != nil {
+		t.Fatalf("decode first daily claim: %v body=%s", err, body)
+	}
+	if !firstClaim.Claimed || firstClaim.AlreadyClaimed || firstClaim.Amount != 2 || firstClaim.User.CreditsBalance != 9 || firstClaim.Entry.Type != "daily_free" || firstClaim.Entry.BalanceAfter != 9 {
+		t.Fatalf("first daily claim mismatch: %+v body=%s", firstClaim, body)
+	}
+
+	body = doJSON(t, env.Router, http.MethodPost, "/api/users/credits/daily", token, nil)
+	var duplicateClaim struct {
+		Claimed        bool                    `json:"claimed"`
+		AlreadyClaimed bool                    `json:"alreadyClaimed"`
+		User           users.PublicUser        `json:"user"`
+		Entry          users.CreditLedgerEntry `json:"entry"`
+	}
+	if err := json.Unmarshal([]byte(body), &duplicateClaim); err != nil {
+		t.Fatalf("decode duplicate daily claim: %v body=%s", err, body)
+	}
+	if duplicateClaim.Claimed || !duplicateClaim.AlreadyClaimed || duplicateClaim.User.CreditsBalance != 9 || duplicateClaim.Entry.ID != firstClaim.Entry.ID {
+		t.Fatalf("duplicate daily claim should not credit again: %+v body=%s", duplicateClaim, body)
+	}
+}
 func TestAdminUsersCanAddCreditsAndReadLedger(t *testing.T) {
 	router := newTestRouter(t)
 	createNamedUserSession(t, router, "creditUser01", "R7!Credit#Vault$2026", "")
@@ -445,6 +590,173 @@ func TestAdminConfigRequiresPasswordSession(t *testing.T) {
 	}
 }
 
+func TestAdminSetupRequiresTokenOnPublicHost(t *testing.T) {
+	router := newTestRouter(t)
+	payload := map[string]string{"password": "R7!Orchid#Vault$2026"}
+
+	var firstBody bytes.Buffer
+	if err := json.NewEncoder(&firstBody).Encode(payload); err != nil {
+		t.Fatalf("encode setup payload: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "https://image.example.com/api/admin/auth/setup", &firstBody)
+	req.Header.Set("Content-Type", "application/json")
+	res := httptest.NewRecorder()
+	router.ServeHTTP(res, req)
+	if res.Code != http.StatusForbidden || !strings.Contains(res.Body.String(), "ADMIN_SETUP_TOKEN_REQUIRED") {
+		t.Fatalf("setup without token code=%d body=%s", res.Code, res.Body.String())
+	}
+
+	var secondBody bytes.Buffer
+	if err := json.NewEncoder(&secondBody).Encode(payload); err != nil {
+		t.Fatalf("encode setup payload: %v", err)
+	}
+	req = httptest.NewRequest(http.MethodPost, "https://image.example.com/api/admin/auth/setup", &secondBody)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Admin-Setup-Token", "test-admin-setup-token")
+	res = httptest.NewRecorder()
+	router.ServeHTTP(res, req)
+	if res.Code != http.StatusOK || !strings.Contains(res.Body.String(), "token") {
+		t.Fatalf("setup with token code=%d body=%s", res.Code, res.Body.String())
+	}
+}
+
+func TestAdminSetupRequiresTokenOnLoopback(t *testing.T) {
+	store, err := adminauth.NewStore(filepath.Join(t.TempDir(), "admin-auth.json"))
+	if err != nil {
+		t.Fatalf("adminauth.NewStore() error = %v", err)
+	}
+	handler := NewAdminAuthHandler(store)
+	var body bytes.Buffer
+	if err := json.NewEncoder(&body).Encode(map[string]string{"password": "R7!Orchid#Vault$2026"}); err != nil {
+		t.Fatalf("encode setup payload: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "http://localhost/api/admin/auth/setup", &body)
+	req.RemoteAddr = "127.0.0.1:51000"
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Origin", "http://localhost:5173")
+	res := httptest.NewRecorder()
+	handler.Setup(res, req)
+	if res.Code != http.StatusForbidden || !strings.Contains(res.Body.String(), "ADMIN_SETUP_TOKEN_REQUIRED") {
+		t.Fatalf("loopback setup without install token should be rejected, code=%d body=%s", res.Code, res.Body.String())
+	}
+}
+
+func TestAdminSetupInvalidTokenRateLimited(t *testing.T) {
+	router := newTestRouter(t)
+	payload := map[string]string{"password": "R7!Orchid#Vault$2026"}
+
+	for i := 0; i < 20; i++ {
+		var body bytes.Buffer
+		if err := json.NewEncoder(&body).Encode(payload); err != nil {
+			t.Fatalf("encode setup payload: %v", err)
+		}
+		req := httptest.NewRequest(http.MethodPost, "https://image.example.com/api/admin/auth/setup", &body)
+		req.RemoteAddr = "198.51.100.72:51004"
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("X-Admin-Setup-Token", "wrong-token-"+stringInt(i))
+		res := httptest.NewRecorder()
+		router.ServeHTTP(res, req)
+		if res.Code != http.StatusForbidden || !strings.Contains(res.Body.String(), "ADMIN_SETUP_TOKEN_REQUIRED") {
+			t.Fatalf("invalid setup token attempt %d code=%d body=%s", i+1, res.Code, res.Body.String())
+		}
+	}
+
+	var body bytes.Buffer
+	if err := json.NewEncoder(&body).Encode(payload); err != nil {
+		t.Fatalf("encode setup payload: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "https://image.example.com/api/admin/auth/setup", &body)
+	req.RemoteAddr = "198.51.100.72:51004"
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Admin-Setup-Token", "wrong-token-final")
+	res := httptest.NewRecorder()
+	router.ServeHTTP(res, req)
+	if res.Code != http.StatusTooManyRequests || !strings.Contains(res.Body.String(), "AUTH_RATE_LIMITED") {
+		t.Fatalf("setup should be rate limited after repeated invalid tokens, code=%d body=%s", res.Code, res.Body.String())
+	}
+}
+
+func TestV1BearerInvalidSecretsShareRateLimitByClient(t *testing.T) {
+	env := newTestAPIEnv(t)
+	router := env.Router
+	token := createTestSession(t, router)
+	session, ok := env.Users.Current(token)
+	if !ok {
+		t.Fatal("test session missing")
+	}
+	_, validSecret, err := env.APIKeys.Create("valid sdk", session.User.Username, session.StorageToken)
+	if err != nil {
+		t.Fatalf("APIKeys.Create() error = %v", err)
+	}
+
+	for i := 0; i < 20; i++ {
+		req := httptest.NewRequest(http.MethodGet, "/v1/image-tasks/nonexistent", nil)
+		req.RemoteAddr = "198.51.100.73:51005"
+		req.Header.Set("Authorization", "Bearer lyra_sk_invalid_"+stringInt(i))
+		req.Header.Set("X-Forwarded-For", "127.0.0."+stringInt(i+1))
+		req.Header.Set("CF-Connecting-IP", "10.0.0."+stringInt(i+1))
+		res := httptest.NewRecorder()
+		router.ServeHTTP(res, req)
+		if res.Code != http.StatusUnauthorized || !strings.Contains(res.Body.String(), "UNAUTHORIZED") {
+			t.Fatalf("invalid bearer attempt %d code=%d body=%s", i+1, res.Code, res.Body.String())
+		}
+	}
+
+	validReq := httptest.NewRequest(http.MethodGet, "/v1/image-tasks/nonexistent", nil)
+	validReq.RemoteAddr = "198.51.100.73:51005"
+	validReq.Header.Set("Authorization", "Bearer "+validSecret)
+	validRes := httptest.NewRecorder()
+	router.ServeHTTP(validRes, validReq)
+	if validRes.Code != http.StatusNotFound || !strings.Contains(validRes.Body.String(), "TASK_NOT_FOUND") {
+		t.Fatalf("valid bearer should not be blocked by invalid bearer bucket, code=%d body=%s", validRes.Code, validRes.Body.String())
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/image-tasks/nonexistent", nil)
+	req.RemoteAddr = "198.51.100.73:51005"
+	req.Header.Set("Authorization", "Bearer lyra_sk_invalid_final")
+	req.Header.Set("X-Forwarded-For", "127.0.0.250")
+	req.Header.Set("CF-Connecting-IP", "10.0.0.250")
+	res := httptest.NewRecorder()
+	router.ServeHTTP(res, req)
+	if res.Code != http.StatusTooManyRequests || !strings.Contains(res.Body.String(), "AUTH_RATE_LIMITED") {
+		t.Fatalf("invalid bearer should still be rate limited by RemoteAddr after rotating invalid secrets and forwarded headers, code=%d body=%s", res.Code, res.Body.String())
+	}
+}
+func TestUserLoginInvalidIdentifiersShareRateLimitByClient(t *testing.T) {
+	router := newTestRouter(t)
+	for i := 0; i < 20; i++ {
+		var body bytes.Buffer
+		if err := json.NewEncoder(&body).Encode(map[string]string{
+			"identifier": "missing-user-" + stringInt(i),
+			"password":   "wrong-password",
+		}); err != nil {
+			t.Fatalf("encode login payload: %v", err)
+		}
+		req := httptest.NewRequest(http.MethodPost, "/api/users/session", &body)
+		req.RemoteAddr = "198.51.100.74:51006"
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("X-Forwarded-For", "127.0.0."+stringInt(i+1))
+		res := httptest.NewRecorder()
+		router.ServeHTTP(res, req)
+		if res.Code != http.StatusUnauthorized || !strings.Contains(res.Body.String(), "USER_LOGIN_INVALID") {
+			t.Fatalf("invalid user login attempt %d code=%d body=%s", i+1, res.Code, res.Body.String())
+		}
+	}
+
+	var body bytes.Buffer
+	if err := json.NewEncoder(&body).Encode(map[string]string{"identifier": "missing-user-final", "password": "wrong-password"}); err != nil {
+		t.Fatalf("encode login payload: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/users/session", &body)
+	req.RemoteAddr = "198.51.100.74:51006"
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Forwarded-For", "127.0.0.250")
+	res := httptest.NewRecorder()
+	router.ServeHTTP(res, req)
+	if res.Code != http.StatusTooManyRequests || !strings.Contains(res.Body.String(), "AUTH_RATE_LIMITED") {
+		t.Fatalf("rotating user login identifiers should rate limit by client, code=%d body=%s", res.Code, res.Body.String())
+	}
+}
 func TestStaticFallbackSkipsAPIPrefixes(t *testing.T) {
 	router := newTestRouter(t)
 
@@ -532,6 +844,7 @@ func newTestAPIEnv(t *testing.T) testAPIEnv {
 	cfg.WebDir = webDir
 	cfg.BuiltinNewAPIBaseURL = config.DefaultNewAPIBaseURL
 	cfg.DefaultTimeoutSec = config.DefaultTimeoutSec
+	cfg.AdminSetupToken = "test-admin-setup-token"
 
 	settingsStore, err := settings.NewFileStore(cfg.RuntimeConfigPath(), settings.DefaultsFromConfig(cfg))
 	if err != nil {
@@ -573,7 +886,6 @@ func newTestAPIEnv(t *testing.T) testAPIEnv {
 	if err != nil {
 		t.Fatalf("promptsquare.NewStore() error = %v", err)
 	}
-	gifService := gifrender.NewService(gifrender.NewFFmpegRenderer(gifrender.ConfigFromApp(cfg)), gifrender.NewStore(spaceStore))
 
 	router := NewRouter(Dependencies{
 		Config:        cfg,
@@ -590,8 +902,7 @@ func newTestAPIEnv(t *testing.T) testAPIEnv {
 		PromptLibrary: promptLibraryService,
 		PromptSquare:  promptSquareStore,
 		PromptTools:   promptService,
-		LLM:           llmClient,
-		GIF:           gifService})
+		LLM:           llmClient})
 	return testAPIEnv{Router: router, APIKeys: apiKeyStore, Billing: billingStore, Settings: settingsStore, Users: userStore, Spaces: spaceStore, Jobs: jobStore, Output: outputStore}
 }
 
@@ -612,17 +923,29 @@ func createV1BearerSecret(t *testing.T, router http.Handler, token string) strin
 }
 func createAdminToken(t *testing.T, router http.Handler) string {
 	t.Helper()
-	body := doJSON(t, router, http.MethodPost, "/api/admin/auth/setup", "", map[string]string{"password": "R7!Orchid#Vault$2026"})
+	var body bytes.Buffer
+	if err := json.NewEncoder(&body).Encode(map[string]string{"password": "R7!Orchid#Vault$2026"}); err != nil {
+		t.Fatalf("encode admin setup payload: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/admin/auth/setup", &body)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Admin-Setup-Token", "test-admin-setup-token")
+	res := httptest.NewRecorder()
+	router.ServeHTTP(res, req)
+	if res.Code < 200 || res.Code >= 300 {
+		t.Fatalf("admin setup failed: code=%d body=%s", res.Code, res.Body.String())
+	}
+	bodyText := res.Body.String()
 	var payload struct {
 		Session struct {
 			Token string `json:"token"`
 		} `json:"session"`
 	}
-	if err := json.Unmarshal([]byte(body), &payload); err != nil {
-		t.Fatalf("decode admin setup response: %v body=%s", err, body)
+	if err := json.Unmarshal([]byte(bodyText), &payload); err != nil {
+		t.Fatalf("decode admin setup response: %v body=%s", err, bodyText)
 	}
 	if payload.Session.Token == "" {
-		t.Fatalf("admin token missing: %s", body)
+		t.Fatalf("admin token missing: %s", bodyText)
 	}
 	return payload.Session.Token
 }
@@ -662,6 +985,18 @@ func userSessionFromCookies(t *testing.T, cookies []*http.Cookie) string {
 	return ""
 }
 
+func grantTestCredits(t *testing.T, router http.Handler, token string, username string, amount int) {
+	t.Helper()
+	body := doJSON(t, router, http.MethodPost, "/api/admin/users/credits/add", token, map[string]any{
+		"username": username,
+		"amount":   amount,
+		"reason":   "test credit grant",
+	})
+	if !strings.Contains(body, `"creditsBalance"`) {
+		t.Fatalf("grant credits response invalid: %s", body)
+	}
+}
+
 func waitForTestTaskFinal(t *testing.T, router http.Handler, token string, id string) {
 	t.Helper()
 	for i := 0; i < 80; i++ {
@@ -674,6 +1009,32 @@ func waitForTestTaskFinal(t *testing.T, router http.Handler, token string, id st
 		time.Sleep(25 * time.Millisecond)
 	}
 	t.Fatalf("task %s did not reach final state", id)
+}
+
+func seededRouterTask(storageToken string, id string, status jobs.Status, stage jobs.Stage, createdAt time.Time) jobs.Job {
+	job := jobs.Job{
+		ID:           id,
+		SpaceToken:   storageToken,
+		Provider:     "image-2",
+		Model:        "gpt-image-2",
+		Mode:         jobs.ModeTextToImage,
+		Prompt:       "seeded task",
+		Ratio:        "1:1",
+		Resolution:   "standard",
+		Quality:      "auto",
+		OutputFormat: "png",
+		Size:         "1024x1024",
+		Count:        1,
+		Concurrency:  1,
+		Progress:     50,
+		Results:      []jobs.Result{},
+		CreatedAt:    createdAt,
+		UpdatedAt:    createdAt,
+	}
+	jobs.ApplyStatus(&job, status)
+	jobs.ApplyStage(&job, stage)
+	job.UpdatedAt = createdAt
+	return job
 }
 
 func doJSONStatus(t *testing.T, router http.Handler, method string, path string, token string, payload any, authorization string) (int, string) {

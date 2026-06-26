@@ -200,10 +200,11 @@ export function PromptSquarePanel({ onUsePrompt }: PromptSquarePanelProps) {
           <PromptSquareState title={`${activeView.label}暂不可用`} body="后端广场接口可能还在接线中，请稍后刷新。" actionLabel="重试" onAction={() => void refresh(view)} />
         ) : filtered.length ? (
           <div className="prompt-square-grid">
-            {filtered.map((item) => (
+            {filtered.map((item, index) => (
               <PromptSquareCard
                 key={item.id}
                 item={item}
+                dailyRank={view === 'daily' ? index + 1 : 0}
                 liking={Boolean(likingIds[item.id])}
                 onUsePrompt={onUsePrompt}
                 onCopyPrompt={copyPrompt}
@@ -221,12 +222,14 @@ export function PromptSquarePanel({ onUsePrompt }: PromptSquarePanelProps) {
 
 function PromptSquareCard({
   item,
+  dailyRank,
   liking,
   onUsePrompt,
   onCopyPrompt,
   onToggleLike,
 }: {
   item: PromptSquareItem
+  dailyRank: number
   liking: boolean
   onUsePrompt: PromptSquarePanelProps['onUsePrompt']
   onCopyPrompt: (prompt: string) => Promise<void>
@@ -241,7 +244,7 @@ function PromptSquareCard({
   const liked = Boolean(runtime.likedByMe)
   const sourceUrl = runtime.source?.url
   const imageUrl = runtime.thumbnailUrl || runtime.imageUrl
-  const rank = Number(runtime.dailyRank || 0)
+  const rank = Number(runtime.dailyRank || dailyRank || 0)
 
   return (
     <article className="prompt-square-card">

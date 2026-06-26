@@ -168,21 +168,22 @@ func (h BillingHandler) Notify(w http.ResponseWriter, r *http.Request) {
 		writeEpayNotify(w, false)
 		return
 	}
-	if _, err := h.users.AddPurchaseCredits(order.Username, order.Credits, order.TradeNo, cfg.ReferralRewardCredits); err != nil {
-		writeEpayNotify(w, false)
-		return
-	}
-	if order.Status == billing.TopUpStatusSuccess {
-		writeEpayNotify(w, true)
-		return
-	}
-	if _, _, err := h.topups.MarkSuccess(order.TradeNo, callback.ProviderTradeNo, time.Now()); err != nil {
-		if errors.Is(err, billing.ErrOrderStatusInvalid) {
-			if latest, found := h.topups.GetByTradeNo(order.TradeNo); found && latest.Status == billing.TopUpStatusSuccess {
-				writeEpayNotify(w, true)
+	if order.Status != billing.TopUpStatusSuccess {
+		if _, _, err := h.topups.MarkSuccess(order.TradeNo, callback.ProviderTradeNo, time.Now()); err != nil {
+			if errors.Is(err, billing.ErrOrderStatusInvalid) {
+				if latest, found := h.topups.GetByTradeNo(order.TradeNo); found && latest.Status == billing.TopUpStatusSuccess {
+					order = latest
+				} else {
+					writeEpayNotify(w, false)
+					return
+				}
+			} else {
+				writeEpayNotify(w, false)
 				return
 			}
 		}
+	}
+	if _, err := h.users.AddPurchaseCredits(order.Username, order.Credits, order.TradeNo, cfg.ReferralRewardCredits); err != nil {
 		writeEpayNotify(w, false)
 		return
 	}

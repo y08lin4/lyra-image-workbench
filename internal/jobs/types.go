@@ -17,6 +17,9 @@ const (
 	ModeTextToImage  Mode = "text-to-image"
 	ModeImageToImage Mode = "image-to-image"
 
+	JobSourceWeb = "web"
+	JobSourceAPI = "api"
+
 	StatusQueued        Status = "queued"
 	StatusRunning       Status = "running"
 	StatusSucceeded     Status = "succeeded"
@@ -45,38 +48,40 @@ type Meta struct {
 }
 
 type Job struct {
-	ID           string              `json:"id"`
-	SpaceToken   string              `json:"-"`
-	Provider     string              `json:"provider"`
-	Model        string              `json:"model"`
-	Mode         Mode                `json:"mode"`
-	Prompt       string              `json:"prompt"`
-	FramePrompts []string            `json:"framePrompts,omitempty"`
-	Ratio        string              `json:"ratio"`
-	Resolution   string              `json:"resolution"`
-	Quality      string              `json:"quality"`
-	OutputFormat string              `json:"outputFormat"`
-	Size         string              `json:"size"`
-	Count        int                 `json:"count"`
-	Concurrency  int                 `json:"concurrency"`
-	UploadIDs    []string            `json:"uploadIds,omitempty"`
-	References   []ReferenceSnapshot `json:"references,omitempty"`
-	Status       Status              `json:"status"`
-	StatusText   string              `json:"statusText"`
-	StatusCode   string              `json:"statusCode"`
-	Stage        Stage               `json:"stage"`
-	StageText    string              `json:"stageText"`
-	StageCode    string              `json:"stageCode"`
-	Progress     int                 `json:"progress"`
-	Results      []Result            `json:"results"`
-	DebugEnabled bool                `json:"debugEnabled,omitempty"`
-	DebugLogs    []DebugLog          `json:"debugLogs,omitempty"`
-	Favorite     bool                `json:"favorite,omitempty"`
-	Error        string              `json:"error,omitempty"`
-	CreatedAt    time.Time           `json:"createdAt"`
-	UpdatedAt    time.Time           `json:"updatedAt"`
-	StartedAt    time.Time           `json:"startedAt,omitempty"`
-	FinishedAt   time.Time           `json:"finishedAt,omitempty"`
+	ID              string              `json:"id"`
+	SpaceToken      string              `json:"-"`
+	Provider        string              `json:"provider"`
+	Model           string              `json:"model"`
+	Mode            Mode                `json:"mode"`
+	Source          string              `json:"source,omitempty"`
+	Prompt          string              `json:"prompt"`
+	FramePrompts    []string            `json:"framePrompts,omitempty"`
+	Ratio           string              `json:"ratio"`
+	Resolution      string              `json:"resolution"`
+	Quality         string              `json:"quality"`
+	OutputFormat    string              `json:"outputFormat"`
+	Size            string              `json:"size"`
+	Count           int                 `json:"count"`
+	ConsumedCredits int                 `json:"consumedCredits,omitempty"`
+	Concurrency     int                 `json:"concurrency"`
+	UploadIDs       []string            `json:"uploadIds,omitempty"`
+	References      []ReferenceSnapshot `json:"references,omitempty"`
+	Status          Status              `json:"status"`
+	StatusText      string              `json:"statusText"`
+	StatusCode      string              `json:"statusCode"`
+	Stage           Stage               `json:"stage"`
+	StageText       string              `json:"stageText"`
+	StageCode       string              `json:"stageCode"`
+	Progress        int                 `json:"progress"`
+	Results         []Result            `json:"results"`
+	DebugEnabled    bool                `json:"debugEnabled,omitempty"`
+	DebugLogs       []DebugLog          `json:"debugLogs,omitempty"`
+	Favorite        bool                `json:"favorite,omitempty"`
+	Error           string              `json:"error,omitempty"`
+	CreatedAt       time.Time           `json:"createdAt"`
+	UpdatedAt       time.Time           `json:"updatedAt"`
+	StartedAt       time.Time           `json:"startedAt,omitempty"`
+	FinishedAt      time.Time           `json:"finishedAt,omitempty"`
 }
 
 type ReferenceSnapshot struct {
@@ -123,19 +128,21 @@ type Result struct {
 
 type CreateRequest struct {
 	RuntimeSecrets
-	Provider     string              `json:"provider"`
-	Model        string              `json:"model"`
-	Mode         Mode                `json:"mode"`
-	Prompt       string              `json:"prompt"`
-	FramePrompts []string            `json:"framePrompts,omitempty"`
-	Ratio        string              `json:"ratio"`
-	Resolution   string              `json:"resolution"`
-	Quality      string              `json:"quality"`
-	OutputFormat string              `json:"outputFormat"`
-	Count        int                 `json:"count"`
-	Concurrency  int                 `json:"concurrency"`
-	UploadIDs    []string            `json:"uploadIds"`
-	References   []ReferenceSnapshot `json:"-"`
+	Provider      string              `json:"provider"`
+	Model         string              `json:"model"`
+	Mode          Mode                `json:"mode"`
+	Source        string              `json:"source,omitempty"`
+	Prompt        string              `json:"prompt"`
+	FramePrompts  []string            `json:"framePrompts,omitempty"`
+	Ratio         string              `json:"ratio"`
+	Resolution    string              `json:"resolution"`
+	Quality       string              `json:"quality"`
+	OutputFormat  string              `json:"outputFormat"`
+	Count         int                 `json:"count"`
+	Concurrency   int                 `json:"concurrency"`
+	UploadIDs     []string            `json:"uploadIds"`
+	References    []ReferenceSnapshot `json:"-"`
+	BeforeEnqueue func(Job) error     `json:"-"`
 }
 
 type RuntimeSecrets struct {
@@ -364,6 +371,7 @@ func eventPayload(job Job) map[string]any {
 
 func PublicJob(job Job) Job {
 	job.SpaceToken = ""
+	job.Source = sourceOrWeb(job.Source)
 	job.References = nil
 	for i := range job.Results {
 		job.Results[i] = PublicResult(job.ID, job.Results[i])
@@ -378,4 +386,28 @@ func PublicResult(jobID string, result Result) Result {
 	result.OutputDate = ""
 	result.OutputFileName = ""
 	return result
+}
+
+func CreditCostForCount(count int) int {
+	return clamp(count, 1, 24, 1)
+}
+
+func CreditCostForRequest(req CreateRequest) int {
+	return CreditCostForCount(req.Count)
+}
+
+func normalizeSource(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case JobSourceAPI:
+		return JobSourceAPI
+	default:
+		return JobSourceWeb
+	}
+}
+
+func sourceOrWeb(value string) string {
+	if strings.TrimSpace(value) == "" {
+		return JobSourceWeb
+	}
+	return normalizeSource(value)
 }

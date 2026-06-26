@@ -1,7 +1,8 @@
 import { type FormEvent, useEffect, useState } from 'react'
-import { createEpayOrder, listTopUps, listTopUpOptions } from '../api/billing'
+import { createEpayOrder, getTopUpOptions, listTopUps } from '../api/billing'
 import { formatError } from '../api/client'
-import { createReferralCode, getUserProfile, listMyPromptSquareItems, listUserLedger, updateUserProfile } from '../api/users'
+import { listMyPromptSquareItems } from '../api/promptSquare'
+import { claimDailyCredits, createReferralCode, getUserProfile, listUserLedger, updateUserProfile } from '../api/users'
 import type { BillingTopUp, CreditLedgerEntry, EpayMethod, EpayOrder, PromptSquareItem, PublicUser, TopUpOption, UserSession } from '../types'
 
 type ProfileForm = {
@@ -23,6 +24,8 @@ export function ProfilePage({ session, onSessionChange }: ProfilePageProps) {
   const [ledger, setLedger] = useState<CreditLedgerEntry[]>([])
   const [items, setItems] = useState<PromptSquareItem[]>([])
   const [topupOptions, setTopupOptions] = useState<TopUpOption[]>([])
+  const [billingEnabled, setBillingEnabled] = useState(false)
+  const [topupMethods, setTopupMethods] = useState<EpayMethod[]>(DEFAULT_EPAY_METHODS)
   const [topups, setTopups] = useState<BillingTopUp[]>([])
   const [selectedCredits, setSelectedCredits] = useState(0)
   const [selectedMethod, setSelectedMethod] = useState<EpayMethod>('alipay')
@@ -30,6 +33,7 @@ export function ProfilePage({ session, onSessionChange }: ProfilePageProps) {
   const [loading, setLoading] = useState(true)
   const [billingLoading, setBillingLoading] = useState(true)
   const [billingSubmitting, setBillingSubmitting] = useState(false)
+  const [dailyClaiming, setDailyClaiming] = useState(false)
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
@@ -48,7 +52,7 @@ export function ProfilePage({ session, onSessionChange }: ProfilePageProps) {
       getUserProfile(),
       listUserLedger(),
       listMyPromptSquareItems(),
-      listTopUpOptions(),
+      getTopUpOptions(),
       listTopUps(),
     ])
 
@@ -70,8 +74,10 @@ export function ProfilePage({ session, onSessionChange }: ProfilePageProps) {
       failures.push(formatError(itemsResult.reason, '我的投稿暂不可用'))
     }
     if (optionsResult.status === 'fulfilled') {
-      setTopupOptions(optionsResult.value)
-      syncTopUpSelection(optionsResult.value)
+      setBillingEnabled(optionsResult.value.enabled)
+      setTopupMethods(optionsResult.value.methods.length ? optionsResult.value.methods : DEFAULT_EPAY_METHODS)
+      setTopupOptions(optionsResult.value.options)
+      syncTopUpSelection(optionsResult.value.options, optionsResult.value.methods)
     } else {
       billingFailures.push(formatError(optionsResult.reason, '充值档位暂不可用'))
     }
@@ -125,6 +131,25 @@ export function ProfilePage({ session, onSessionChange }: ProfilePageProps) {
     }
   }
 
+  async function claimDaily() {
+    setDailyClaiming(true)
+    setError('')
+    setMessage('')
+    try {
+      const result = await claimDailyCredits()
+      const entry = result.entry || null
+      if (result.user) applyProfile(result.user)
+      if (entry) setLedger((current) => [entry, ...current.filter((item) => item.id !== entry.id)])
+      if (result.claimed) setMessage(`已领取 ${formatCredits(result.amount)} 次每日免费额度`)
+      else if (result.alreadyClaimed) setMessage('今日免费额度已领取')
+      else setMessage('每日免费额度暂未开放')
+    } catch (err) {
+      setError(formatError(err, '领取每日免费额度失败'))
+    } finally {
+      setDailyClaiming(false)
+    }
+  }
+
   async function refreshTopUpsOnly() {
     setBillingLoading(true)
     setBillingError('')
@@ -139,7 +164,7 @@ export function ProfilePage({ session, onSessionChange }: ProfilePageProps) {
 
   async function submitTopUp(event: FormEvent) {
     event.preventDefault()
-    if (!selectedTopUpOption) return
+    if (!selectedTopUpOption || !billingEnabled) return
     setBillingSubmitting(true)
     setBillingError('')
     setMessage('')
@@ -158,16 +183,21 @@ export function ProfilePage({ session, onSessionChange }: ProfilePageProps) {
     }
   }
 
-  function syncTopUpSelection(options: TopUpOption[]) {
-    if (!options.length) return
+  function syncTopUpSelection(options: TopUpOption[], fallbackMethods: EpayMethod[] = DEFAULT_EPAY_METHODS) {
+    if (!options.length) {
+      setSelectedCredits(0)
+      const methods = normalizeMethods(undefined, fallbackMethods)
+      setSelectedMethod(methods[0] || 'alipay')
+      return
+    }
     const nextOption = options.find((option) => option.credits === selectedCredits) || options[0]
-    const methods = normalizeMethods(nextOption.methods)
+    const methods = normalizeMethods(nextOption.methods, fallbackMethods)
     setSelectedCredits(nextOption.credits)
-    setSelectedMethod(methods.includes(selectedMethod) ? selectedMethod : methods[0])
+    setSelectedMethod(methods.includes(selectedMethod) ? selectedMethod : methods[0] || 'alipay')
   }
 
   function selectTopUpOption(option: TopUpOption) {
-    const methods = normalizeMethods(option.methods)
+    const methods = normalizeMethods(option.methods, topupMethods)
     setSelectedCredits(option.credits)
     setSelectedMethod((current) => methods.includes(current) ? current : methods[0])
   }
@@ -179,7 +209,7 @@ export function ProfilePage({ session, onSessionChange }: ProfilePageProps) {
   }
 
   const selectedTopUpOption = topupOptions.find((option) => option.credits === selectedCredits) || topupOptions[0] || null
-  const paymentMethods = selectedTopUpOption ? normalizeMethods(selectedTopUpOption.methods) : normalizeMethods(topupOptions.flatMap((option) => option.methods || []))
+  const paymentMethods = billingEnabled ? (selectedTopUpOption ? normalizeMethods(selectedTopUpOption.methods, topupMethods) : normalizeMethods(topupMethods, [])) : []
 
   return (
     <section className="workflow-page profile-page" aria-labelledby="profile-title">
@@ -202,6 +232,7 @@ export function ProfilePage({ session, onSessionChange }: ProfilePageProps) {
           <span>当前余额</span>
           <strong>{formatCredits(profile.creditsBalance)}</strong>
           <small>生成次数余额</small>
+          <button type="button" onClick={() => void claimDaily()} disabled={dailyClaiming}>{dailyClaiming ? '领取中...' : '领取每日免费'}</button>
         </section>
         <section className="profile-summary-item" aria-label="邀请码">
           <span>邀请码</span>
@@ -218,7 +249,7 @@ export function ProfilePage({ session, onSessionChange }: ProfilePageProps) {
       <section className="profile-panel profile-topup" aria-labelledby="topup-title">
         <div className="panel-title">
           <strong id="topup-title">充值次数</strong>
-          <span>{billingLoading ? '同步中' : topupOptions.length ? `${topupOptions.length} 个档位` : '未配置'}</span>
+          <span>{billingLoading ? '同步中' : billingEnabled ? (topupOptions.length ? `${topupOptions.length} 个档位` : '未配置档位') : '暂未开放'}</span>
         </div>
         {billingError ? <div className="error profile-inline-alert">{billingError}</div> : null}
         <div className="topup-layout">
@@ -227,6 +258,8 @@ export function ProfilePage({ session, onSessionChange }: ProfilePageProps) {
               <legend>选择次数</legend>
               {billingLoading ? (
                 <div className="topup-skeleton">正在读取充值档位...</div>
+              ) : !billingEnabled ? (
+                <div className="prompt-empty">充值暂未开放</div>
               ) : topupOptions.length ? (
                 <div className="topup-option-list">
                   {topupOptions.map((option) => (
@@ -265,14 +298,14 @@ export function ProfilePage({ session, onSessionChange }: ProfilePageProps) {
                   ))}
                 </div>
               ) : (
-                <div className="prompt-empty">暂无可用支付方式</div>
+                <div className="prompt-empty">{billingEnabled ? '暂无可用支付方式' : '充值开启后显示支付方式'}</div>
               )}
             </fieldset>
             <div className="status-line topup-total">
               <span>应付金额</span>
               <strong>{formatMoney(selectedTopUpOption?.amountCents || 0)}</strong>
             </div>
-            <button className="primary" type="submit" disabled={!selectedTopUpOption || billingSubmitting || billingLoading}>
+            <button className="primary" type="submit" disabled={!billingEnabled || !selectedTopUpOption || billingSubmitting || billingLoading}>
               {billingSubmitting ? '创建中...' : '创建充值订单'}
             </button>
           </form>
@@ -436,8 +469,8 @@ function initials(value: string) {
   return value.trim().slice(0, 2).toUpperCase() || 'LY'
 }
 
-function normalizeMethods(methods: EpayMethod[] | undefined): EpayMethod[] {
-  const values = methods?.length ? methods : DEFAULT_EPAY_METHODS
+function normalizeMethods(methods: EpayMethod[] | undefined, fallback: EpayMethod[] = DEFAULT_EPAY_METHODS): EpayMethod[] {
+  const values = methods?.length ? methods : fallback
   return Array.from(new Set(values.map((method) => String(method).trim()).filter(Boolean)))
 }
 
@@ -490,6 +523,7 @@ function topUpStatusLabel(status: string) {
 function orderToTopUp(order: EpayOrder): BillingTopUp {
   return {
     tradeNo: order.tradeNo,
+    payUrl: order.payUrl,
     credits: order.credits,
     amountCents: order.amountCents,
     status: order.status,
@@ -501,10 +535,13 @@ function orderToTopUp(order: EpayOrder): BillingTopUp {
 
 function ledgerTypeLabel(type: string) {
   const labels: Record<string, string> = {
+    initial_free: '新用户赠送',
+    daily_free: '每日赠送',
     admin_add: '管理员增加',
     purchase: '充值',
     referral_reward: '邀请奖励',
     task_charge: '任务消耗',
+    task_refund: '任务退回',
     refund: '退回',
   }
   return labels[type] || type

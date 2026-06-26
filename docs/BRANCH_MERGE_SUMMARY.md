@@ -1,5 +1,7 @@
 # Branch Merge Summary
 
+> 历史说明：本文记录 2026-06-25 的分支收敛过程，不代表当前功能面。当前 dev 已移除视频/MiniMax、GIF 工作台和 FFmpeg 渲染链路，现役范围以 README、docs/ROUTES.md 和实际路由为准。
+
 ## 目标
 
 本文记录 2026-06-25 这轮分支收敛的实际处理过程。

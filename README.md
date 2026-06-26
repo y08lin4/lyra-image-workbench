@@ -160,7 +160,6 @@ cmd/local-server              Go 服务入口
 - Go 1.22+
 - Node.js 20+
 - npm
-- FFmpeg 8.1.2+ (only for final GIF merging; `/gif` can still generate PNG frames when FFmpeg is missing, unsafe, or unknown)
 
 ### 本机生产形态运行
 
@@ -185,7 +184,7 @@ http://127.0.0.1:8787
 首次进入：
 
 1. 注册普通用户账号。
-2. 访问 `/admin` 设置 Admin 密码。
+2. 访问 `/admin` 设置 Admin 密码；首次设置必须填写部署环境里的 `LOCAL_IMAGE_ADMIN_SETUP_TOKEN`。
 3. 在 Admin 中配置 `NewAPI Base URL`。
 4. 回到工作台设置页保存本地 `codex-key` / Banana Key。
 
@@ -348,6 +347,7 @@ Active: active (running)
 | `LOCAL_IMAGE_PORT` | `8787` | 服务监听端口。 |
 | `LOCAL_IMAGE_DATA_DIR` | `data` | 用户、任务、配置等运行时数据目录。 |
 | `LOCAL_IMAGE_WEB_DIR` | `web/dist` | 前端生产构建目录。 |
+| `LOCAL_IMAGE_ADMIN_SETUP_TOKEN` | 必须设置 | 首次设置 `/admin` 密码时必须填写；请部署前生成随机值。 |
 | `NEWAPI_BASE_URL` | `http://127.0.0.1:3000/v1` | OpenAI 兼容图片网关地址。 |
 | `NEWAPI_TIMEOUT_SEC` | `600` | 单张图片请求超时，允许范围 60-3600 秒。 |
 
@@ -413,55 +413,9 @@ scripts/                部署和本地重启脚本
 ---
 
 
-## GIF workflow
+## 媒体能力边界
 
-`/gif` PAGE supports single-image-to-GIF workflow: upload one reference image, enter a motion prompt, optionally use GPT-5.5 to plan frame prompts, reuse the existing `image-to-image` background task to generate frames, preview by rotating frame images in the browser, then call the Go backend FFmpeg renderer to create the final GIF.
-
-GIF rendering depends on a patched system FFmpeg installation. The project does not bundle FFmpeg into the Go binary and does not use cgo; the backend calls the external `ffmpeg` command with `exec.CommandContext`. FFmpeg must report version `8.1.2` or newer; older or unparsable versions are treated as unavailable for GIF merging.
-
-The GIF workflow only sends generated PNG frames to FFmpeg for final merging. It does not accept user-uploaded videos for FFmpeg decoding, and production deployments should keep FFmpeg at `8.1.2` or newer with current security patches.
-
-Install FFmpeg:
-
-```bash
-# macOS
-brew install ffmpeg
-
-# Ubuntu / Debian
-sudo apt update
-sudo apt install -y ffmpeg
-
-# Alpine / Docker
-apk add --no-cache ffmpeg
-
-# Windows example
-winget install Gyan.FFmpeg
-```
-
-Verify:
-
-```bash
-ffmpeg -version
-```
-
-Environment variables:
-
-| Variable | Default | Description |
-| --- | --- | --- |
-| `GIF_ENABLED` | `true` | Enables final GIF rendering; frames can still be generated when disabled, but `/gif` disables the merge button. |
-| `FFMPEG_BIN` | `ffmpeg` | FFmpeg executable name or absolute path. |
-| `GIF_WORK_DIR` | `./data/gif_work` | Temporary working directory used while copying frames; temporary frames are cleaned after render. |
-| `GIF_MAX_FRAMES` | `24` | Maximum frames per GIF render. |
-| `GIF_MAX_FPS` | `15` | Maximum GIF FPS. |
-| `GIF_MAX_SIZE` | `1024` | Maximum exported GIF width. |
-| `GIF_RENDER_TIMEOUT_SEC` | `60` | FFmpeg render timeout. |
-
-Troubleshooting:
-
-- FFmpeg 8.1.2+ is required only for final GIF merging; when FFmpeg is missing, unsafe, or unknown, `/gif` can still generate PNG frames but cannot merge the final GIF.
-- Preview works but merge fails: verify all selected frames succeeded and the service can write to `GIF_WORK_DIR`.
-- GIF is too large: lower frame count, FPS, or export width.
-- Why not Go `image/gif`: MVP uses FFmpeg for final export to get better palette handling and compatibility; preview is direct frame rotation in the frontend.
+当前阶段聚焦图片生成、任务历史、结果发布、提示词广场、额度和 API 调用闭环；视频和动态合成工作流已从前端入口、后端路由和部署依赖中移除。
 
 ## 开发和测试
 

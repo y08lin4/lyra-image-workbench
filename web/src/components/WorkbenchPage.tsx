@@ -12,6 +12,7 @@ import { TaskDetailModal } from './TaskDetailModal'
 import { TaskSidebar } from './TaskSidebar'
 import { PromptAssistantModal } from './PromptAssistantModal'
 import { PromptLibraryPage } from './PromptLibraryPage'
+import { NodeWorkflowPage } from './NodeWorkflowPage'
 import { PromptSquarePanel } from './PromptSquarePanel'
 import { ProfilePage } from './ProfilePage'
 import { ApiDocsPage } from './ApiDocsPage'
@@ -25,8 +26,9 @@ import { nativeExitApp, nativeSaveImage } from '../lib/nativeBridge'
 import { ensureAppBackBridge, installEdgeBackGesture, registerAppBackHandler } from '../lib/appBack'
 
 type NumericInputValue = number | ''
-type WorkbenchTab = 'generate' | 'assistant' | 'library' | 'square' | 'result' | 'profile' | 'apiDocs' | 'settings'
-type WorkbenchTabItem = { id: WorkbenchTab; label: string; hint: string; badge?: string; tone?: 'normal' | 'danger' | 'active' }
+type WorkbenchTab = 'generate' | 'assistant' | 'nodes' | 'library' | 'square' | 'result' | 'profile' | 'apiDocs' | 'settings'
+type WorkbenchNavId = WorkbenchTab | 'admin'
+type WorkbenchTabItem = { id: WorkbenchNavId; label: string; hint: string; badge?: string; tone?: 'normal' | 'danger' | 'active' | 'admin' }
 
 const MAX_REFERENCE_IMAGES = 8
 const MAX_REFERENCE_IMAGE_BYTES = 12 * 1024 * 1024
@@ -37,6 +39,7 @@ const SUBMITTED_SQUARE_KEYS_STORAGE = 'lyra:prompt-square:submitted-result-keys:
 const workflowTabs: WorkbenchTabItem[] = [
   { id: 'generate', label: '生成', hint: '请求' },
   { id: 'assistant', label: '提示词助手', hint: '四栏' },
+  { id: 'nodes', label: '节点工作流', hint: 'Flow' },
   { id: 'library', label: '提示词库', hint: '灵感' },
   { id: 'square', label: '广场', hint: 'Prompt' },
   { id: 'result', label: '结果', hint: '队列' },
@@ -88,19 +91,29 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
   const currentKeyPreview = provider === BANANA_PROVIDER ? bananaKeyPreview : keyPreview
   const activeCount = useMemo(() => tasks.filter((task) => !isFinal(task)).length, [tasks])
   const missingKeyCount = (keyReady ? 0 : 1) + (bananaKeyReady ? 0 : 1)
-  const tabItems = useMemo<WorkbenchTabItem[]>(() => workflowTabs.map((tab) => {
-    if (tab.id === 'generate') return { ...tab, hint: currentKeyReady ? '可提交' : '缺 Key', tone: currentKeyReady ? 'normal' : 'danger' }
-    if (tab.id === 'assistant') return { ...tab, hint: '四栏' }
-    if (tab.id === 'library') return { ...tab, hint: 'GitHub', tone: 'normal' }
-    if (tab.id === 'square') return { ...tab, hint: '试验版' }
-    if (tab.id === 'result') return { ...tab, hint: activeTask ? activeTask.statusText : activeCount ? `${activeCount} 进行中` : '队列', badge: activeTask ? `${activeTask.progress}%` : activeCount ? String(activeCount) : undefined, tone: activeTask && !isFinal(activeTask) ? 'active' : activeCount ? 'active' : 'normal' }
-    if (tab.id === 'profile') return { ...tab, hint: session?.user.creditsBalance != null ? `${session.user.creditsBalance} 次` : '账号' }
-    if (tab.id === 'apiDocs') return { ...tab, hint: 'Bearer' }
-    if (tab.id === 'settings') return { ...tab, hint: missingKeyCount ? `${missingKeyCount} 个未设` : '已配置', badge: missingKeyCount ? '!' : undefined, tone: missingKeyCount ? 'danger' : 'normal' }
-    return tab
-  }), [activeCount, activeTask, currentKeyReady, missingKeyCount, session?.user.creditsBalance])
+  const tabItems = useMemo<WorkbenchTabItem[]>(() => {
+    const items = workflowTabs.map<WorkbenchTabItem>((tab) => {
+      if (tab.id === 'generate') return { ...tab, hint: currentKeyReady ? '可提交' : '缺 Key', tone: currentKeyReady ? 'normal' : 'danger' }
+      if (tab.id === 'assistant') return { ...tab, hint: '四栏' }
+      if (tab.id === 'library') return { ...tab, hint: '自动同步', tone: 'normal' }
+      if (tab.id === 'square') return { ...tab, hint: '试验版' }
+      if (tab.id === 'result') return { ...tab, hint: activeTask ? activeTask.statusText : activeCount ? `${activeCount} 进行中` : '队列', badge: activeTask ? `${activeTask.progress}%` : activeCount ? String(activeCount) : undefined, tone: activeTask && !isFinal(activeTask) ? 'active' : activeCount ? 'active' : 'normal' }
+      if (tab.id === 'profile') return { ...tab, hint: session?.user.creditsBalance != null ? `${session.user.creditsBalance} 次` : '账号' }
+      if (tab.id === 'apiDocs') return { ...tab, hint: 'Bearer' }
+      if (tab.id === 'settings') return { ...tab, hint: missingKeyCount ? `${missingKeyCount} 个未设` : '已配置', badge: missingKeyCount ? '!' : undefined, tone: missingKeyCount ? 'danger' : 'normal' }
+      return tab
+    })
+    if (session?.user.isAdmin) {
+      items.push({ id: 'admin', label: '后台', hint: '管理', badge: 'A', tone: 'admin' })
+    }
+    return items
+  }, [activeCount, activeTask, currentKeyReady, missingKeyCount, session?.user.creditsBalance, session?.user.isAdmin])
 
-  const goToTab = useCallback((nextTab: WorkbenchTab, options?: { replace?: boolean }) => {
+  const goToTab = useCallback((nextTab: WorkbenchNavId, options?: { replace?: boolean }) => {
+    if (nextTab === 'admin') {
+      window.location.assign('/admin')
+      return
+    }
     setActiveTab((current) => {
       if (current === nextTab) return current
       if (!options?.replace) {
@@ -183,12 +196,13 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
   }, [spaceReady])
 
   useEffect(() => {
-    if (!spaceReady || !tasks.some((task) => !isFinal(task))) return
+    if (!spaceReady) return
+    const pollMs = activeCount || activeTab === 'result' ? 5000 : 15000
     const timer = window.setInterval(() => {
       void refreshTasks()
-    }, 5000)
+    }, pollMs)
     return () => window.clearInterval(timer)
-  }, [spaceReady, tasks])
+  }, [activeCount, activeTab, spaceReady])
 
   useEffect(() => {
     const liveIds = new Set(tasks.map((task) => task.id))
@@ -217,6 +231,14 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
   async function refreshUserConfig() {
     const cfg = await getUserConfig()
     applyUserConfig(cfg)
+  }
+
+  async function refreshSession() {
+    try {
+      setSession(await getCurrentUser())
+    } catch {
+      // Keep the current session visible when the balance refresh endpoint is temporarily unavailable.
+    }
   }
 
   const applyUserConfig = useCallback((cfg: UserConfig) => {
@@ -258,10 +280,45 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
       setActiveId(job.id)
       setPrompt('')
       goToTab('result')
+      void refreshSession()
       setMessage(submittedUploads.length ? '任务已提交，参考图已保留，可在生成页手动删除' : '任务已提交，后端会继续执行，前端可刷新或断开')
     } catch (err) {
       setError(err instanceof Error ? err.message : '提交失败')
     }
+  }
+
+  async function handleCreateNodeWorkflowTask(payload: CreateTaskRequest) {
+    const ready = payload.provider === BANANA_PROVIDER ? bananaKeyReady : keyReady
+    if (!ready) {
+      const message = payload.provider === BANANA_PROVIDER ? 'Banana Key 未设置' : 'codex-key 未设置'
+      setToast(payload.provider === BANANA_PROVIDER ? '请先保存 Banana API Key，或确认已上传到云端' : '请先保存 codex-key，或确认已上传到云端')
+      goToTab('settings')
+      throw new Error(message)
+    }
+    if (!payload.prompt.trim()) throw new Error('请先输入提示词')
+    if (payload.mode === 'image-to-image' && payload.uploadIds.length === 0) {
+      throw new Error('图生图节点需要接入参考图后再提交')
+    }
+
+    const job = await createTask(payload)
+    upsertTask(job)
+    setActiveId(job.id)
+    setProvider(payload.provider)
+    setMode(payload.mode)
+    if (payload.provider === BANANA_PROVIDER) {
+      setBananaModel(getBananaModelOption(payload.model).id)
+    } else {
+      setRatio(payload.ratio || 'auto')
+      setResolution(payload.resolution || 'auto')
+      setQuality(payload.quality || 'high')
+      setOutputFormat(payload.outputFormat || 'png')
+    }
+    setCount(payload.count || 1)
+    setConcurrency(payload.concurrency || 1)
+    setPrompt('')
+    goToTab('result')
+    void refreshSession()
+    setMessage('节点工作流任务已提交')
   }
 
   async function handleUpload(files: File[]) {
@@ -324,11 +381,17 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
     }, 0)
   }
 
-  function handleUseLibraryPrompt(nextPrompt: string, options: { provider: ModelProvider; model: string }) {
+  function handleUseLibraryPrompt(nextPrompt: string, options: { provider: ModelProvider; model: string; ratio?: string }) {
     setPrompt(nextPrompt)
     setProvider(options.provider)
     if (options.provider === BANANA_PROVIDER) {
-      setBananaModel(getBananaModelOption(options.model).id)
+      const preferredResolution = getBananaModelOption(options.model).resolution
+      const nextBanana = options.ratio && options.ratio !== 'auto'
+        ? getBananaModelForRatio(options.ratio, preferredResolution === 'auto' ? '2k' : preferredResolution)
+        : getBananaModelOption(options.model)
+      setBananaModel(nextBanana.id)
+    } else if (options.ratio && options.ratio !== 'auto') {
+      setRatio(options.ratio)
     }
     goToTab('generate')
     setMessage('提示词库已填入主输入框，并同步模型选择')
@@ -356,26 +419,11 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
     setDetailId(task.id)
   }
 
-  async function handleSubmitResultToSquare(task: Task, result: TaskResult, index: number) {
+  async function handleSubmitResultToSquare(task: Task, result: TaskResult, index: number, options?: { title?: string; tags?: string[] }) {
     if (!result.ok || !result.imageUrl) throw new Error('只有成功生成的图片可以提交到广场')
     const defaultTitle = compactSquareText(result.revisedPrompt || task.prompt || `生成结果 ${index + 1}`, 80)
-    const title = window.prompt('广场标题（可留空使用提示词首行）', defaultTitle)
-    if (title === null) return false
-    const defaultTags = defaultSquareTags(task)
-    const tagInput = window.prompt('标签（用逗号、空格分隔，可留空）', defaultTags.join(', '))
-    if (tagInput === null) return false
-    const tags = splitSubmitTags(tagInput)
-    const promptText = result.revisedPrompt || task.prompt || '（无提示词）'
-    const confirmLines = [
-      `标题：${title.trim() || defaultTitle}`,
-      `标签：${tags.length ? tags.join('、') : '无'}`,
-      `Prompt：${compactSquareText(promptText, 160)}`,
-      `模型：${task.model || 'gpt-image-2'}`,
-      `比例：${task.ratio || 'auto'} / 质量：${result.actualQuality || task.quality || 'auto'}`,
-      `图片：第 ${index + 1} 张 · ${result.actualSize || task.size || '自动尺寸'} · ${formatBytes(result.bytes)} · ${result.outputFormat || task.outputFormat || 'png'}`,
-      '提交后会复制到广场永久目录；未提交结果仍按 30 天清理。',
-    ]
-    if (!window.confirm(`确认提交到广场？\n\n${confirmLines.join('\n')}`)) return false
+    const title = (options?.title || defaultTitle).trim() || defaultTitle
+    const tags = options?.tags?.length ? options.tags : defaultSquareTags(task)
 
     const item = await submitPromptSquareFromResult({ taskId: task.id, imageIndex: index, title, tags })
     const key = resultSquareKey(task.id, index)
@@ -567,11 +615,13 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
           </div>
         </div>
         <div className="top-status" aria-label="当前状态">
+          <span className={session.user.creditsBalance > 0 ? 'ready' : 'missing'}>余额 {formatCredits(session.user.creditsBalance)} 次</span>
           <span className={keyReady ? 'ready' : 'missing'}>codex-key {keyReady ? '已设置' : '未设置'}</span>
           <span className={bananaKeyReady ? 'ready' : 'missing'}>Banana {bananaKeyReady ? '已设置' : '未设置'}</span>
           <span className="ready">后端在线</span>
         </div>
         <nav className="top-actions">
+          {session.user.isAdmin ? <a className="ghost-link admin-nav-link" href="/admin">管理后台</a> : null}
           <GitHubLink />
           <ThemeToggle theme={theme} onToggle={onToggleTheme} />
           <button onClick={logout}>退出登录</button>
@@ -639,6 +689,16 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
             provider={provider}
             bananaModel={bananaModel}
             onUsePrompt={handleUseLibraryPrompt}
+          />
+        ) : null}
+
+        {activeTab === 'nodes' ? (
+          <NodeWorkflowPage
+            provider={provider}
+            bananaModel={bananaModel}
+            onUsePrompt={handleUseLibraryPrompt}
+            onCreateTask={handleCreateNodeWorkflowTask}
+            referenceUploads={uploads}
           />
         ) : null}
 
@@ -717,9 +777,9 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
               <SettingsPanel onConfig={applyUserConfig} />
               {session.user.isAdmin ? (
                 <aside className="admin-entry-panel" aria-label="管理员入口">
-                  <strong>管理员后台</strong>
-                  <span>配置站点参数、上游服务和用户管理。</span>
-                  <a className="ghost-link" href="/admin">打开管理后台</a>
+                  <strong>管理控制台</strong>
+                  <span>处理站点参数、充值额度、用户余额和管理员角色。</span>
+                  <a className="ghost-link" href="/admin">进入后台</a>
                 </aside>
               ) : null}
             </div>
@@ -784,6 +844,10 @@ function splitSubmitTags(value: string) {
   return value.split(/[,，\s]+/).map((item) => item.trim()).filter(Boolean).slice(0, 12)
 }
 
+function formatCredits(value: number | undefined) {
+  return Number.isFinite(value) ? Number(value).toLocaleString() : '0'
+}
+
 function compactSquareText(value: string, max = 96) {
   const text = value.trim().replace(/\s+/g, ' ')
   if (text.length <= max) return text
@@ -800,7 +864,7 @@ function PageHeader({ eyebrow, title, description }: { eyebrow: string; title: s
   )
 }
 
-function WorkbenchTabs({ tabs = workflowTabs, activeTab, onChange, className }: { tabs?: WorkbenchTabItem[]; activeTab: WorkbenchTab; onChange: (tab: WorkbenchTab) => void; className: string }) {
+function WorkbenchTabs({ tabs = workflowTabs, activeTab, onChange, className }: { tabs?: WorkbenchTabItem[]; activeTab: WorkbenchTab; onChange: (tab: WorkbenchNavId) => void; className: string }) {
   return (
     <nav className={className} aria-label="工作流标签页" role="tablist">
       {tabs.map((tab) => (

@@ -48,7 +48,7 @@ func TestStoreSaveGIF(t *testing.T) {
 		t.Fatalf("DeriveToken() error = %v", err)
 	}
 
-	saved, err := store.Save(token, "gifrender_test", 0, []byte("GIF89a"), "image/gif")
+	saved, err := store.Save(token, "gif_image_test", 0, []byte("GIF89a"), "image/gif")
 	if err != nil {
 		t.Fatalf("Save() error = %v", err)
 	}

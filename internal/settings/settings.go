@@ -28,6 +28,8 @@ type RuntimeConfig struct {
 	CreditPriceCents      int      `json:"creditPriceCents"`
 	MinTopUpCredits       int      `json:"minTopUpCredits"`
 	ReferralRewardCredits int      `json:"referralRewardCredits"`
+	NewUserInitialCredits int      `json:"newUserInitialCredits"`
+	DailyFreeCredits      int      `json:"dailyFreeCredits"`
 	UpdatedAt             string   `json:"updatedAt"`
 }
 
@@ -47,6 +49,8 @@ type PublicRuntimeConfig struct {
 	CreditPriceCents      int                 `json:"creditPriceCents"`
 	MinTopUpCredits       int                 `json:"minTopUpCredits"`
 	ReferralRewardCredits int                 `json:"referralRewardCredits"`
+	NewUserInitialCredits int                 `json:"newUserInitialCredits"`
+	DailyFreeCredits      int                 `json:"dailyFreeCredits"`
 	Billing               PublicBillingConfig `json:"billing"`
 	TimeoutCode           string              `json:"timeoutCode"`
 	UpdatedAt             string              `json:"updatedAt"`
@@ -63,6 +67,8 @@ type PublicBillingConfig struct {
 	CreditPriceCents      int      `json:"creditPriceCents"`
 	MinTopUpCredits       int      `json:"minTopUpCredits"`
 	ReferralRewardCredits int      `json:"referralRewardCredits"`
+	NewUserInitialCredits int      `json:"newUserInitialCredits"`
+	DailyFreeCredits      int      `json:"dailyFreeCredits"`
 }
 
 type Limits struct {
@@ -84,12 +90,16 @@ type Update struct {
 	CreditPriceCents      *int     `json:"creditPriceCents"`
 	MinTopUpCredits       *int     `json:"minTopUpCredits"`
 	ReferralRewardCredits *int     `json:"referralRewardCredits"`
+	NewUserInitialCredits *int     `json:"newUserInitialCredits"`
+	DailyFreeCredits      *int     `json:"dailyFreeCredits"`
 }
 
 const (
 	DefaultCreditPriceCents      = 10
 	DefaultMinTopUpCredits       = 10
 	DefaultReferralRewardCredits = 0
+	DefaultNewUserInitialCredits = 0
+	DefaultDailyFreeCredits      = 0
 )
 
 type FileStore struct {
@@ -131,6 +141,8 @@ func DefaultsFromConfig(cfg config.Config) RuntimeConfig {
 		CreditPriceCents:      DefaultCreditPriceCents,
 		MinTopUpCredits:       DefaultMinTopUpCredits,
 		ReferralRewardCredits: DefaultReferralRewardCredits,
+		NewUserInitialCredits: DefaultNewUserInitialCredits,
+		DailyFreeCredits:      DefaultDailyFreeCredits,
 		UpdatedAt:             time.Now().Format(time.RFC3339),
 	})
 }
@@ -188,6 +200,12 @@ func (s *FileStore) Update(update Update) (RuntimeConfig, error) {
 	}
 	if update.ReferralRewardCredits != nil {
 		next.ReferralRewardCredits = *update.ReferralRewardCredits
+	}
+	if update.NewUserInitialCredits != nil {
+		next.NewUserInitialCredits = *update.NewUserInitialCredits
+	}
+	if update.DailyFreeCredits != nil {
+		next.DailyFreeCredits = *update.DailyFreeCredits
 	}
 	normalized, err := validate(next)
 	if err != nil {
@@ -248,6 +266,12 @@ func merge(base RuntimeConfig, loaded RuntimeConfig) RuntimeConfig {
 	}
 	if loaded.ReferralRewardCredits != 0 {
 		base.ReferralRewardCredits = loaded.ReferralRewardCredits
+	}
+	if loaded.NewUserInitialCredits != 0 {
+		base.NewUserInitialCredits = loaded.NewUserInitialCredits
+	}
+	if loaded.DailyFreeCredits != 0 {
+		base.DailyFreeCredits = loaded.DailyFreeCredits
 	}
 	if strings.TrimSpace(loaded.UpdatedAt) != "" {
 		base.UpdatedAt = loaded.UpdatedAt
@@ -312,6 +336,12 @@ func validate(value RuntimeConfig) (RuntimeConfig, error) {
 	if value.ReferralRewardCredits < 0 {
 		return RuntimeConfig{}, errors.New("邀请奖励次数不能小于 0")
 	}
+	if value.NewUserInitialCredits < 0 {
+		return RuntimeConfig{}, errors.New("新用户初始免费次数不能小于 0")
+	}
+	if value.DailyFreeCredits < 0 {
+		return RuntimeConfig{}, errors.New("每日免费次数不能小于 0")
+	}
 	if value.EpayEnabled && (epayAPIURL == "" || epayPID == "" || epayKey == "" || len(epayMethods) == 0 || creditPriceCents <= 0 || minTopUpCredits <= 0) {
 		return RuntimeConfig{}, errors.New("启用易支付前必须填写网关地址、商户 PID、商户 Key、支付方式、次数单价和最小充值次数")
 	}
@@ -329,6 +359,8 @@ func validate(value RuntimeConfig) (RuntimeConfig, error) {
 		CreditPriceCents:      creditPriceCents,
 		MinTopUpCredits:       minTopUpCredits,
 		ReferralRewardCredits: value.ReferralRewardCredits,
+		NewUserInitialCredits: value.NewUserInitialCredits,
+		DailyFreeCredits:      value.DailyFreeCredits,
 		UpdatedAt:             strings.TrimSpace(value.UpdatedAt),
 	}, nil
 }
@@ -427,6 +459,8 @@ func toPublic(value RuntimeConfig) PublicRuntimeConfig {
 		CreditPriceCents:      value.CreditPriceCents,
 		MinTopUpCredits:       value.MinTopUpCredits,
 		ReferralRewardCredits: value.ReferralRewardCredits,
+		NewUserInitialCredits: value.NewUserInitialCredits,
+		DailyFreeCredits:      value.DailyFreeCredits,
 	}
 	return PublicRuntimeConfig{
 		NewAPIBaseURL:         value.NewAPIBaseURL,
@@ -444,6 +478,8 @@ func toPublic(value RuntimeConfig) PublicRuntimeConfig {
 		CreditPriceCents:      billing.CreditPriceCents,
 		MinTopUpCredits:       billing.MinTopUpCredits,
 		ReferralRewardCredits: billing.ReferralRewardCredits,
+		NewUserInitialCredits: billing.NewUserInitialCredits,
+		DailyFreeCredits:      billing.DailyFreeCredits,
 		Billing:               billing,
 		TimeoutCode:           fmt.Sprintf("TIMEOUT_%dS", value.TimeoutSec),
 		UpdatedAt:             value.UpdatedAt,

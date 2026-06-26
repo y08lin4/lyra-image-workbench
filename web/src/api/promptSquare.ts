@@ -2,7 +2,7 @@ import { requestJson } from './client'
 import type { CreatePromptSquareItemRequest, PromptSquareItem } from '../types'
 
 export type PromptSquareListOptions = {
-  sort?: 'latest' | 'daily'
+  sort?: 'latest' | 'daily' | 'mine'
   mine?: boolean
   daily?: boolean
 }
@@ -84,7 +84,7 @@ export async function createPromptSquareItem(payload: CreatePromptSquareItemRequ
 }
 
 function promptSquareListPath(options: PromptSquareListOptions) {
-  if (options.mine) return '/api/prompt-square/mine'
+  if (options.mine || options.sort === 'mine') return '/api/prompt-square/mine'
   if (options.daily || options.sort === 'daily') return '/api/prompt-square/daily'
   if (options.sort) return `/api/prompt-square/items?sort=${encodeURIComponent(options.sort)}`
   return '/api/prompt-square/items'

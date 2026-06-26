@@ -5,20 +5,27 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/y08lin4/lyra-image-workbench/internal/events"
 	"github.com/y08lin4/lyra-image-workbench/internal/jobs"
 	"github.com/y08lin4/lyra-image-workbench/internal/output"
+	"github.com/y08lin4/lyra-image-workbench/internal/users"
 )
 
 type TaskHandler struct {
 	manager *jobs.Manager
 	output  *output.Store
+	users   *users.Store
 }
 
-func NewTaskHandler(manager *jobs.Manager, outputStore *output.Store) TaskHandler {
-	return TaskHandler{manager: manager, output: outputStore}
+func NewTaskHandler(manager *jobs.Manager, outputStore *output.Store, userStores ...*users.Store) TaskHandler {
+	var userStore *users.Store
+	if len(userStores) > 0 {
+		userStore = userStores[0]
+	}
+	return TaskHandler{manager: manager, output: outputStore, users: userStore}
 }
 
 func (h TaskHandler) Create(w http.ResponseWriter, r *http.Request) {
@@ -29,12 +36,30 @@ func (h TaskHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	payload.RuntimeSecrets = runtimeSecretsFromRequest(r)
+	payload.Source = jobs.JobSourceWeb
+	username := r.Header.Get("X-User-Name")
+	if err := h.ensureTaskCredits(username, jobs.CreditCostForRequest(payload)); err != nil {
+		writeUserCreditError(w, err)
+		return
+	}
+	payload.BeforeEnqueue = func(job jobs.Job) error { return h.chargeTask(username, job) }
 	job, err := h.manager.Create(r.Header.Get("X-Space-Token"), payload)
 	if err != nil {
+		if isUserCreditError(err) {
+			writeUserCreditError(w, err)
+			return
+		}
 		writeError(w, http.StatusBadRequest, "TASK_CREATE_FAILED", err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "job": jobs.PublicJob(job)})
+
+	public := jobs.PublicJob(job)
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":              true,
+		"job":             public,
+		"taskId":          public.ID,
+		"consumedCredits": public.ConsumedCredits,
+	})
 }
 
 func (h TaskHandler) List(w http.ResponseWriter, r *http.Request) {
@@ -64,12 +89,24 @@ func (h TaskHandler) Get(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h TaskHandler) Retry(w http.ResponseWriter, r *http.Request) {
-	job, err := h.manager.Retry(r.Header.Get("X-Space-Token"), r.PathValue("id"), runtimeSecretsFromRequest(r))
+	username := r.Header.Get("X-User-Name")
+	job, err := h.manager.Retry(r.Header.Get("X-Space-Token"), r.PathValue("id"), runtimeSecretsFromRequest(r), func(job jobs.Job) error { return h.chargeTask(username, job) })
 	if err != nil {
+		if isUserCreditError(err) {
+			writeUserCreditError(w, err)
+			return
+		}
 		writeError(w, http.StatusBadRequest, "TASK_RETRY_FAILED", err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "job": jobs.PublicJob(job)})
+
+	public := jobs.PublicJob(job)
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":              true,
+		"job":             public,
+		"taskId":          public.ID,
+		"consumedCredits": public.ConsumedCredits,
+	})
 }
 
 func (h TaskHandler) Cancel(w http.ResponseWriter, r *http.Request) {
@@ -196,6 +233,83 @@ func (h TaskHandler) Stats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "stats": stats})
+}
+
+func (h TaskHandler) ensureTaskCredits(username string, amount int) error {
+	return ensureTaskCredits(h.users, username, amount)
+}
+
+func (h TaskHandler) chargeTask(username string, job jobs.Job) error {
+	return chargeTaskCredits(h.users, username, job)
+}
+
+func ensureTaskCredits(userStore *users.Store, username string, amount int) error {
+	if userStore == nil {
+		return nil
+	}
+	username = strings.TrimSpace(username)
+	if username == "" {
+		return users.NewError("USER_AUTH_REQUIRED", "请先登录")
+	}
+	if amount <= 0 {
+		amount = 1
+	}
+	profile, err := userStore.Profile(username)
+	if err != nil {
+		return err
+	}
+	if profile.CreditsBalance < amount {
+		return users.NewError("USER_CREDITS_NOT_ENOUGH", "次数不足")
+	}
+	return nil
+}
+
+func chargeTaskCredits(userStore *users.Store, username string, job jobs.Job) error {
+	if userStore == nil {
+		return nil
+	}
+	username = strings.TrimSpace(username)
+	if username == "" {
+		return users.NewError("USER_AUTH_REQUIRED", "请先登录")
+	}
+	amount := job.ConsumedCredits
+	if amount <= 0 {
+		amount = jobs.CreditCostForCount(job.Count)
+	}
+	_, err := userStore.ChargeTaskCredits(username, amount, job.ID, taskChargeReason(job))
+	return err
+}
+
+func taskChargeReason(job jobs.Job) string {
+	label := "生成任务扣减"
+	if job.Source == jobs.JobSourceAPI {
+		label = "API 生成任务扣减"
+	}
+	if job.Count > 1 {
+		return fmt.Sprintf("%s（%d 张）", label, job.Count)
+	}
+	return label
+}
+
+func isUserCreditError(err error) bool {
+	var userErr users.Error
+	return users.AsError(err, &userErr)
+}
+
+func writeUserCreditError(w http.ResponseWriter, err error) {
+	var userErr users.Error
+	if users.AsError(err, &userErr) {
+		status := http.StatusBadRequest
+		if userErr.Code == "USER_AUTH_REQUIRED" {
+			status = http.StatusUnauthorized
+		}
+		if userErr.Code == "USER_CREDITS_NOT_ENOUGH" {
+			status = http.StatusPaymentRequired
+		}
+		writeError(w, status, userErr.Code, userErr.Chinese)
+		return
+	}
+	writeError(w, http.StatusBadRequest, "USER_CREDITS_ERROR", err.Error())
 }
 
 func sendSSE(w http.ResponseWriter, event events.Event) {

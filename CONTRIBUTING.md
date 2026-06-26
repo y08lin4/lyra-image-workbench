@@ -6,7 +6,6 @@
 
 - Go 1.22+
 - Node.js 20+ / npm
-- FFmpeg (only needed for GIF rendering development/manual tests; real FFmpeg integration tests should skip when unavailable)
 
 ```bash
 go test ./...

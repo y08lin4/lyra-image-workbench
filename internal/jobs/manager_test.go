@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"io"
 	"mime/multipart"
 	"net/http"
@@ -25,6 +26,48 @@ import (
 	"github.com/y08lin4/lyra-image-workbench/internal/uploads"
 )
 
+func TestManagerCreateBeforeEnqueueFailureDoesNotStartWorker(t *testing.T) {
+	var requests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": []map[string]string{{
+			"b64_json": base64.StdEncoding.EncodeToString([]byte("should-not-run")),
+		}}})
+	}))
+	defer server.Close()
+	env := newManagerTestEnv(t, server.URL+"/v1")
+	chargeErr := errors.New("credits not enough")
+
+	created, err := env.manager.Create(env.token, CreateRequest{
+		RuntimeSecrets: RuntimeSecrets{APIKey: "sk-test"},
+		Mode:           ModeTextToImage,
+		Prompt:         "cat",
+		Ratio:          "1:1",
+		Resolution:     "standard",
+		Count:          1,
+		Concurrency:    1,
+		BeforeEnqueue: func(Job) error {
+			return chargeErr
+		},
+	})
+	if !errors.Is(err, chargeErr) {
+		t.Fatalf("Create() error = %v, want %v", err, chargeErr)
+	}
+	if created.ID != "" {
+		t.Fatalf("Create() should not return a created job on BeforeEnqueue failure: %+v", created)
+	}
+	jobs, listErr := env.store.List(env.token, 10)
+	if listErr != nil {
+		t.Fatalf("List() error = %v", listErr)
+	}
+	if len(jobs) != 0 {
+		t.Fatalf("failed BeforeEnqueue job should be removed, got %+v", jobs)
+	}
+	time.Sleep(100 * time.Millisecond)
+	if requests.Load() != 0 {
+		t.Fatalf("worker should not call upstream after BeforeEnqueue failure, got %d requests", requests.Load())
+	}
+}
 func TestManagerCreateReturnsQueuedAndCompletesInBackground(t *testing.T) {
 	var requests atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -401,6 +444,40 @@ func TestManagerRecoverInterruptsQueuedAndRunningWithoutBrowserKeys(t *testing.T
 	}
 }
 
+func TestManagerRecoverRefundsQueuedChargedJobsOnly(t *testing.T) {
+	env := newManagerTestEnvWithoutManager(t, "http://127.0.0.1:1")
+	queued := newPersistedJob(env.token, "img_queued_charged", StatusQueued, StageQueued)
+	queued.ConsumedCredits = 2
+	if err := env.store.Save(queued); err != nil {
+		t.Fatalf("Save(queued) error = %v", err)
+	}
+	running := newPersistedJob(env.token, "img_running_charged", StatusRunning, StageWaitingUpstream)
+	running.ConsumedCredits = 3
+	if err := env.store.Save(running); err != nil {
+		t.Fatalf("Save(running) error = %v", err)
+	}
+
+	var refunded []string
+	env.manager = NewManager(env.store, events.NewHub(), env.settings, env.spaceConfig, env.uploads, env.output, newapi.NewClient())
+	if err := env.manager.Recover(RecoverOptions{RefundQueued: func(job Job) error {
+		refunded = append(refunded, job.ID)
+		return nil
+	}}); err != nil {
+		t.Fatalf("Recover() error = %v", err)
+	}
+	if len(refunded) != 1 || refunded[0] != queued.ID {
+		t.Fatalf("Recover refunded jobs = %+v, want only %s", refunded, queued.ID)
+	}
+
+	queuedInterrupted := waitForJobStatus(t, env.store, env.token, queued.ID, StatusInterrupted, 2*time.Second)
+	if queuedInterrupted.Stage != StageInterrupted || !strings.Contains(queuedInterrupted.Error, "refunded automatically") {
+		t.Fatalf("queued job was not interrupted with refund message: %+v", queuedInterrupted)
+	}
+	runningInterrupted := waitForJobStatus(t, env.store, env.token, running.ID, StatusInterrupted, 2*time.Second)
+	if runningInterrupted.Stage != StageInterrupted || strings.Contains(runningInterrupted.Error, "refunded automatically") {
+		t.Fatalf("running job should not use queued refund message: %+v", runningInterrupted)
+	}
+}
 func TestManagerSetFavoritePersists(t *testing.T) {
 	env := newManagerTestEnvWithoutManager(t, "http://127.0.0.1:1")
 	env.manager = NewManager(env.store, events.NewHub(), env.settings, env.spaceConfig, env.uploads, env.output, newapi.NewClient())

@@ -2,8 +2,6 @@ package users
 
 import (
 	"crypto/rand"
-	"crypto/sha256"
-	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -16,17 +14,21 @@ import (
 	"sync"
 	"time"
 
+	"github.com/y08lin4/lyra-image-workbench/internal/passwordhash"
+
 	"github.com/y08lin4/lyra-image-workbench/internal/spaces"
 )
 
 const SessionTTL = 30 * 24 * time.Hour
 
 const (
+	creditLedgerTypeInitialFree    = "initial_free"
+	creditLedgerTypeDailyFree      = "daily_free"
 	creditLedgerTypeAdminAdd       = "admin_add"
 	creditLedgerTypePurchase       = "purchase"
 	creditLedgerTypeReferralReward = "referral_reward"
 	creditLedgerTypeTaskCharge     = "task_charge"
-	creditLedgerTypeRefund         = "refund"
+	creditLedgerTypeTaskRefund     = "task_refund"
 )
 
 var usernamePattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_.-]{2,31}$`)
@@ -125,6 +127,19 @@ type PurchaseCreditResult struct {
 	ReferralEntry *CreditLedgerEntry `json:"referralEntry,omitempty"`
 }
 
+type DailyCreditClaimResult struct {
+	User      PublicUser        `json:"user"`
+	Entry     CreditLedgerEntry `json:"entry"`
+	Created   bool              `json:"created"`
+	ClaimDate string            `json:"claimDate"`
+}
+
+type TaskCreditResult struct {
+	User    PublicUser        `json:"user"`
+	Entry   CreditLedgerEntry `json:"entry"`
+	Created bool              `json:"created"`
+}
+
 type Session struct {
 	User         PublicUser `json:"user"`
 	ExpiresAt    string     `json:"expiresAt"`
@@ -148,6 +163,13 @@ func NewStore(path string) (*Store, error) {
 }
 
 func (s *Store) Register(username string, email string, password string, referralCode string, storageToken string) (Session, error) {
+	return s.RegisterWithInitialCredits(username, email, password, referralCode, storageToken, 0)
+}
+
+func (s *Store) RegisterWithInitialCredits(username string, email string, password string, referralCode string, storageToken string, initialCredits int) (Session, error) {
+	if initialCredits < 0 {
+		return Session{}, NewError("USER_CREDITS_AMOUNT_INVALID", "初始赠送次数不能小于 0")
+	}
 	normalized, displayName, err := normalizeUsername(username)
 	if err != nil {
 		return Session{}, err
@@ -191,7 +213,7 @@ func (s *Store) Register(username string, email string, password string, referra
 		referredByUsername = s.current.Users[index].Username
 	}
 
-	salt, err := randomHex(16)
+	salt, passwordHash, err := passwordhash.New(password)
 	if err != nil {
 		return Session{}, err
 	}
@@ -200,6 +222,7 @@ func (s *Store) Register(username string, email string, password string, referra
 		return Session{}, err
 	}
 	now := time.Now().Format(time.RFC3339)
+	newUserIndex := len(s.current.Users)
 	s.current.Users = append(s.current.Users, record{
 		Username:           displayName,
 		DisplayName:        displayName,
@@ -211,11 +234,16 @@ func (s *Store) Register(username string, email string, password string, referra
 		ReferredByUsername: referredByUsername,
 		StorageToken:       storageToken,
 		SaltHex:            salt,
-		HashHex:            hashPassword(salt, password),
+		HashHex:            passwordHash,
 		CreatedAt:          now,
 		UpdatedAt:          now,
 		LastLoginAt:        now,
 	})
+	if initialCredits > 0 {
+		if _, err := s.appendCreditLedgerLocked(newUserIndex, initialCredits, creditLedgerTypeInitialFree, "新用户初始赠送", "initial:"+normalized, "", "", now); err != nil {
+			return Session{}, err
+		}
+	}
 	if err := s.saveLocked(); err != nil {
 		return Session{}, err
 	}
@@ -234,9 +262,17 @@ func (s *Store) Login(identifier string, password string, twoFactorCode string) 
 		return Session{}, NewError("USER_LOGIN_INVALID", "用户名或密码错误")
 	}
 	user := s.current.Users[index]
-	got := hashPassword(user.SaltHex, password)
-	if subtle.ConstantTimeCompare([]byte(got), []byte(user.HashHex)) != 1 {
+	passwordOK, needsPasswordUpgrade := passwordhash.Verify(user.SaltHex, user.HashHex, password)
+	if !passwordOK {
 		return Session{}, NewError("USER_LOGIN_INVALID", "用户名或密码错误")
+	}
+	if needsPasswordUpgrade {
+		salt, encodedHash, err := passwordhash.New(password)
+		if err != nil {
+			return Session{}, err
+		}
+		s.current.Users[index].SaltHex = salt
+		s.current.Users[index].HashHex = encodedHash
 	}
 	if user.TOTPEnabled {
 		if strings.TrimSpace(twoFactorCode) == "" {
@@ -305,6 +341,20 @@ func (s *Store) Profile(username string) (PublicUser, error) {
 	return publicUserFromRecord(s.current.Users[index]), nil
 }
 
+func (s *Store) FindByStorageToken(storageToken string) (PublicUser, bool) {
+	storageToken = strings.TrimSpace(storageToken)
+	if storageToken == "" {
+		return PublicUser{}, false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i := range s.current.Users {
+		if strings.TrimSpace(s.current.Users[i].StorageToken) == storageToken {
+			return publicUserFromRecord(s.current.Users[i]), true
+		}
+	}
+	return PublicUser{}, false
+}
 func (s *Store) UpdateProfile(username string, update ProfileUpdate) (PublicUser, error) {
 	normalized, _, err := normalizeUsername(username)
 	if err != nil {
@@ -385,7 +435,7 @@ func (s *Store) ListCreditLedger(username string) ([]CreditLedgerEntry, error) {
 	items := make([]CreditLedgerEntry, 0)
 	for _, entry := range s.current.CreditLedger {
 		if normalizeUsernameKey(entry.Username) == normalized {
-			items = append(items, entry)
+			items = append([]CreditLedgerEntry{entry}, items...)
 		}
 	}
 	return items, nil
@@ -500,6 +550,136 @@ func (s *Store) AddPurchaseCredits(username string, amount int, sourceID string,
 	}
 	result.User = adminUserFromRecord(s.current.Users[index])
 	return result, nil
+}
+
+func (s *Store) ChargeTaskCredits(username string, amount int, taskID string, reason string) (TaskCreditResult, error) {
+	if amount <= 0 {
+		return TaskCreditResult{}, NewError("USER_CREDITS_AMOUNT_INVALID", "任务扣减次数必须大于 0")
+	}
+	sourceID := strings.TrimSpace(taskID)
+	if sourceID == "" {
+		return TaskCreditResult{}, NewError("USER_CREDITS_SOURCE_REQUIRED", "任务扣费必须包含任务 ID")
+	}
+	normalized, _, err := normalizeUsername(username)
+	if err != nil {
+		return TaskCreditResult{}, err
+	}
+	reason = strings.TrimSpace(reason)
+	if reason == "" {
+		reason = "生成任务扣费"
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if existing, ok := s.findLedgerBySourceLocked(creditLedgerTypeTaskCharge, sourceID); ok {
+		if normalizeUsernameKey(existing.Username) != normalized || existing.Delta != -amount {
+			return TaskCreditResult{}, NewError("USER_CREDITS_SOURCE_CONFLICT", "任务 ID 已被其他扣费记录使用")
+		}
+		index, ok := s.findLocked(existing.Username)
+		if !ok {
+			return TaskCreditResult{}, NewError("USER_NOT_FOUND", "用户不存在")
+		}
+		return TaskCreditResult{User: publicUserFromRecord(s.current.Users[index]), Entry: existing, Created: false}, nil
+	}
+	index, ok := s.findLocked(normalized)
+	if !ok {
+		return TaskCreditResult{}, NewError("USER_NOT_FOUND", "用户不存在")
+	}
+	now := time.Now().Format(time.RFC3339)
+	entry, err := s.appendCreditLedgerLocked(index, -amount, creditLedgerTypeTaskCharge, reason, sourceID, "", "", now)
+	if err != nil {
+		return TaskCreditResult{}, err
+	}
+	if err := s.saveLocked(); err != nil {
+		return TaskCreditResult{}, err
+	}
+	return TaskCreditResult{User: publicUserFromRecord(s.current.Users[index]), Entry: entry, Created: true}, nil
+}
+
+func (s *Store) RefundTaskCredits(username string, taskID string, reason string) (TaskCreditResult, error) {
+	sourceID := strings.TrimSpace(taskID)
+	if sourceID == "" {
+		return TaskCreditResult{}, NewError("USER_CREDITS_SOURCE_REQUIRED", "任务退费必须包含任务 ID")
+	}
+	normalized, _, err := normalizeUsername(username)
+	if err != nil {
+		return TaskCreditResult{}, err
+	}
+	reason = strings.TrimSpace(reason)
+	if reason == "" {
+		reason = "生成任务失败退回"
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if existing, ok := s.findLedgerBySourceLocked(creditLedgerTypeTaskRefund, sourceID); ok {
+		if normalizeUsernameKey(existing.Username) != normalized {
+			return TaskCreditResult{}, NewError("USER_CREDITS_SOURCE_CONFLICT", "任务 ID 已被其他退费记录使用")
+		}
+		index, ok := s.findLocked(existing.Username)
+		if !ok {
+			return TaskCreditResult{}, NewError("USER_NOT_FOUND", "用户不存在")
+		}
+		return TaskCreditResult{User: publicUserFromRecord(s.current.Users[index]), Entry: existing, Created: false}, nil
+	}
+	charge, ok := s.findLedgerBySourceLocked(creditLedgerTypeTaskCharge, sourceID)
+	if !ok {
+		return TaskCreditResult{}, NewError("USER_TASK_CHARGE_NOT_FOUND", "任务扣费记录不存在，无法退回")
+	}
+	if normalizeUsernameKey(charge.Username) != normalized || charge.Delta >= 0 {
+		return TaskCreditResult{}, NewError("USER_CREDITS_SOURCE_CONFLICT", "任务扣费记录与退费用户不匹配")
+	}
+	index, ok := s.findLocked(normalized)
+	if !ok {
+		return TaskCreditResult{}, NewError("USER_NOT_FOUND", "用户不存在")
+	}
+	now := time.Now().Format(time.RFC3339)
+	entry, err := s.appendCreditLedgerLocked(index, -charge.Delta, creditLedgerTypeTaskRefund, reason, sourceID, "", "", now)
+	if err != nil {
+		return TaskCreditResult{}, err
+	}
+	if err := s.saveLocked(); err != nil {
+		return TaskCreditResult{}, err
+	}
+	return TaskCreditResult{User: publicUserFromRecord(s.current.Users[index]), Entry: entry, Created: true}, nil
+}
+
+func (s *Store) ClaimDailyCredits(username string, amount int, now time.Time) (DailyCreditClaimResult, error) {
+	if amount <= 0 {
+		return DailyCreditClaimResult{}, NewError("USER_DAILY_CREDITS_DISABLED", "每日免费次数未开启")
+	}
+	if now.IsZero() {
+		now = time.Now()
+	}
+	claimDate := now.Format("2006-01-02")
+	normalized, _, err := normalizeUsername(username)
+	if err != nil {
+		return DailyCreditClaimResult{}, err
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	sourceID := fmt.Sprintf("daily_free:%s:%s", claimDate, normalized)
+	if existing, ok := s.findLedgerBySourceLocked(creditLedgerTypeDailyFree, sourceID); ok {
+		index, ok := s.findLocked(existing.Username)
+		if !ok {
+			return DailyCreditClaimResult{}, NewError("USER_NOT_FOUND", "用户不存在")
+		}
+		return DailyCreditClaimResult{User: publicUserFromRecord(s.current.Users[index]), Entry: existing, Created: false, ClaimDate: claimDate}, nil
+	}
+	index, ok := s.findLocked(normalized)
+	if !ok {
+		return DailyCreditClaimResult{}, NewError("USER_NOT_FOUND", "用户不存在")
+	}
+	createdAt := now.Format(time.RFC3339)
+	entry, err := s.appendCreditLedgerLocked(index, amount, creditLedgerTypeDailyFree, "每日免费赠送", sourceID, "", "", createdAt)
+	if err != nil {
+		return DailyCreditClaimResult{}, err
+	}
+	if err := s.saveLocked(); err != nil {
+		return DailyCreditClaimResult{}, err
+	}
+	return DailyCreditClaimResult{User: publicUserFromRecord(s.current.Users[index]), Entry: entry, Created: true, ClaimDate: claimDate}, nil
 }
 
 func (s *Store) BeginTOTPSetup(username string) (TOTPSetup, error) {
@@ -818,11 +998,6 @@ func normalizeAvatarURL(avatarURL string) (string, error) {
 
 func normalizeReferralCode(code string) string {
 	return strings.ToUpper(strings.TrimSpace(code))
-}
-
-func hashPassword(saltHex string, password string) string {
-	sum := sha256.Sum256([]byte(strings.TrimSpace(saltHex) + ":" + strings.TrimSpace(password)))
-	return hex.EncodeToString(sum[:])
 }
 
 func randomHex(size int) (string, error) {

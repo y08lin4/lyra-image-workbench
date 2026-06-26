@@ -10,8 +10,9 @@ const (
 )
 
 type Image struct {
-	URL string `json:"url"`
-	Alt string `json:"alt,omitempty"`
+	URL         string `json:"url"`
+	Alt         string `json:"alt,omitempty"`
+	OriginalURL string `json:"originalUrl,omitempty"`
 }
 
 type Source struct {

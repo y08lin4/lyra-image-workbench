@@ -151,6 +151,104 @@ func TestEpayNotifyValidatesPidMethodAndIsIdempotent(t *testing.T) {
 	}
 }
 
+func TestEpayNotifyRejectsBadSignatureAndAmount(t *testing.T) {
+	env := newTestAPIEnv(t)
+	key := configureTestBilling(t, env)
+	token := createNamedUserSession(t, env.Router, "buyer02", "R7!Buyer#Vault$2026", "")
+
+	tradeNo := createTestEpayOrder(t, env.Router, token, 10, "alipay")
+	order, ok := env.Billing.GetByTradeNo(tradeNo)
+	if !ok {
+		t.Fatalf("created order %s missing", tradeNo)
+	}
+
+	badSignature := signedNotifyValues(order, key)
+	badSignature.Set("sign", "bad-signature")
+	code, body := postNotifyForm(t, env.Router, badSignature)
+	if code != http.StatusOK || strings.TrimSpace(body) != "fail" {
+		t.Fatalf("bad signature notify code=%d body=%s", code, body)
+	}
+
+	badAmount := signedNotifyValues(order, key)
+	badAmount.Set("money", billing.FormatCents(order.AmountCents+1))
+	badAmount.Set("sign", billing.SignParams(valuesToMap(badAmount), key))
+	code, body = postNotifyForm(t, env.Router, badAmount)
+	if code != http.StatusOK || strings.TrimSpace(body) != "fail" {
+		t.Fatalf("bad amount notify code=%d body=%s", code, body)
+	}
+
+	ledger, err := env.Users.ListCreditLedger("buyer02")
+	if err != nil {
+		t.Fatalf("ListCreditLedger() error = %v", err)
+	}
+	if len(ledger) != 0 {
+		t.Fatalf("invalid notify should not grant credits: %+v", ledger)
+	}
+	updated, ok := env.Billing.GetByTradeNo(tradeNo)
+	if !ok || updated.Status != billing.TopUpStatusPending {
+		t.Fatalf("invalid notify should leave order pending, order=%+v ok=%v", updated, ok)
+	}
+}
+
+func TestEpayNotifyRewardsInviterOnce(t *testing.T) {
+	env := newTestAPIEnv(t)
+	key := configureTestBilling(t, env)
+	reward := 4
+	if _, err := env.Settings.Update(settings.Update{ReferralRewardCredits: &reward}); err != nil {
+		t.Fatalf("Settings.Update(referral reward) error = %v", err)
+	}
+
+	createNamedUserSession(t, env.Router, "inviter01", "R7!Invite#Vault$2026", "")
+	inviter, err := env.Users.Profile("inviter01")
+	if err != nil {
+		t.Fatalf("Profile(inviter01) error = %v", err)
+	}
+	if inviter.ReferralCode == "" {
+		t.Fatal("inviter referral code is empty")
+	}
+
+	_, cookies := doJSONWithCookies(t, env.Router, http.MethodPost, "/api/users/register", "", map[string]string{
+		"username":     "buyer03",
+		"password":     "R7!Buyer#Vault$2026",
+		"referralCode": inviter.ReferralCode,
+	})
+	token := userSessionFromCookies(t, cookies)
+	tradeNo := createTestEpayOrder(t, env.Router, token, 10, "alipay")
+	order, ok := env.Billing.GetByTradeNo(tradeNo)
+	if !ok {
+		t.Fatalf("created order %s missing", tradeNo)
+	}
+
+	valid := signedNotifyValues(order, key)
+	for i := 0; i < 2; i++ {
+		code, body := postNotifyForm(t, env.Router, valid)
+		if code != http.StatusOK || strings.TrimSpace(body) != "success" {
+			t.Fatalf("valid notify #%d code=%d body=%s", i+1, code, body)
+		}
+	}
+
+	buyerLedger, err := env.Users.ListCreditLedger("buyer03")
+	if err != nil {
+		t.Fatalf("buyer ListCreditLedger() error = %v", err)
+	}
+	if len(buyerLedger) != 1 || buyerLedger[0].Type != "purchase" || buyerLedger[0].Delta != 10 || buyerLedger[0].SourceID != tradeNo {
+		t.Fatalf("buyer purchase ledger mismatch: %+v", buyerLedger)
+	}
+	inviterLedger, err := env.Users.ListCreditLedger("inviter01")
+	if err != nil {
+		t.Fatalf("inviter ListCreditLedger() error = %v", err)
+	}
+	if len(inviterLedger) != 1 || inviterLedger[0].Type != "referral_reward" || inviterLedger[0].Delta != reward || inviterLedger[0].SourceID != "referral:"+tradeNo {
+		t.Fatalf("inviter reward ledger mismatch: %+v", inviterLedger)
+	}
+	inviter, err = env.Users.Profile("inviter01")
+	if err != nil {
+		t.Fatalf("Profile(inviter01 after notify) error = %v", err)
+	}
+	if inviter.CreditsBalance != reward {
+		t.Fatalf("inviter creditsBalance=%d, want %d", inviter.CreditsBalance, reward)
+	}
+}
 func assertEpayKeyHidden(t *testing.T, body string, rawKey string) {
 	t.Helper()
 	if strings.Contains(body, rawKey) || strings.Contains(body, `"epayKey":`) {

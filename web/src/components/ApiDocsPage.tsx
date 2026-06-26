@@ -120,12 +120,24 @@ const API_EXAMPLES: ApiExample[] = [
   },
 ]
 
+const TASK_POLLING_EXAMPLE = [
+  'curl "' + API_BASE_URL + '/v1/image-tasks/$TASK_ID"',
+  '-H "Authorization: Bearer $LYRA_API_KEY"',
+].join(' ')
+
+const TASK_RESULT_EXAMPLE = [
+  'curl "' + API_BASE_URL + '/v1/image-tasks/$TASK_ID/images/0"',
+  '-H "Authorization: Bearer $LYRA_API_KEY"',
+  '--output result.png',
+].join(' ')
 const AI_INTEGRATION_PROMPT = [
   '你正在接入 LyAi Image Generation API。',
   '注册站点：https://ai-image.ailinyu.de/',
   '先注册账号、配置上游服务、生成 Bearer API Key。',
   '所有请求都使用 Authorization: Bearer <API_KEY>。',
   '主要示例接口：POST https://ai-image.ailinyu.de/v1/images/generations。',
+  '响应会返回 task.id；用 GET https://ai-image.ailinyu.de/v1/image-tasks/{task.id} 轮询状态。',
+  '完成后的图片可通过 task.results[n].imageUrl 或 /v1/image-tasks/{task.id}/images/{index} 获取。',
   '文档仓库：https://github.com/y08lin4/LyAi-Image-Generation-API-Documentation。',
   '请生成包含错误处理、超时控制、环境变量读取 API Key 的接入代码。',
 ].join('\n')
@@ -182,6 +194,19 @@ export function ApiDocsPage() {
         ))}
       </section>
 
+
+      <section className="api-docs-panel" aria-labelledby="api-poll-title">
+        <div className="panel-title">
+          <strong id="api-poll-title">轮询任务和获取图片</strong>
+          <button type="button" onClick={() => void copyText('轮询示例', TASK_POLLING_EXAMPLE + '\n' + TASK_RESULT_EXAMPLE)}>复制</button>
+        </div>
+        <ul>
+          <li>创建接口会返回 <code>taskId</code> 和 <code>task.id</code>。</li>
+          <li>轮询 <code>GET /v1/image-tasks/&#123;taskId&#125;</code>，直到 <code>task.status</code> 为 <code>succeeded</code>、<code>partial_failed</code> 或 <code>failed</code>。</li>
+          <li>成功后读取 <code>task.results[n].imageUrl</code>，或下载 <code>/v1/image-tasks/&#123;taskId&#125;/images/0</code>。</li>
+        </ul>
+        <pre><code>{TASK_POLLING_EXAMPLE + '\n' + TASK_RESULT_EXAMPLE}</code></pre>
+      </section>
       <section className="api-docs-panel" aria-labelledby="ai-prompt-title">
         <div className="panel-title">
           <strong id="ai-prompt-title">复制给 AI 的提示词</strong>

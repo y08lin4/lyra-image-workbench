@@ -43,12 +43,6 @@
 - Key 不出现在日志和提交记录里。
 
 
-## GIF workflow routes
+## 已移除的实验路由
 
-- `GET /api/gif/status`: returns GIF feature flag, FFmpeg availability, and frame/FPS/width limits.
-- `POST /api/gif/plans`: creates a frame prompt plan from one uploaded reference image, motion type, prompt, frame count, FPS, and strength. If GPT returns invalid JSON, the backend uses a deterministic fallback plan.
-- `POST /api/gif-renders`: renders selected successful task frames into a final GIF. Inputs must come from the authenticated user's task result / output store; local paths and external URLs are not accepted.
-- `GET /api/gif-renders/{id}`: returns a GIF render record.
-- `GET /api/gif-renders/{id}/file`: returns the final GIF file.
-
-Preview GIFs are not generated server-side. The frontend previews by rotating frame images and calls FFmpeg only after the user clicks merge.
+视频和动态合成相关实验路由不属于当前第一阶段闭环；当前路由只保留图片生成、任务、用户、广场、充值、管理和 API 调用能力。

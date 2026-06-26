@@ -1,10 +1,12 @@
-import { useState } from 'react'
+import { type FormEvent, useState } from 'react'
 import type { Task, TaskResult } from '../types'
 import { formatBytes } from '../lib/format'
 import { errorReasonLabel } from '../lib/errorLabels'
 import { ImagePreviewModal } from './ImagePreviewModal'
 import { BANANA_PROVIDER, getBananaModelOption, providerLabel } from '../lib/models'
 import { nativeCopyImage, nativeCopyText, nativeSaveImage } from '../lib/nativeBridge'
+
+type SquareSubmitOptions = { title?: string; tags?: string[] }
 
 type ResultCanvasProps = {
   task?: Task
@@ -14,7 +16,7 @@ type ResultCanvasProps = {
   onReuse?: (task: Task) => void
   onRetry?: (id: string) => void
   submittedSquareKeys?: Set<string>
-  onSubmitToSquare?: (task: Task, result: TaskResult, index: number) => Promise<boolean>
+  onSubmitToSquare?: (task: Task, result: TaskResult, index: number, options?: SquareSubmitOptions) => Promise<boolean>
 }
 
 export function ResultCanvas({ task, onUseAsReference, onUploadPixhost, onOpenGenerate, onReuse, onRetry, submittedSquareKeys, onSubmitToSquare }: ResultCanvasProps) {
@@ -48,7 +50,6 @@ export function ResultCanvas({ task, onUseAsReference, onUploadPixhost, onOpenGe
       ) : (
         <>
           <ResultContext task={task} />
-          <DebugLogPanel task={task} />
           {hasTaskActions ? (
             <div className="result-action-row">
               {onReuse ? <button type="button" onClick={() => onReuse(task)}>复用参数</button> : null}
@@ -72,6 +73,7 @@ export function ResultCanvas({ task, onUseAsReference, onUploadPixhost, onOpenGe
               )
             })}
           </div>
+          <DebugLogPanel task={task} />
         </>
       )}
     </section>
@@ -82,6 +84,13 @@ function ResultContext({ task }: { task: Task }) {
   const revisedPrompts = uniqueRevisedPrompts(task)
   return (
     <section className="result-context" aria-label="生成请求信息">
+      <div className="result-task-summary" aria-label="任务摘要">
+        <div><span>任务 ID</span><strong>{compactTaskId(task.id)}</strong></div>
+        <div><span>来源</span><strong>{sourceLabel(task.source)}</strong></div>
+        <div><span>模型</span><strong>{providerLabel(task.provider || 'image-2')}</strong></div>
+        <div><span>消耗</span><strong>{task.count || 1} 次</strong></div>
+        <div><span>创建时间</span><strong>{formatTaskTime(task.createdAt)}</strong></div>
+      </div>
       <details className="result-prompt" open={(task.prompt || '').length <= 120}>
         <summary>
           <span>提示词</span>
@@ -107,6 +116,63 @@ function ResultContext({ task }: { task: Task }) {
       </div>
     </section>
   )
+}
+
+function compactTaskId(id: string) {
+  if (id.length <= 18) return id
+  return `${id.slice(0, 10)}...${id.slice(-5)}`
+}
+
+function sourceLabel(source?: string) {
+  return source === 'api' ? 'API' : 'Web'
+}
+
+function formatTaskTime(value?: string) {
+  if (!value) return '-'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return new Intl.DateTimeFormat('zh-CN', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date)
+}
+
+function squareDefaultTitle(task: Task, result: TaskResult, index: number) {
+  return compactSquareText(result.revisedPrompt || task.prompt || `生成结果 ${index + 1}`, 80)
+}
+
+function squareDefaultTags(task: Task) {
+  return [
+    task.mode === 'image-to-image' ? '图生图' : '文生图',
+    task.provider || 'image-2',
+    task.model || '',
+  ].filter(Boolean).slice(0, 6)
+}
+
+function splitSquareTags(value: string) {
+  return value.split(/[,，\s]+/).map((item) => item.trim()).filter(Boolean).slice(0, 12)
+}
+
+function compactSquareText(value: string, max = 96) {
+  const text = value.trim().replace(/\s+/g, ' ')
+  if (text.length <= max) return text
+  return `${text.slice(0, max)}...`
+}
+
+function imageAspectStyle(value: string) {
+  const aspectRatio = ratioToCssAspect(value)
+  return aspectRatio ? { aspectRatio } : undefined
+}
+
+function ratioToCssAspect(value: string) {
+  const match = value.trim().match(/^(\d+(?:\.\d+)?)\s*[:/x×]\s*(\d+(?:\.\d+)?)$/i)
+  if (!match) return ''
+  const width = Number(match[1])
+  const height = Number(match[2])
+  if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return ''
+  return `${width} / ${height}`
 }
 
 function DebugLogPanel({ task }: { task: Task }) {
@@ -149,9 +215,10 @@ function ResultCard({ task, index, result, submittedToSquare, onUseAsReference, 
   submittedToSquare: boolean
   onUseAsReference?: (src: string, index: number) => Promise<void>
   onUploadPixhost?: (taskId: string, index: number) => Promise<void>
-  onSubmitToSquare?: (task: Task, result: TaskResult, index: number) => Promise<boolean>
+  onSubmitToSquare?: (task: Task, result: TaskResult, index: number, options?: SquareSubmitOptions) => Promise<boolean>
 }) {
   const [previewOpen, setPreviewOpen] = useState(false)
+  const [squareDialogOpen, setSquareDialogOpen] = useState(false)
   const [notice, setNotice] = useState('')
   const [submittingToSquare, setSubmittingToSquare] = useState(false)
 
@@ -169,13 +236,14 @@ function ResultCard({ task, index, result, submittedToSquare, onUseAsReference, 
 
   const imageUrl = result.ok && result.imageUrl ? result.imageUrl : ''
   const copyableURL = result.remoteUrl || imageUrl
+  const imageFrameStyle = task.count > 1 ? imageAspectStyle(result.actualSize || task.ratio) : undefined
 
   return (
     <>
       <article className={`result-card ${result.ok ? '' : 'is-error'}`}>
         {imageUrl ? (
           <>
-            <div className="result-image-frame">
+            <div className="result-image-frame" style={imageFrameStyle}>
               <img src={imageUrl} alt={`生成结果 ${index + 1}`} />
             </div>
             <div className="card-toolbar">
@@ -184,7 +252,7 @@ function ResultCard({ task, index, result, submittedToSquare, onUseAsReference, 
               <button type="button" onClick={() => void copyImage(imageUrl, setNotice)}>复制图片</button>
               <button type="button" onClick={() => void copyURL(copyableURL, setNotice)}>复制链接</button>
               {onSubmitToSquare ? (
-                <button type="button" className="primary square-submit-button" disabled={submittingToSquare || submittedToSquare} onClick={() => void submitResultToSquare(task, result, index, onSubmitToSquare, setNotice, setSubmittingToSquare)}>
+                <button type="button" className="primary square-submit-button" disabled={submittingToSquare || submittedToSquare} onClick={() => setSquareDialogOpen(true)}>
                   {submittedToSquare ? '已提交广场' : submittingToSquare ? '提交中...' : '提交到广场'}
                 </button>
               ) : null}
@@ -227,18 +295,95 @@ function ResultCard({ task, index, result, submittedToSquare, onUseAsReference, 
           onClose={() => setPreviewOpen(false)}
         />
       ) : null}
+      {squareDialogOpen && imageUrl && onSubmitToSquare ? (
+        <SquareSubmitDialog
+          task={task}
+          result={result}
+          index={index}
+          imageUrl={imageUrl}
+          submitting={submittingToSquare}
+          onClose={() => setSquareDialogOpen(false)}
+          onConfirm={(options) => submitResultToSquare(task, result, index, onSubmitToSquare, setNotice, setSubmittingToSquare, options)}
+        />
+      ) : null}
     </>
   )
 }
 
-async function submitResultToSquare(task: Task, result: TaskResult, index: number, onSubmitToSquare: (task: Task, result: TaskResult, index: number) => Promise<boolean>, setNotice: (value: string) => void, setSubmittingToSquare: (value: boolean) => void) {
+function SquareSubmitDialog({ task, result, index, imageUrl, submitting, onClose, onConfirm }: {
+  task: Task
+  result: TaskResult
+  index: number
+  imageUrl: string
+  submitting: boolean
+  onClose: () => void
+  onConfirm: (options: SquareSubmitOptions) => Promise<boolean>
+}) {
+  const promptText = result.revisedPrompt || task.prompt || '（无提示词）'
+  const [title, setTitle] = useState(squareDefaultTitle(task, result, index))
+  const [tagInput, setTagInput] = useState(squareDefaultTags(task).join(', '))
+
+  async function submit(event: FormEvent) {
+    event.preventDefault()
+    const submitted = await onConfirm({ title, tags: splitSquareTags(tagInput) })
+    if (submitted) onClose()
+  }
+
+  return (
+    <div className="square-submit-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !submitting) onClose() }}>
+      <form className="square-submit-dialog" role="dialog" aria-modal="true" aria-labelledby="square-submit-title" onSubmit={submit}>
+        <header>
+          <div>
+            <span>提交到广场</span>
+            <h3 id="square-submit-title">确认永久保留这张结果图</h3>
+          </div>
+          <button type="button" aria-label="关闭" onClick={onClose} disabled={submitting}>×</button>
+        </header>
+        <div className="square-submit-body">
+          <div className="square-submit-preview" style={imageAspectStyle(result.actualSize || task.ratio)}>
+            <img src={imageUrl} alt={`提交预览 ${index + 1}`} />
+          </div>
+          <div className="square-submit-form">
+            <label>
+              <span>标题</span>
+              <input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="给这张作品起个短标题" autoFocus />
+            </label>
+            <label>
+              <span>标签</span>
+              <input value={tagInput} onChange={(event) => setTagInput(event.target.value)} placeholder="图生图, gpt-image-2, 1:1" />
+            </label>
+            <dl className="square-submit-meta">
+              <div><dt>模型</dt><dd>{task.model || 'gpt-image-2'}</dd></div>
+              <div><dt>比例</dt><dd>{task.ratio || 'auto'}</dd></div>
+              <div><dt>质量</dt><dd>{result.actualQuality || task.quality || 'auto'}</dd></div>
+              <div><dt>图片</dt><dd>第 {index + 1} 张 · {result.actualSize || task.size || '自动尺寸'} · {formatBytes(result.bytes)}</dd></div>
+            </dl>
+            <div className="square-submit-prompt">
+              <span>提示词</span>
+              <p>{promptText}</p>
+            </div>
+            <p className="square-submit-note">提交后会复制到广场永久目录；未提交结果仍按 30 天清理。</p>
+          </div>
+        </div>
+        <footer>
+          <button type="button" onClick={onClose} disabled={submitting}>取消</button>
+          <button type="submit" className="primary" disabled={submitting}>{submitting ? '提交中...' : '确认提交'}</button>
+        </footer>
+      </form>
+    </div>
+  )
+}
+
+async function submitResultToSquare(task: Task, result: TaskResult, index: number, onSubmitToSquare: (task: Task, result: TaskResult, index: number, options?: SquareSubmitOptions) => Promise<boolean>, setNotice: (value: string) => void, setSubmittingToSquare: (value: boolean) => void, options?: SquareSubmitOptions) {
   try {
     setSubmittingToSquare(true)
     flash(setNotice, '正在提交到广场...')
-    const submitted = await onSubmitToSquare(task, result, index)
+    const submitted = await onSubmitToSquare(task, result, index, options)
     flash(setNotice, submitted ? '已提交到广场，图片将永久保留' : '已取消提交')
+    return submitted
   } catch (err) {
     flash(setNotice, err instanceof Error ? err.message : '提交到广场失败')
+    return false
   } finally {
     setSubmittingToSquare(false)
   }

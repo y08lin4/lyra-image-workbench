@@ -43,6 +43,12 @@ func (s *Service) List(ctx context.Context, query Query) (Library, error) {
 	if err != nil {
 		return Library{}, err
 	}
+	if ok {
+		if next, changed := s.cacheLibraryImages(ctx, cached); changed {
+			cached = next
+			_ = s.store.Save(lang, cached)
+		}
+	}
 	if ok && !query.Force && time.Since(cached.FetchedAt) < s.ttl && len(cached.Items) > 0 {
 		cached.Stale = false
 		cached.FetchError = ""
@@ -56,6 +62,9 @@ func (s *Service) List(ctx context.Context, query Query) (Library, error) {
 			return filterLibrary(cached, query), nil
 		}
 		return Library{}, err
+	}
+	if next, changed := s.cacheLibraryImages(ctx, fresh); changed {
+		fresh = next
 	}
 	if err := s.store.Save(lang, fresh); err != nil {
 		return Library{}, err
