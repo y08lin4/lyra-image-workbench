@@ -162,6 +162,12 @@ func NewStore(path string) (*Store, error) {
 	return store, nil
 }
 
+func (s *Store) HasUsers() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.current.Users) > 0
+}
+
 func (s *Store) Register(username string, email string, password string, referralCode string, storageToken string) (Session, error) {
 	return s.RegisterWithInitialCredits(username, email, password, referralCode, storageToken, 0)
 }
@@ -227,7 +233,7 @@ func (s *Store) RegisterWithInitialCredits(username string, email string, passwo
 		Username:           displayName,
 		DisplayName:        displayName,
 		Email:              normalizedEmail,
-		IsAdmin:            len(s.current.Users) == 0,
+		IsAdmin:            false,
 		CreditsBalance:     0,
 		ReferralCode:       newReferralCode,
 		ReferredByCode:     normalizedReferralCode,

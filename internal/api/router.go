@@ -41,7 +41,7 @@ type Dependencies struct {
 func NewRouter(deps Dependencies) http.Handler {
 	mux := http.NewServeMux()
 	health := NewHealthHandler(deps.Config)
-	adminAuth := NewAdminAuthHandler(deps.AdminAuth, deps.Config.AdminSetupToken)
+	adminAuth := NewAdminAuthHandler(deps.AdminAuth, deps.Config.AdminSetupToken).WithInitialSetup(deps.Settings, deps.Users)
 	adminConfig := NewAdminConfigHandler(deps.Settings, deps.AdminAuth, deps.Users)
 	adminUsers := NewAdminUsersHandler(deps.Users, deps.AdminAuth)
 	userHandler := NewUserHandler(deps.Users, deps.Spaces, deps.Settings)

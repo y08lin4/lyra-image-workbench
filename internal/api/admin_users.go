@@ -3,7 +3,6 @@ package api
 import (
 	"encoding/json"
 	"net/http"
-	"strings"
 
 	"github.com/y08lin4/lyra-image-workbench/internal/adminauth"
 	"github.com/y08lin4/lyra-image-workbench/internal/users"
@@ -89,28 +88,25 @@ func (h AdminUsersHandler) SetRole(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h AdminUsersHandler) requireAdminAccess(w http.ResponseWriter, r *http.Request) bool {
+	if h.auth == nil || !h.auth.Status().PasswordSet {
+		writeError(w, http.StatusForbidden, "ADMIN_PASSWORD_NOT_SET", "请先初始化站点和 Admin 管理密码")
+		return false
+	}
 	token := r.Header.Get("X-Admin-Token")
 	if token == "" {
 		token = bearerToken(r.Header.Get("Authorization"))
 	}
-	if h.auth != nil && h.auth.Status().PasswordSet && h.auth.ValidateToken(token) {
+	if h.auth.ValidateToken(token) {
 		return true
 	}
 	if session, ok := currentUserSession(h.store, r); ok && session.User.IsAdmin {
 		return true
-	}
-	if h.auth == nil || !h.auth.Status().PasswordSet {
-		writeError(w, http.StatusForbidden, "ADMIN_PASSWORD_NOT_SET", "请先设置 Admin 管理密码")
-		return false
 	}
 	writeError(w, http.StatusUnauthorized, "ADMIN_AUTH_REQUIRED", "需要管理员权限")
 	return false
 }
 
 func (h AdminUsersHandler) adminActorFromRequest(r *http.Request) string {
-	if actor := strings.TrimSpace(r.Header.Get("X-Admin-Actor")); actor != "" {
-		return actor
-	}
 	if session, ok := currentUserSession(h.store, r); ok && session.User.IsAdmin {
 		return session.User.Username
 	}

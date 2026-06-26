@@ -923,8 +923,9 @@ func createV1BearerSecret(t *testing.T, router http.Handler, token string) strin
 }
 func createAdminToken(t *testing.T, router http.Handler) string {
 	t.Helper()
+	password := "R7!Orchid#Vault$2026"
 	var body bytes.Buffer
-	if err := json.NewEncoder(&body).Encode(map[string]string{"password": "R7!Orchid#Vault$2026"}); err != nil {
+	if err := json.NewEncoder(&body).Encode(map[string]string{"password": password}); err != nil {
 		t.Fatalf("encode admin setup payload: %v", err)
 	}
 	req := httptest.NewRequest(http.MethodPost, "/api/admin/auth/setup", &body)
@@ -932,8 +933,18 @@ func createAdminToken(t *testing.T, router http.Handler) string {
 	req.Header.Set("X-Admin-Setup-Token", "test-admin-setup-token")
 	res := httptest.NewRecorder()
 	router.ServeHTTP(res, req)
+	if res.Code == http.StatusConflict {
+		var loginBody bytes.Buffer
+		if err := json.NewEncoder(&loginBody).Encode(map[string]string{"password": password}); err != nil {
+			t.Fatalf("encode admin login payload: %v", err)
+		}
+		req = httptest.NewRequest(http.MethodPost, "/api/admin/auth/session", &loginBody)
+		req.Header.Set("Content-Type", "application/json")
+		res = httptest.NewRecorder()
+		router.ServeHTTP(res, req)
+	}
 	if res.Code < 200 || res.Code >= 300 {
-		t.Fatalf("admin setup failed: code=%d body=%s", res.Code, res.Body.String())
+		t.Fatalf("admin auth failed: code=%d body=%s", res.Code, res.Body.String())
 	}
 	bodyText := res.Body.String()
 	var payload struct {
@@ -942,7 +953,7 @@ func createAdminToken(t *testing.T, router http.Handler) string {
 		} `json:"session"`
 	}
 	if err := json.Unmarshal([]byte(bodyText), &payload); err != nil {
-		t.Fatalf("decode admin setup response: %v body=%s", err, bodyText)
+		t.Fatalf("decode admin auth response: %v body=%s", err, bodyText)
 	}
 	if payload.Session.Token == "" {
 		t.Fatalf("admin token missing: %s", bodyText)
@@ -987,7 +998,8 @@ func userSessionFromCookies(t *testing.T, cookies []*http.Cookie) string {
 
 func grantTestCredits(t *testing.T, router http.Handler, token string, username string, amount int) {
 	t.Helper()
-	body := doJSON(t, router, http.MethodPost, "/api/admin/users/credits/add", token, map[string]any{
+	adminToken := createAdminToken(t, router)
+	body := doAdminJSON(t, router, http.MethodPost, "/api/admin/users/credits/add", adminToken, map[string]any{
 		"username": username,
 		"amount":   amount,
 		"reason":   "test credit grant",

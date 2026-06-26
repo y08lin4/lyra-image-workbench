@@ -12,7 +12,7 @@ import {
   saveAdminBillingConfig,
   saveAdminConfig,
   setAdminUserRole,
-  setupAdminPassword,
+  setupAdminSite,
 } from '../api/admin'
 import type { AdminAuthStatus, AdminBillingConfig, AdminConfig, AdminUser, CreditLedgerEntry } from '../types'
 import { ThemeToggle, type ThemeMode } from './ThemeToggle'
@@ -31,7 +31,10 @@ export function AdminPage({ theme, onToggleTheme }: { theme: ThemeMode; onToggle
   const [mode, setMode] = useState<AdminMode>('loading')
   const [auth, setAuth] = useState<AdminAuthStatus | null>(null)
   const [config, setConfig] = useState<AdminConfig | null>(null)
-  const [url, setUrl] = useState('')
+  const [siteName, setSiteName] = useState('Lyra Image Workbench')
+  const [adminUsername, setAdminUsername] = useState('admin')
+  const [adminEmail, setAdminEmail] = useState('')
+  const [url, setUrl] = useState('http://127.0.0.1:3000/v1')
   const [publicBaseUrl, setPublicBaseUrl] = useState('')
   const [debugEnabled, setDebugEnabled] = useState(false)
   const [timeout, setTimeoutSec] = useState<NumericInputValue>(600)
@@ -91,6 +94,7 @@ export function AdminPage({ theme, onToggleTheme }: { theme: ThemeMode; onToggle
     try {
       const cfg = await getAdminConfig()
       setConfig(cfg)
+      setSiteName(cfg.siteName || 'Lyra Image Workbench')
       setUrl(cfg.newApiBaseUrl)
       setPublicBaseUrl(cfg.publicBaseUrl || '')
       setDebugEnabled(Boolean(cfg.debugEnabled))
@@ -142,9 +146,33 @@ export function AdminPage({ theme, onToggleTheme }: { theme: ThemeMode; onToggle
     setMessage('')
     try {
       if (mode === 'setup') {
-        const next = await setupAdminPassword(password, setupToken)
+        const next = await setupAdminSite({
+          siteName: siteName.trim() || 'Lyra Image Workbench',
+          admin: {
+            username: adminUsername.trim(),
+            email: adminEmail.trim() || undefined,
+            password,
+          },
+          config: {
+            newApiBaseUrl: url.trim(),
+            publicBaseUrl: publicBaseUrl.trim() || undefined,
+            timeoutSec: numericOrDefault(timeout, 600),
+            debugEnabled,
+            newUserInitialCredits: numericOrDefault(newUserInitialCredits, 0),
+            dailyFreeCredits: numericOrDefault(dailyFreeCredits, 0),
+          },
+        }, setupToken)
         setAuth(next.auth)
-        setMessage('Admin 管理密码已设置')
+        if (next.config) {
+          setConfig(next.config)
+          setSiteName(next.config.siteName || siteName)
+          setUrl(next.config.newApiBaseUrl)
+          setPublicBaseUrl(next.config.publicBaseUrl || '')
+          setDebugEnabled(Boolean(next.config.debugEnabled))
+          setTimeoutSec(next.config.timeoutSec)
+          applyBillingConfig(next.config)
+        }
+        setMessage('站点初始化完成')
       } else {
         const next = await loginAdmin(password)
         setAuth(next.auth)
@@ -157,13 +185,13 @@ export function AdminPage({ theme, onToggleTheme }: { theme: ThemeMode; onToggle
       setError(err instanceof Error ? err.message : 'Admin 鉴权失败')
     }
   }
-
   async function submit(event: FormEvent) {
     event.preventDefault()
     setError('')
     try {
-      const cfg = await saveAdminConfig(url, numericOrDefault(timeout, config?.timeoutSec || 600), publicBaseUrl, debugEnabled)
+      const cfg = await saveAdminConfig(siteName, url, numericOrDefault(timeout, config?.timeoutSec || 600), publicBaseUrl, debugEnabled)
       setConfig(cfg)
+      setSiteName(cfg.siteName || 'Lyra Image Workbench')
       setPublicBaseUrl(cfg.publicBaseUrl || '')
       setDebugEnabled(Boolean(cfg.debugEnabled))
       applyBillingConfig(cfg)
@@ -335,22 +363,51 @@ export function AdminPage({ theme, onToggleTheme }: { theme: ThemeMode; onToggle
           <GitHubLink compact />
           <ThemeToggle theme={theme} onToggle={onToggleTheme} />
         </div>
-        <form className="admin-panel" onSubmit={submitPassword}>
-          <AdminBrand title={mode === 'setup' ? '初次设置 Admin 密码' : '输入 Admin 密码'} />
-          <p className="muted">{mode === 'setup' ? '这是开放服务的管理入口，初次访问必须先设置管理密码。' : '后续访问 Admin 页面需要先输入管理密码。'}</p>
-          <div className="identity-help">
-            <strong>管理密码说明</strong>
-            <ul>
-              <li>用于保护 NewAPI URL、超时时间等本机服务管理配置。</li>
-              <li>至少 10 位，建议包含大小写字母、数字和符号。</li>
-              <li>后端只保存不可逆哈希，不保存明文密码。</li>
-            </ul>
-          </div>
+        <form className={mode === 'setup' ? 'admin-panel admin-setup-panel' : 'admin-panel'} onSubmit={submitPassword}>
+          <AdminBrand title={mode === 'setup' ? '初始化站点' : '输入 Admin 密码'} />
           {mode === 'setup' ? (
-            <label>安装令牌<input type="password" value={setupToken} onChange={(e) => setSetupToken(e.target.value)} placeholder="填写 LOCAL_IMAGE_ADMIN_SETUP_TOKEN 后再设置管理密码" autoComplete="one-time-code" /></label>
-          ) : null}
-          <label>Admin 密码<input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="输入复杂管理密码" autoFocus /></label>
-          <button className="primary" type="submit">{mode === 'setup' ? '设置并进入 Admin' : '登录 Admin'}</button>
+            <>
+              <p className="muted">首次部署需要完成站点名称、管理员账号和基础配置。初始化完成后，只有管理员才能看到后台设置入口。</p>
+              <div className="identity-help">
+                <strong>初始化说明</strong>
+                <ul>
+                  <li>安装令牌来自服务端环境变量 LOCAL_IMAGE_ADMIN_SETUP_TOKEN。</li>
+                  <li>管理员密码至少 10 位，建议包含大小写字母、数字和符号。</li>
+                  <li>后端只保存不可逆哈希，不保存明文密码。</li>
+                </ul>
+              </div>
+              <div className="admin-setup-grid">
+                <label className="wide">安装令牌<input type="password" value={setupToken} onChange={(e) => setSetupToken(e.target.value)} placeholder="LOCAL_IMAGE_ADMIN_SETUP_TOKEN" autoComplete="one-time-code" /></label>
+                <label>站点名称<input value={siteName} onChange={(e) => setSiteName(e.target.value)} placeholder="Lyra Image Workbench" /></label>
+                <label>管理员用户名<input value={adminUsername} onChange={(e) => setAdminUsername(e.target.value)} placeholder="admin" autoComplete="username" /></label>
+                <label>管理员邮箱<input type="email" value={adminEmail} onChange={(e) => setAdminEmail(e.target.value)} placeholder="admin@example.com，可留空" autoComplete="email" /></label>
+                <label>管理员密码<input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="输入复杂管理密码" autoComplete="new-password" autoFocus /></label>
+                <label className="wide">NewAPI 请求 URL<input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="http://127.0.0.1:3000/v1" /></label>
+                <label className="wide">对外访问域名<input value={publicBaseUrl} onChange={(e) => setPublicBaseUrl(e.target.value)} placeholder="https://image.example.com，可留空" /></label>
+                <label>超时时间（秒）<input type="number" min={60} max={3600} value={timeout} onChange={(e) => setTimeoutSec(readNumberInput(e.target.value))} /></label>
+                <label>新用户初始免费次数<input type="number" min={0} value={newUserInitialCredits} onChange={(e) => setNewUserInitialCredits(readNumberInput(e.target.value))} /></label>
+                <label>每日免费次数<input type="number" min={0} value={dailyFreeCredits} onChange={(e) => setDailyFreeCredits(readNumberInput(e.target.value))} /></label>
+                <label className="check-row admin-debug-toggle wide">
+                  <input type="checkbox" checked={debugEnabled} onChange={(e) => setDebugEnabled(e.target.checked)} />
+                  <span>开启 Debug 日志：任务结果页会显示脱敏后的请求参数、上游状态和错误详情</span>
+                </label>
+              </div>
+              <button className="primary" type="submit">初始化站点并进入 Admin</button>
+            </>
+          ) : (
+            <>
+              <p className="muted">后续访问 Admin 页面需要先输入管理密码。</p>
+              <div className="identity-help">
+                <strong>管理密码说明</strong>
+                <ul>
+                  <li>用于保护 NewAPI URL、额度、用户、支付等站点管理配置。</li>
+                  <li>后端只保存不可逆哈希，不保存明文密码。</li>
+                </ul>
+              </div>
+              <label>Admin 密码<input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="输入管理密码" autoFocus /></label>
+              <button className="primary" type="submit">登录 Admin</button>
+            </>
+          )}
           <a href="/">返回工作台</a>
           {message ? <div className="ok">{message}</div> : null}
           {error ? <div className="error">{error}</div> : null}
@@ -369,6 +426,11 @@ export function AdminPage({ theme, onToggleTheme }: { theme: ThemeMode; onToggle
         <AdminBrand title="后台管理" />
         <div className="status-line">Admin 已登录 · 密码状态：{auth?.passwordSet ? '已设置' : '未设置'}</div>
         <div className="admin-overview-grid" aria-label="后台运营概览">
+          <section>
+            <span>站点</span>
+            <strong>{siteName || 'Lyra Image Workbench'}</strong>
+            <small>公开显示名称</small>
+          </section>
           <section>
             <span>新用户免费</span>
             <strong>{formatCredits(numericOrDefault(newUserInitialCredits, 0))}</strong>
@@ -390,6 +452,7 @@ export function AdminPage({ theme, onToggleTheme }: { theme: ThemeMode; onToggle
             <small>{adminCount} 个管理员</small>
           </section>
         </div>
+        <label>站点名称<input value={siteName} onChange={(e) => setSiteName(e.target.value)} placeholder="Lyra Image Workbench" /></label>
         <label>NewAPI 请求 URL<input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="http://127.0.0.1:3000/v1" /></label>
         <label>对外访问域名<input value={publicBaseUrl} onChange={(e) => setPublicBaseUrl(e.target.value)} placeholder="https://image.example.com，可留空" /></label>
         <label>超时时间（秒）<input type="number" min={config?.limits.minTimeoutSec || 60} max={config?.limits.maxTimeoutSec || 3600} value={timeout} onChange={(e) => setTimeoutSec(readNumberInput(e.target.value))} /></label>

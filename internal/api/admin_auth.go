@@ -7,16 +7,39 @@ import (
 	"strings"
 
 	"github.com/y08lin4/lyra-image-workbench/internal/adminauth"
+	"github.com/y08lin4/lyra-image-workbench/internal/settings"
 	"github.com/y08lin4/lyra-image-workbench/internal/spaces"
+	"github.com/y08lin4/lyra-image-workbench/internal/users"
 )
 
 type AdminAuthHandler struct {
 	store      *adminauth.Store
 	setupToken string
+	settings   *settings.FileStore
+	users      *users.Store
 }
 
 type adminPasswordRequest struct {
 	Password string `json:"password"`
+}
+
+type adminSetupAdminRequest struct {
+	Username string `json:"username"`
+	Email    string `json:"email"`
+	Password string `json:"password"`
+}
+
+type adminSetupRequest struct {
+	Password string                 `json:"password"`
+	SiteName string                 `json:"siteName"`
+	Admin    adminSetupAdminRequest `json:"admin"`
+	Config   settings.Update        `json:"config"`
+}
+
+type adminAuthStatusResponse struct {
+	adminauth.PublicStatus
+	Initialized   bool `json:"initialized"`
+	SetupRequired bool `json:"setupRequired"`
 }
 
 func NewAdminAuthHandler(store *adminauth.Store, setupTokens ...string) AdminAuthHandler {
@@ -27,8 +50,14 @@ func NewAdminAuthHandler(store *adminauth.Store, setupTokens ...string) AdminAut
 	return AdminAuthHandler{store: store, setupToken: setupToken}
 }
 
+func (h AdminAuthHandler) WithInitialSetup(settingsStore *settings.FileStore, userStore *users.Store) AdminAuthHandler {
+	h.settings = settingsStore
+	h.users = userStore
+	return h
+}
+
 func (h AdminAuthHandler) Status(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "auth": h.store.Status()})
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "auth": h.publicStatus()})
 }
 
 func (h AdminAuthHandler) Setup(w http.ResponseWriter, r *http.Request) {
@@ -42,18 +71,89 @@ func (h AdminAuthHandler) Setup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer r.Body.Close()
-	var payload adminPasswordRequest
+	var payload adminSetupRequest
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 		writeError(w, http.StatusBadRequest, "BAD_JSON", "请求体不是有效 JSON")
 		return
 	}
-	session, err := h.store.Setup(payload.Password)
+
+	password := strings.TrimSpace(payload.Admin.Password)
+	if password == "" {
+		password = strings.TrimSpace(payload.Password)
+	}
+	if err := spaces.ValidatePassword(password); err != nil {
+		writeAdminAuthError(w, err)
+		return
+	}
+	if h.store.Status().PasswordSet {
+		writeAdminAuthError(w, adminauth.NewError("ADMIN_PASSWORD_ALREADY_SET", "Admin 密码已设置，请直接登录"))
+		return
+	}
+
+	update := payload.Config
+	if siteName := strings.TrimSpace(payload.SiteName); siteName != "" {
+		update.SiteName = &siteName
+	}
+	fullSetup := hasAdminSetupDetails(payload)
+	if fullSetup && strings.TrimSpace(payload.Admin.Username) == "" {
+		writeError(w, http.StatusBadRequest, "ADMIN_USERNAME_REQUIRED", "初始化站点必须填写管理员用户名")
+		return
+	}
+	if fullSetup && h.users == nil {
+		writeError(w, http.StatusServiceUnavailable, "USER_STORE_UNAVAILABLE", "用户服务未初始化")
+		return
+	}
+	if fullSetup && h.users.HasUsers() {
+		writeError(w, http.StatusConflict, "ADMIN_SETUP_USERS_EXIST", "已有用户数据，不能覆盖初始化管理员账号")
+		return
+	}
+	if hasAdminSettingsUpdate(update) {
+		if h.settings == nil {
+			writeError(w, http.StatusServiceUnavailable, "SETTINGS_UNAVAILABLE", "系统设置服务未初始化")
+			return
+		}
+		if _, err := h.settings.Update(update); err != nil {
+			writeError(w, http.StatusBadRequest, "BAD_ADMIN_CONFIG", err.Error())
+			return
+		}
+	}
+
+	var userSession users.Session
+	var adminUser users.AdminUser
+	createdAdminUser := false
+	if fullSetup {
+		var err error
+		userSession, err = h.users.RegisterWithInitialCredits(payload.Admin.Username, payload.Admin.Email, password, "", "", 0)
+		if err != nil {
+			writeUserError(w, err)
+			return
+		}
+		adminUser, err = h.users.SetAdmin(userSession.User.Username, true)
+		if err != nil {
+			writeUserError(w, err)
+			return
+		}
+		createdAdminUser = true
+	}
+
+	session, err := h.store.Setup(password)
 	if err != nil {
 		writeAdminAuthError(w, err)
 		return
 	}
 	recordAuthAttempt("admin-setup", r, "setup", true)
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "session": session, "auth": h.store.Status()})
+	if createdAdminUser {
+		setUserSessionCookie(w, r, userSession)
+	}
+	response := map[string]any{"ok": true, "session": session, "auth": h.publicStatus()}
+	if h.settings != nil {
+		response["config"] = h.settings.Public()
+	}
+	if createdAdminUser {
+		response["adminUser"] = adminUser
+		response["userSession"] = userSession
+	}
+	writeJSON(w, http.StatusOK, response)
 }
 
 func (h AdminAuthHandler) Login(w http.ResponseWriter, r *http.Request) {
@@ -73,7 +173,7 @@ func (h AdminAuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		writeAdminAuthError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "session": session, "auth": h.store.Status()})
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "session": session, "auth": h.publicStatus()})
 }
 
 func (h AdminAuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
@@ -83,6 +183,19 @@ func (h AdminAuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 	}
 	h.store.Logout(token)
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+func (h AdminAuthHandler) publicStatus() adminAuthStatusResponse {
+	status := h.store.Status()
+	return adminAuthStatusResponse{PublicStatus: status, Initialized: status.PasswordSet, SetupRequired: !status.PasswordSet}
+}
+
+func hasAdminSetupDetails(payload adminSetupRequest) bool {
+	return strings.TrimSpace(payload.SiteName) != "" || strings.TrimSpace(payload.Admin.Username) != "" || strings.TrimSpace(payload.Admin.Email) != "" || strings.TrimSpace(payload.Admin.Password) != "" || hasAdminSettingsUpdate(payload.Config)
+}
+
+func hasAdminSettingsUpdate(update settings.Update) bool {
+	return update.SiteName != nil || update.NewAPIBaseURL != nil || update.PublicBaseURL != nil || update.DebugEnabled != nil || update.TimeoutSec != nil || update.EpayEnabled != nil || update.EpayAPIURL != nil || update.EpayPID != nil || update.EpayKey != nil || update.ClearEpayKey || update.EpayMethods != nil || update.CreditPriceCents != nil || update.MinTopUpCredits != nil || update.ReferralRewardCredits != nil || update.NewUserInitialCredits != nil || update.DailyFreeCredits != nil
 }
 
 func writeAdminAuthError(w http.ResponseWriter, err error) {

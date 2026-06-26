@@ -15,6 +15,7 @@ import (
 )
 
 type RuntimeConfig struct {
+	SiteName              string   `json:"siteName"`
 	NewAPIBaseURL         string   `json:"newApiBaseUrl"`
 	PublicBaseURL         string   `json:"publicBaseUrl"`
 	DebugEnabled          bool     `json:"debugEnabled"`
@@ -34,6 +35,7 @@ type RuntimeConfig struct {
 }
 
 type PublicRuntimeConfig struct {
+	SiteName              string              `json:"siteName"`
 	NewAPIBaseURL         string              `json:"newApiBaseUrl"`
 	PublicBaseURL         string              `json:"publicBaseUrl"`
 	DebugEnabled          bool                `json:"debugEnabled"`
@@ -77,6 +79,7 @@ type Limits struct {
 }
 
 type Update struct {
+	SiteName              *string  `json:"siteName"`
 	NewAPIBaseURL         *string  `json:"newApiBaseUrl"`
 	PublicBaseURL         *string  `json:"publicBaseUrl"`
 	DebugEnabled          *bool    `json:"debugEnabled"`
@@ -95,6 +98,7 @@ type Update struct {
 }
 
 const (
+	DefaultSiteName              = "Lyra Image Workbench"
 	DefaultCreditPriceCents      = 10
 	DefaultMinTopUpCredits       = 10
 	DefaultReferralRewardCredits = 0
@@ -134,6 +138,7 @@ func NewFileStore(path string, defaults RuntimeConfig) (*FileStore, error) {
 
 func DefaultsFromConfig(cfg config.Config) RuntimeConfig {
 	return normalize(RuntimeConfig{
+		SiteName:              DefaultSiteName,
 		NewAPIBaseURL:         cfg.BuiltinNewAPIBaseURL,
 		TimeoutSec:            cfg.DefaultTimeoutSec,
 		Model:                 config.DefaultModel,
@@ -162,6 +167,9 @@ func (s *FileStore) Update(update Update) (RuntimeConfig, error) {
 	defer s.mu.Unlock()
 
 	next := s.current
+	if update.SiteName != nil {
+		next.SiteName = strings.TrimSpace(*update.SiteName)
+	}
 	if update.NewAPIBaseURL != nil {
 		next.NewAPIBaseURL = strings.TrimSpace(*update.NewAPIBaseURL)
 	}
@@ -235,6 +243,9 @@ func (s *FileStore) saveLocked() error {
 }
 
 func merge(base RuntimeConfig, loaded RuntimeConfig) RuntimeConfig {
+	if strings.TrimSpace(loaded.SiteName) != "" {
+		base.SiteName = loaded.SiteName
+	}
 	if strings.TrimSpace(loaded.NewAPIBaseURL) != "" {
 		base.NewAPIBaseURL = loaded.NewAPIBaseURL
 	}
@@ -284,6 +295,7 @@ func normalize(value RuntimeConfig) RuntimeConfig {
 	normalized, err := validate(value)
 	if err != nil {
 		return RuntimeConfig{
+			SiteName:              DefaultSiteName,
 			NewAPIBaseURL:         config.DefaultNewAPIBaseURL,
 			TimeoutSec:            config.DefaultTimeoutSec,
 			Model:                 config.DefaultModel,
@@ -301,6 +313,10 @@ func normalize(value RuntimeConfig) RuntimeConfig {
 }
 
 func validate(value RuntimeConfig) (RuntimeConfig, error) {
+	siteName, err := normalizeSiteName(value.SiteName)
+	if err != nil {
+		return RuntimeConfig{}, err
+	}
 	baseURL, err := normalizeBaseURL(value.NewAPIBaseURL)
 	if err != nil {
 		return RuntimeConfig{}, err
@@ -346,6 +362,7 @@ func validate(value RuntimeConfig) (RuntimeConfig, error) {
 		return RuntimeConfig{}, errors.New("启用易支付前必须填写网关地址、商户 PID、商户 Key、支付方式、次数单价和最小充值次数")
 	}
 	return RuntimeConfig{
+		SiteName:              siteName,
 		NewAPIBaseURL:         baseURL,
 		PublicBaseURL:         publicBaseURL,
 		DebugEnabled:          value.DebugEnabled,
@@ -365,6 +382,16 @@ func validate(value RuntimeConfig) (RuntimeConfig, error) {
 	}, nil
 }
 
+func normalizeSiteName(raw string) (string, error) {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return DefaultSiteName, nil
+	}
+	if len([]rune(trimmed)) > 64 {
+		return "", errors.New("站点名称不能超过 64 个字符")
+	}
+	return trimmed, nil
+}
 func normalizePublicBaseURL(raw string) (string, error) {
 	trimmed := strings.TrimSpace(raw)
 	if trimmed == "" {
@@ -463,6 +490,7 @@ func toPublic(value RuntimeConfig) PublicRuntimeConfig {
 		DailyFreeCredits:      value.DailyFreeCredits,
 	}
 	return PublicRuntimeConfig{
+		SiteName:              value.SiteName,
 		NewAPIBaseURL:         value.NewAPIBaseURL,
 		PublicBaseURL:         value.PublicBaseURL,
 		DebugEnabled:          value.DebugEnabled,

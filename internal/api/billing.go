@@ -278,13 +278,17 @@ func epayConfigFromRequest(r *http.Request, cfg settings.RuntimeConfig) billing.
 	if baseURL == "" {
 		baseURL = requestBaseURL(r)
 	}
+	siteName := strings.TrimSpace(cfg.SiteName)
+	if siteName == "" {
+		siteName = settings.DefaultSiteName
+	}
 	return billing.EpayConfig{
 		APIURL:    cfg.EpayAPIURL,
 		PID:       cfg.EpayPID,
 		Key:       cfg.EpayKey,
 		NotifyURL: baseURL + "/api/billing/epay/notify",
 		ReturnURL: baseURL + "/profile",
-		SiteName:  "Lyra Image Workbench",
+		SiteName:  siteName,
 	}
 }
 

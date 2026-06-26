@@ -50,15 +50,15 @@ func (h AdminConfigHandler) Update(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h AdminConfigHandler) requireAdmin(w http.ResponseWriter, r *http.Request) bool {
+	if h.auth == nil || !h.auth.Status().PasswordSet {
+		writeError(w, http.StatusForbidden, "ADMIN_PASSWORD_NOT_SET", "请先初始化站点和 Admin 管理密码")
+		return false
+	}
 	if adminTokenAuthorized(r, h.auth) {
 		return true
 	}
 	if session, ok := currentUserSession(h.users, r); ok && session.User.IsAdmin {
 		return true
-	}
-	if h.auth == nil || !h.auth.Status().PasswordSet {
-		writeError(w, http.StatusForbidden, "ADMIN_PASSWORD_NOT_SET", "请先设置 Admin 管理密码")
-		return false
 	}
 	writeError(w, http.StatusUnauthorized, "ADMIN_AUTH_REQUIRED", "需要先输入 Admin 管理密码")
 	return false

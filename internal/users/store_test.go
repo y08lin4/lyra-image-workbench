@@ -61,14 +61,14 @@ func TestRegisterAllowsUppercaseUsername(t *testing.T) {
 	}
 }
 
-func TestRegisterFirstUserAdminEmailLoginAndProfile(t *testing.T) {
+func TestRegisterUserEmailLoginAndProfile(t *testing.T) {
 	store := newTestStore(t)
 	first, err := store.Register("Alice_01", "Alice@Example.com", testPassword, "", "")
 	if err != nil {
 		t.Fatalf("Register() first user error = %v", err)
 	}
-	if !first.User.IsAdmin {
-		t.Fatal("first registered user should be admin")
+	if first.User.IsAdmin {
+		t.Fatal("public registration should not auto-grant admin")
 	}
 	if first.User.Email != "alice@example.com" {
 		t.Fatalf("email was not normalized: %q", first.User.Email)

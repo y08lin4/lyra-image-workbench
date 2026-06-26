@@ -881,6 +881,35 @@ progress { width: 100%; height: 8px; accent-color: var(--primary-2); }
   stroke-linejoin: round;
 }
 .admin-panel label { display: grid; gap: 8px; font-weight: 700; color: #334155; }
+.admin-panel .check-row { display: flex; align-items: flex-start; }
+.admin-setup-panel {
+  width: min(920px, 100%);
+  align-content: start;
+}
+.admin-setup-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.admin-setup-grid .wide {
+  grid-column: 1 / -1;
+}
+.admin-setup-grid label,
+.admin-setup-grid input {
+  min-width: 0;
+}
+.admin-setup-grid .check-row {
+  min-height: 44px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-soft);
+  padding: 10px 12px;
+  color: #334155;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.45;
+}
+
 .admin-actions { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
 .settings-overlay {
   position: fixed;
@@ -935,6 +964,9 @@ button:not(.primary) { background: var(--surface-soft); color: #1e3a8a; border: 
   .grid-2 { grid-template-columns: 1fr; }
   .canvas-header { flex-direction: column; }
   .login-panel, .admin-panel { border-radius: 18px; }
+  .admin-setup-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .gallery-shell {

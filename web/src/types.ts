@@ -95,6 +95,7 @@ export interface AdminBillingConfig {
 }
 
 export interface AdminConfig {
+  siteName: string
   newApiBaseUrl: string
   publicBaseUrl: string
   debugEnabled: boolean
@@ -120,6 +121,8 @@ export interface AdminConfig {
 
 export interface AdminAuthStatus {
   passwordSet: boolean
+  initialized?: boolean
+  setupRequired?: boolean
   sessionTtlSec: number
   updatedAt: string
 }
@@ -128,6 +131,32 @@ export interface AdminSession {
   token: string
   expiresAt: string
 }
+export interface AdminSetupRequest {
+  siteName: string
+  admin: {
+    username: string
+    email?: string
+    password: string
+  }
+  config: {
+    newApiBaseUrl: string
+    publicBaseUrl?: string
+    timeoutSec: number
+    debugEnabled: boolean
+    newUserInitialCredits?: number
+    dailyFreeCredits?: number
+  }
+}
+
+export interface AdminSetupResponse {
+  ok: boolean
+  session: AdminSession
+  auth: AdminAuthStatus
+  config?: AdminConfig
+  adminUser?: AdminUser
+  userSession?: UserSession
+}
+
 
 export interface ReferenceUpload {
   id: string

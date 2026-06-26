@@ -1,5 +1,5 @@
 import { requestJson } from './client'
-import type { AdminAuthStatus, AdminBillingConfig, AdminConfig, AdminSession, AdminUser, CreditLedgerEntry } from '../types'
+import type { AdminAuthStatus, AdminBillingConfig, AdminConfig, AdminSession, AdminSetupRequest, AdminSetupResponse, AdminUser, CreditLedgerEntry } from '../types'
 
 export const ADMIN_TOKEN_KEY = 'image-workbench:admin-token:v1'
 
@@ -39,6 +39,18 @@ export async function getAdminAuthStatus() {
   return data.auth
 }
 
+export async function setupAdminSite(payload: AdminSetupRequest, setupToken = '') {
+  const headers: Record<string, string> = {}
+  if (setupToken.trim()) headers['X-Admin-Setup-Token'] = setupToken.trim()
+  const data = await requestJson<AdminSetupResponse>('/api/admin/auth/setup', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(payload),
+  }, '')
+  saveAdminToken(data.session.token)
+  return data
+}
+
 export async function setupAdminPassword(password: string, setupToken = '') {
   const headers: Record<string, string> = {}
   if (setupToken.trim()) headers['X-Admin-Setup-Token'] = setupToken.trim()
@@ -50,7 +62,6 @@ export async function setupAdminPassword(password: string, setupToken = '') {
   saveAdminToken(data.session.token)
   return data
 }
-
 export async function loginAdmin(password: string) {
   const data = await requestJson<{ ok: boolean; session: AdminSession; auth: AdminAuthStatus }>('/api/admin/auth/session', {
     method: 'POST',
@@ -88,8 +99,8 @@ export async function saveAdminBillingConfig(config: AdminBillingConfigPatch) {
   return updateAdminConfig(config as AdminConfigPatch)
 }
 
-export async function saveAdminConfig(newApiBaseUrl: string, timeoutSec: number, publicBaseUrl: string, debugEnabled: boolean) {
-  const body: Record<string, unknown> = { newApiBaseUrl, timeoutSec, publicBaseUrl, debugEnabled }
+export async function saveAdminConfig(siteName: string, newApiBaseUrl: string, timeoutSec: number, publicBaseUrl: string, debugEnabled: boolean) {
+  const body: Record<string, unknown> = { siteName, newApiBaseUrl, timeoutSec, publicBaseUrl, debugEnabled }
   const data = await requestJson<{ ok: boolean; config: AdminConfig }>('/api/admin/config', {
     method: 'POST',
     headers: adminHeaders(),
