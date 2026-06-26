@@ -7261,3 +7261,14 @@ button:not(.primary) { background: var(--surface-soft); color: #1e3a8a; border: 
     white-space: nowrap;
   }
 }
+
+/* 生成页不再内嵌提示词助手，保持单列提交表单布局。 */
+.generate-page .generate-combined-layout {
+  grid-template-columns: minmax(0, 1fr) !important;
+  max-width: 1120px;
+  margin: 0 auto;
+}
+
+.generate-page .generate-main-column {
+  width: 100%;
+}

@@ -588,7 +588,7 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
       <main className={`workflow-content workflow-${activeTab}`}>
         {activeTab === 'generate' ? (
           <section className="workflow-page generate-page" data-generation-composer>
-            <PageHeader eyebrow="Generate" title="生成请求" description="生成和提示词助手已合并在同一页：左侧提交任务，右侧生成/修改提示词，填入后直接回到主输入框。" />
+            <PageHeader eyebrow="Generate" title="生成请求" description="填写提示词、模型和图片规格后提交生成任务；提示词优化请到独立的提示词助手页面处理。" />
             <div className="generate-combined-layout">
               <div className="generate-main-column">
                 {!currentKeyReady ? (
@@ -630,18 +630,6 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
                   onSubmit={submit}
                 />
               </div>
-              <aside className="generate-assistant-panel" data-prompt-assistant-panel>
-                <PromptAssistantModal
-                  embedded
-                  tasks={tasks}
-                  uploads={uploads}
-                  provider={provider}
-                  bananaModel={bananaModel}
-                  onClose={() => goToTab('generate')}
-                  onUsePrompt={handleUseAssistantPrompt}
-                  onRefreshUploads={refreshUploads}
-                />
-              </aside>
             </div>
           </section>
         ) : null}
