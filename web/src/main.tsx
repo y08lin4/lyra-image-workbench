@@ -5,6 +5,7 @@ import { ApiDocsPage } from './components/ApiDocsPage'
 import { WorkbenchPage } from './components/WorkbenchPage'
 import { ThemeToggle } from './components/ThemeToggle'
 import { nextTheme, resolveTheme, type ThemeMode } from './lib/themes'
+import { getAdminAuthStatus } from './api/admin'
 import './styles.css'
 
 const THEME_KEY = 'image-workbench-theme'
@@ -38,17 +39,59 @@ function PublicApiDocsPage({ theme, onToggleTheme }: { theme: ThemeMode; onToggl
   )
 }
 function App() {
+  const initialPath = window.location.pathname
   const [theme, setTheme] = useState<ThemeMode>(initialTheme)
+  const [setupChecked, setSetupChecked] = useState(initialPath === '/admin' || initialPath === '/api-docs')
+  const [forceAdminSetup, setForceAdminSetup] = useState(initialPath === '/admin')
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme
     window.localStorage.setItem(THEME_KEY, theme)
   }, [theme])
 
+  useEffect(() => {
+    const path = window.location.pathname
+    if (path === '/admin' || path === '/api-docs') {
+      setSetupChecked(true)
+      return
+    }
+    let alive = true
+    getAdminAuthStatus()
+      .then((status) => {
+        if (!alive) return
+        if (status.setupRequired || status.initialized === false) {
+          window.history.replaceState(null, '', '/admin')
+          setForceAdminSetup(true)
+        }
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        if (alive) setSetupChecked(true)
+      })
+    return () => {
+      alive = false
+    }
+  }, [])
+
   const toggleTheme = (next?: ThemeMode) => setTheme((current) => next || nextTheme(current))
-  if (window.location.pathname === '/admin') return <AdminPage theme={theme} onToggleTheme={toggleTheme} />
+  if (!setupChecked) {
+    return (
+      <main className="center-shell">
+        <section className="admin-panel">
+          <div className="brand login-brand">
+            <div className="brand-mark">Ly</div>
+            <div>
+              <p className="eyebrow">Setup</p>
+              <h1>正在进入初始化设置</h1>
+            </div>
+          </div>
+          <div className="info">正在检查站点初始化状态...</div>
+        </section>
+      </main>
+    )
+  }
+  if (forceAdminSetup || window.location.pathname === '/admin') return <AdminPage theme={theme} onToggleTheme={toggleTheme} />
   if (window.location.pathname === '/api-docs') return <PublicApiDocsPage theme={theme} onToggleTheme={toggleTheme} />
   return <WorkbenchPage theme={theme} onToggleTheme={toggleTheme} />
 }
-
 ReactDOM.createRoot(document.getElementById('root')!).render(<App />)
