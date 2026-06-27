@@ -12,46 +12,58 @@ import { TaskDetailModal } from './TaskDetailModal'
 import { TaskSidebar } from './TaskSidebar'
 import { PromptAssistantModal } from './PromptAssistantModal'
 import { PromptLibraryPage } from './PromptLibraryPage'
-import { NodeWorkflowPage } from './NodeWorkflowPage'
+import { NodeWorkflowPage, type CanvasHistoryImage } from './NodeWorkflowPage'
 import { PromptSquarePanel } from './PromptSquarePanel'
 import { ProfilePage } from './ProfilePage'
+import { TopUpPage } from './TopUpPage'
 import { ApiDocsPage } from './ApiDocsPage'
+import { AgentPage } from './AgentPage'
+import { GifPage, type GifDraftSubmission } from './GifPage'
 import { ResultCanvas } from './ResultCanvas'
 import { ThemeToggle, type ThemeMode } from './ThemeToggle'
 import { GitHubLink } from './GitHubLink'
 import { useTaskEvents } from '../hooks/useTaskEvents'
+import { useSubmittedSquareKeys } from '../hooks/useSubmittedSquareKeys'
 import { BANANA_PROVIDER, DEFAULT_BANANA_MODEL, DEFAULT_IMAGE2_MODEL, getBananaModelForRatio, getBananaModelOption } from '../lib/models'
 import { formatBytes } from '../lib/format'
 import { nativeExitApp, nativeSaveImage } from '../lib/nativeBridge'
 import { ensureAppBackBridge, installEdgeBackGesture, registerAppBackHandler } from '../lib/appBack'
+import './WorkbenchSidebar.css'
 
 type NumericInputValue = number | ''
-type WorkbenchTab = 'generate' | 'assistant' | 'nodes' | 'library' | 'square' | 'result' | 'profile' | 'apiDocs' | 'settings'
+type WorkbenchTab = 'generate' | 'gif' | 'assistant' | 'agent' | 'nodes' | 'library' | 'square' | 'result' | 'profile' | 'topup' | 'apiDocs' | 'settings'
 type WorkbenchNavId = WorkbenchTab | 'admin'
+type WorkbenchMobileNavId = WorkbenchNavId | 'more'
 type WorkbenchTabItem = { id: WorkbenchNavId; label: string; hint: string; badge?: string; tone?: 'normal' | 'danger' | 'active' | 'admin' }
+type WorkbenchMobileTabItem = Omit<WorkbenchTabItem, 'id'> & { id: WorkbenchMobileNavId }
 
 const MAX_REFERENCE_IMAGES = 8
 const MAX_REFERENCE_IMAGE_BYTES = 12 * 1024 * 1024
 const MAX_REFERENCE_UPLOAD_BYTES = 50 * 1024 * 1024
 const ALLOWED_REFERENCE_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp'])
-const SUBMITTED_SQUARE_KEYS_STORAGE = 'lyra:prompt-square:submitted-result-keys:v1'
 
 const workflowTabs: WorkbenchTabItem[] = [
-  { id: 'generate', label: '生成', hint: '请求' },
+  { id: 'nodes', label: '创作画布', hint: 'Canvas' },
+  { id: 'gif', label: 'GIF 动图', hint: '动效' },
+  { id: 'agent', label: 'Agent 创作', hint: '多轮' },
+  { id: 'generate', label: '快捷生成', hint: '兼容' },
   { id: 'assistant', label: '提示词助手', hint: '四栏' },
-  { id: 'nodes', label: '节点工作流', hint: 'Flow' },
   { id: 'library', label: '提示词库', hint: '灵感' },
   { id: 'square', label: '广场', hint: 'Prompt' },
   { id: 'result', label: '结果', hint: '队列' },
   { id: 'profile', label: '我的', hint: '账号' },
+  { id: 'topup', label: '充值', hint: '充值' },
   { id: 'apiDocs', label: 'API 文档', hint: 'Bearer' },
   { id: 'settings', label: '设置', hint: 'Key' },
 ]
+const mobilePrimaryTabIds: WorkbenchTab[] = ['nodes', 'result', 'square', 'profile']
+const mobileMoreTabIds: WorkbenchNavId[] = ['gif', 'agent', 'generate', 'assistant', 'library', 'topup', 'apiDocs', 'settings', 'admin']
 
 export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onToggleTheme: () => void }) {
   const [session, setSession] = useState<UserSession | null>(null)
   const [spaceReady, setSpaceReady] = useState(false)
-  const [activeTab, setActiveTab] = useState<WorkbenchTab>('generate')
+  const [activeTab, setActiveTab] = useState<WorkbenchTab>('nodes')
+  const [mobileMoreOpen, setMobileMoreOpen] = useState(false)
   const [keyReady, setKeyReady] = useState(false)
   const [keyPreview, setKeyPreview] = useState('')
   const [bananaKeyReady, setBananaKeyReady] = useState(false)
@@ -75,17 +87,29 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
   const [toast, setToast] = useState('')
-  const [submittedSquareKeys, setSubmittedSquareKeys] = useState<Set<string>>(() => loadSubmittedSquareKeys())
+  const { submittedSquareKeys, markSubmittedSquareKey } = useSubmittedSquareKeys()
   const activeTabRef = useRef(activeTab)
   const detailIdRef = useRef(detailId)
+  const mobileMoreOpenRef = useRef(mobileMoreOpen)
   const tabHistoryRef = useRef<WorkbenchTab[]>([])
   const lastExitBackAtRef = useRef(0)
+  const mobileMoreSheetRef = useRef<HTMLElement | null>(null)
 
   activeTabRef.current = activeTab
   detailIdRef.current = detailId
+  mobileMoreOpenRef.current = mobileMoreOpen
 
   const detailTask = useMemo(() => tasks.find((task) => task.id === detailId), [tasks, detailId])
   const activeTask = useMemo(() => tasks.find((task) => task.id === activeId), [tasks, activeId])
+  const recentResultImages = useMemo<CanvasHistoryImage[]>(() => tasks.flatMap((task) => task.results.filter((result) => result.ok && result.imageUrl).map((result) => ({
+    id: `${task.id}:${result.index}`,
+    src: result.imageUrl!,
+    title: `生成结果 ${result.index + 1}`,
+    subtitle: `${task.statusText} · #${result.index + 1}`,
+    taskId: task.id,
+    index: result.index,
+    prompt: result.revisedPrompt || task.prompt,
+  }))).slice(0, 12), [tasks])
   const favoriteIds = useMemo(() => new Set(tasks.filter((task) => task.favorite).map((task) => task.id)), [tasks])
   const currentKeyReady = provider === BANANA_PROVIDER ? bananaKeyReady : keyReady
   const currentKeyPreview = provider === BANANA_PROVIDER ? bananaKeyPreview : keyPreview
@@ -94,6 +118,8 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
   const tabItems = useMemo<WorkbenchTabItem[]>(() => {
     const items = workflowTabs.map<WorkbenchTabItem>((tab) => {
       if (tab.id === 'generate') return { ...tab, hint: currentKeyReady ? '可提交' : '缺 Key', tone: currentKeyReady ? 'normal' : 'danger' }
+      if (tab.id === 'gif') return { ...tab, hint: '单图动效' }
+      if (tab.id === 'agent') return { ...tab, hint: '多轮' }
       if (tab.id === 'assistant') return { ...tab, hint: '四栏' }
       if (tab.id === 'library') return { ...tab, hint: '自动同步', tone: 'normal' }
       if (tab.id === 'square') return { ...tab, hint: '试验版' }
@@ -104,10 +130,28 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
       return tab
     })
     if (session?.user.isAdmin) {
-      items.push({ id: 'admin', label: '后台', hint: '管理', badge: 'A', tone: 'admin' })
+      items.push({ id: 'admin', label: '管理员后台', hint: '管理', tone: 'admin' })
     }
     return items
   }, [activeCount, activeTask, currentKeyReady, missingKeyCount, session?.user.creditsBalance, session?.user.isAdmin])
+
+  const tabItemById = useMemo(() => new Map<WorkbenchNavId, WorkbenchTabItem>(tabItems.map((tab) => [tab.id, tab])), [tabItems])
+  const mobilePrimaryTabs = useMemo(() => mobilePrimaryTabIds.map((id) => tabItemById.get(id)).filter((tab): tab is WorkbenchTabItem => Boolean(tab)), [tabItemById])
+  const mobileMoreTabs = useMemo(() => mobileMoreTabIds.map((id) => tabItemById.get(id)).filter((tab): tab is WorkbenchTabItem => Boolean(tab)), [tabItemById])
+  const mobileMoreActive = mobileMoreOpen || mobileMoreTabs.some((tab) => tab.id === activeTab)
+  const mobileMoreSummary = useMemo<WorkbenchMobileTabItem>(() => {
+    const hiddenDanger = mobileMoreTabs.find((tab) => tab.tone === 'danger' || tab.badge === '!')
+    if (hiddenDanger) return { id: 'more', label: '更多', hint: hiddenDanger.label, badge: hiddenDanger.badge || '!', tone: 'danger' }
+    const hiddenActive = mobileMoreTabs.find((tab) => tab.tone === 'active' || tab.badge)
+    if (hiddenActive) return { id: 'more', label: '更多', hint: hiddenActive.label, badge: hiddenActive.badge, tone: hiddenActive.tone }
+    const adminTab = mobileMoreTabs.find((tab) => tab.id === 'admin')
+    if (adminTab) return { id: 'more', label: '更多', hint: '含后台', badge: adminTab.badge, tone: adminTab.tone }
+    return { id: 'more', label: '更多', hint: '菜单' }
+  }, [mobileMoreTabs])
+  const mobileTabs = useMemo<WorkbenchMobileTabItem[]>(() => [
+    ...mobilePrimaryTabs,
+    mobileMoreSummary,
+  ], [mobileMoreSummary, mobilePrimaryTabs])
 
   const goToTab = useCallback((nextTab: WorkbenchNavId, options?: { replace?: boolean }) => {
     if (nextTab === 'admin') {
@@ -123,6 +167,15 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
       }
       return nextTab
     })
+  }, [])
+
+  const handleMobileNavChange = useCallback((nextTab: WorkbenchNavId) => {
+    setMobileMoreOpen(false)
+    goToTab(nextTab)
+  }, [goToTab])
+
+  const toggleMobileMore = useCallback(() => {
+    setMobileMoreOpen((open) => !open)
   }, [])
 
   const upsertTask = useCallback((task: Task) => {
@@ -145,6 +198,11 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
     ensureAppBackBridge()
     const removeEdgeGesture = installEdgeBackGesture()
     const unregister = registerAppBackHandler(() => {
+      if (mobileMoreOpenRef.current) {
+        setMobileMoreOpen(false)
+        return true
+      }
+
       if (detailIdRef.current) {
         setDetailId(null)
         return true
@@ -160,8 +218,8 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
         }
       }
 
-      if (current !== 'generate') {
-        setActiveTab('generate')
+      if (current !== 'nodes') {
+        setActiveTab('nodes')
         return true
       }
 
@@ -185,6 +243,43 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
   }, [])
 
   useEffect(() => {
+    if (!mobileMoreOpen) return
+    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    const focusableSelector = 'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
+    window.setTimeout(() => mobileMoreSheetRef.current?.focus(), 0)
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        setMobileMoreOpen(false)
+        return
+      }
+      if (event.key !== 'Tab') return
+      const sheet = mobileMoreSheetRef.current
+      if (!sheet) return
+      const focusable = Array.from(sheet.querySelectorAll<HTMLElement>(focusableSelector))
+      if (!focusable.length) {
+        event.preventDefault()
+        sheet.focus()
+        return
+      }
+      const first = focusable[0]
+      const last = focusable[focusable.length - 1]
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault()
+        last.focus()
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault()
+        first.focus()
+      }
+    }
+    document.addEventListener('keydown', handleKeyDown)
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown)
+      previousFocus?.focus()
+    }
+  }, [mobileMoreOpen])
+
+  useEffect(() => {
     void getCurrentUser().then((next) => { setSession(next); setSpaceReady(true) }).catch(() => { setSpaceReady(false) })
   }, [])
 
@@ -197,7 +292,7 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
 
   useEffect(() => {
     if (!spaceReady) return
-    const pollMs = activeCount || activeTab === 'result' ? 5000 : 15000
+    const pollMs = activeCount || activeTab === 'result' || activeTab === 'nodes' ? 5000 : 15000
     const timer = window.setInterval(() => {
       void refreshTasks()
     }, pollMs)
@@ -259,7 +354,12 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
       return
     }
     if (!prompt.trim()) { setError('请先输入提示词'); return }
-    if (mode === 'image-to-image' && uploads.length === 0) { setError('图生图需要先上传参考图'); return }
+    if (mode === 'gif') {
+      setError('GIF 动图后端尚未接入，请在 GIF 动图页面先准备占位任务参数')
+      goToTab('gif')
+      return
+    }
+    if (mode === 'image-to-image' && uploads.length === 0) { setError('参考图生成需要先上传参考图'); return }
     const submittedUploads = mode === 'image-to-image' ? [...uploads] : []
     const payload: CreateTaskRequest = {
       provider,
@@ -281,10 +381,25 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
       setPrompt('')
       goToTab('result')
       void refreshSession()
-      setMessage(submittedUploads.length ? '任务已提交，参考图已保留，可在生成页手动删除' : '任务已提交，后端会继续执行，前端可刷新或断开')
+      setMessage(submittedUploads.length ? '任务已提交，参考图已保留，可继续作为素材使用' : '任务已提交，后端会继续执行，前端可刷新或断开')
     } catch (err) {
       setError(err instanceof Error ? err.message : '提交失败')
     }
+  }
+
+  function handleCreateGifDraft(draft: GifDraftSubmission) {
+    setError('')
+    setProvider(draft.payload.provider)
+    setMode(draft.payload.mode)
+    setPrompt(draft.payload.prompt)
+    setRatio(draft.payload.ratio || 'auto')
+    setResolution(draft.payload.resolution || 'auto')
+    setQuality(draft.payload.quality || 'auto')
+    setOutputFormat(draft.payload.outputFormat || 'gif')
+    setCount(draft.payload.count || 1)
+    setConcurrency(draft.payload.concurrency || 1)
+    setMessage(`GIF 动图参数已准备：${draft.preset.title} · ${draft.reference.originalName}。真实 GIF 后端尚未接入，未创建生成任务。`)
+    setToast('GIF 参数已准备，尚未创建真实后端任务')
   }
 
   async function handleCreateNodeWorkflowTask(payload: CreateTaskRequest) {
@@ -296,8 +411,11 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
       throw new Error(message)
     }
     if (!payload.prompt.trim()) throw new Error('请先输入提示词')
+    if (payload.mode === 'gif') {
+      throw new Error('GIF 动图后端尚未接入，请在 GIF 动图页面先准备占位任务参数')
+    }
     if (payload.mode === 'image-to-image' && payload.uploadIds.length === 0) {
-      throw new Error('图生图节点需要接入参考图后再提交')
+      throw new Error('参考图生成需要接入参考图后再提交')
     }
 
     const job = await createTask(payload)
@@ -316,24 +434,25 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
     setCount(payload.count || 1)
     setConcurrency(payload.concurrency || 1)
     setPrompt('')
-    goToTab('result')
     void refreshSession()
-    setMessage('节点工作流任务已提交')
+    setMessage('创作画布任务已提交，右侧预览会持续更新')
   }
 
   async function handleUpload(files: File[]) {
-    if (!files.length) return
+    if (!files.length) return []
     const validation = validateReferenceFiles(files, uploads.length)
     if (validation) {
       setToast(validation)
-      return
+      return []
     }
     try {
       const created = await uploadReferenceImages(files)
       await refreshUploads()
       setToast(`已上传 ${created.length} 张参考图`)
+      return created
     } catch (err) {
       setToast(formatReferenceUploadError(err))
+      return []
     }
   }
 
@@ -347,11 +466,16 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
     if (!response.ok) throw new Error(`读取结果图失败：HTTP ${response.status}`)
     const blob = await response.blob()
     const file = new File([blob], `result-reference-${index + 1}.${extensionFromMime(blob.type)}`, { type: blob.type || 'image/png' })
-    await uploadReferenceImages([file])
+    const created = await uploadReferenceImages([file])
     await refreshUploads()
     setMode('image-to-image')
-    goToTab('generate')
-    setMessage('已作为图生图参考图')
+    goToTab('nodes')
+    setMessage('已加入创作画布参考图')
+    return created[0]
+  }
+
+  async function handleUseResultAsReferenceVoid(src: string, index: number) {
+    await handleUseResultAsReference(src, index)
   }
 
   async function handleUploadPixhost(taskId: string, index: number) {
@@ -381,7 +505,7 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
     }, 0)
   }
 
-  function handleUseLibraryPrompt(nextPrompt: string, options: { provider: ModelProvider; model: string; ratio?: string }) {
+  function applyPromptToGenerate(nextPrompt: string, options: { provider: ModelProvider; model: string; ratio?: string }) {
     setPrompt(nextPrompt)
     setProvider(options.provider)
     if (options.provider === BANANA_PROVIDER) {
@@ -394,10 +518,35 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
       setRatio(options.ratio)
     }
     goToTab('generate')
-    setMessage('提示词库已填入主输入框，并同步模型选择')
     window.setTimeout(() => {
       document.querySelector('[data-generation-composer] textarea')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
     }, 0)
+  }
+
+  function handleUseLibraryPrompt(nextPrompt: string, options: { provider: ModelProvider; model: string; ratio?: string }) {
+    applyPromptToGenerate(nextPrompt, options)
+    setMessage('提示词库已填入主输入框，并同步模型选择')
+  }
+
+  function handleUseCanvasPrompt(nextPrompt: string, options: { provider: ModelProvider; model: string; ratio?: string }) {
+    applyPromptToGenerate(nextPrompt, options)
+    setMessage('创作画布已填入主输入框，并同步模型选择')
+  }
+
+  function handleUseAgentPromptToCanvas(nextPrompt: string, options: { provider: ModelProvider; model: string; ratio?: string }) {
+    setPrompt(nextPrompt)
+    setProvider(options.provider)
+    if (options.provider === BANANA_PROVIDER) {
+      const preferredResolution = getBananaModelOption(options.model).resolution
+      const nextBanana = options.ratio && options.ratio !== 'auto'
+        ? getBananaModelForRatio(options.ratio, preferredResolution === 'auto' ? '2k' : preferredResolution)
+        : getBananaModelOption(options.model)
+      setBananaModel(nextBanana.id)
+    } else if (options.ratio && options.ratio !== 'auto') {
+      setRatio(options.ratio)
+    }
+    goToTab('nodes')
+    setMessage('Agent 已发送到创作画布')
   }
 
   function handleUseSquarePrompt(nextPrompt: string) {
@@ -426,15 +575,9 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
     const tags = options?.tags?.length ? options.tags : defaultSquareTags(task)
 
     const item = await submitPromptSquareFromResult({ taskId: task.id, imageIndex: index, title, tags })
-    const key = resultSquareKey(task.id, index)
-    setSubmittedSquareKeys((prev) => {
-      const next = new Set(prev)
-      next.add(key)
-      saveSubmittedSquareKeys(next)
-      return next
-    })
+    markSubmittedSquareKey(task.id, index)
     setMessage(`已提交到广场：${item.title || title || defaultTitle}`)
-    setToast('已提交到广场，结果将永久保留')
+    setToast('已提交到广场，会生成广场展示副本')
     return true
   }
 
@@ -450,10 +593,10 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
     setOutputFormat(task.outputFormat || 'png')
     setCount(task.count || 1)
     setConcurrency(task.concurrency || 1)
-    goToTab('generate')
+    goToTab(task.mode === 'gif' ? 'gif' : 'generate')
     setMessage('已复用该任务的提示词和参数')
     window.setTimeout(() => {
-      document.querySelector('[data-generation-composer] textarea')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      document.querySelector(task.mode === 'gif' ? '[data-gif-composer] textarea' : '[data-generation-composer] textarea')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
     }, 0)
   }
 
@@ -605,40 +748,23 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
   if (!session) return <SpaceLogin theme={theme} onToggleTheme={onToggleTheme} onSession={(next) => { setSession(next); setSpaceReady(true) }} />
 
   return (
-    <div className="app-shell gallery-shell tabbed-workbench">
-      <header className="topbar workbench-topbar">
-        <div className="brand">
-          <div className="brand-mark">Ly</div>
-          <div>
-            <h1>Lyra Image Workbench</h1>
-            <p>{session.user.displayName} · {session.user.username}</p>
-          </div>
-        </div>
-        <div className="top-status" aria-label="当前状态">
-          <span className={session.user.creditsBalance > 0 ? 'ready' : 'missing'}>余额 {formatCredits(session.user.creditsBalance)} 次</span>
-          <span className={keyReady ? 'ready' : 'missing'}>codex-key {keyReady ? '已设置' : '未设置'}</span>
-          <span className={bananaKeyReady ? 'ready' : 'missing'}>Banana {bananaKeyReady ? '已设置' : '未设置'}</span>
-          <span className="ready">后端在线</span>
-        </div>
-        <nav className="top-actions">
-          {session.user.isAdmin ? <a className="ghost-link admin-nav-link" href="/admin">管理后台</a> : null}
-          <GitHubLink />
-          <ThemeToggle theme={theme} onToggle={onToggleTheme} />
-          <button onClick={logout}>退出登录</button>
-        </nav>
-      </header>
-
-      <div className="api-service-banner">
-        <strong>API 服务</strong>
-        <span>当前前端通过同源 /api 访问本机后端；对外域名可在 Admin 页记录。</span>
-      </div>
-
-      <WorkbenchTabs tabs={tabItems} activeTab={activeTab} onChange={goToTab} className="workflow-tabs desktop-tabs" />
-
+    <div className="app-shell gallery-shell tabbed-workbench workbench-with-sidebar">
+      <div className="workbench-desktop-frame">
+        <WorkbenchSidebar
+          tabs={tabItems}
+          activeTab={activeTab}
+          user={session.user}
+          creditsBalance={session.user.creditsBalance}
+          theme={theme}
+          onThemeChange={onToggleTheme}
+          onLogout={() => void logout()}
+          onChange={goToTab}
+        />
+        <div className="workbench-main-region">
       <main className={`workflow-content workflow-${activeTab}`}>
         {activeTab === 'generate' ? (
           <section className="workflow-page generate-page" data-generation-composer>
-            <PageHeader eyebrow="Generate" title="生成请求" description="填写提示词、模型和图片规格后提交生成任务；提示词优化请到独立的提示词助手页面处理。" />
+            <PageHeader eyebrow="Quick Generate" title="快捷生成" description="保留兼容入口；完整参考图组织、预览和关系表达请在创作画布完成。" />
             <div className="generate-combined-layout">
               <div className="generate-main-column">
                 {!currentKeyReady ? (
@@ -696,10 +822,48 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
           <NodeWorkflowPage
             provider={provider}
             bananaModel={bananaModel}
-            onUsePrompt={handleUseLibraryPrompt}
+            prompt={prompt}
+            onUsePrompt={handleUseCanvasPrompt}
             onCreateTask={handleCreateNodeWorkflowTask}
             referenceUploads={uploads}
+            recentResults={recentResultImages}
+            latestTask={activeTask}
+            onUploadReferences={handleUpload}
+            onDeleteReferenceUpload={handleDeleteUpload}
+            onUseHistoryImageAsReference={handleUseResultAsReference}
           />
+        ) : null}
+
+        {activeTab === 'gif' ? (
+          <section className="workflow-page gif-page">
+            <PageHeader eyebrow="GIF Motion" title="GIF 动图" description="上传一张图片，选择动效预设并描述想法；当前先准备任务参数，不调用视频或 FFmpeg。" />
+            <GifPage
+              uploads={uploads}
+              keyReady={keyReady}
+              keyPreview={keyPreview}
+              message={activeTab === 'gif' ? message : ''}
+              error={activeTab === 'gif' ? error : ''}
+              onUpload={handleUpload}
+              onDeleteUpload={handleDeleteUpload}
+              onOpenSettings={() => goToTab('settings')}
+              onSubmitDraft={handleCreateGifDraft}
+            />
+          </section>
+        ) : null}
+
+        {activeTab === 'agent' ? (
+          <section className="workflow-page agent-workflow-page">
+            <AgentPage
+              provider={provider}
+              model={provider === BANANA_PROVIDER ? bananaModel : DEFAULT_IMAGE2_MODEL}
+              onCopyPrompt={() => setMessage('Agent 提示词已复制')}
+              onSendToCanvas={(payload) => handleUseAgentPromptToCanvas(payload.prompt, payload)}
+              onQuickGenerate={(payload) => {
+                applyPromptToGenerate(payload.prompt, payload)
+                setMessage('Agent 已填入快捷生成')
+              }}
+            />
+          </section>
         ) : null}
 
         {activeTab === 'assistant' ? (
@@ -710,7 +874,7 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
               uploads={uploads}
               provider={provider}
               bananaModel={bananaModel}
-              onClose={() => goToTab('generate')}
+              onClose={() => goToTab('nodes')}
               onUsePrompt={handleUseAssistantPrompt}
               onRefreshUploads={refreshUploads}
             />
@@ -743,9 +907,9 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
               />
               <ResultCanvas
                 task={activeTask}
-                onUseAsReference={handleUseResultAsReference}
+                onUseAsReference={handleUseResultAsReferenceVoid}
                 onUploadPixhost={handleUploadPixhost}
-                onOpenGenerate={() => goToTab('generate')}
+                onOpenGenerate={() => goToTab('nodes')}
                 onReuse={handleReuseTask}
                 onRetry={(id) => void handleRetry(id)}
                 submittedSquareKeys={submittedSquareKeys}
@@ -763,7 +927,11 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
 
 
         {activeTab === 'profile' ? (
-          <ProfilePage session={session} onSessionChange={(nextSession) => setSession(nextSession)} />
+          <ProfilePage session={session} onSessionChange={(nextSession) => setSession(nextSession)} onOpenTopUp={() => goToTab('topup')} />
+        ) : null}
+
+        {activeTab === 'topup' ? (
+          <TopUpPage session={session} onSessionChange={(nextSession) => setSession(nextSession)} />
         ) : null}
 
         {activeTab === 'apiDocs' ? (
@@ -773,21 +941,34 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
         {activeTab === 'settings' ? (
           <section className="workflow-page settings-page-inline">
             <PageHeader eyebrow="Settings" title="设置" description="Key 保存在当前浏览器本地；默认数量、默认并发和图床设置随账号保存。" />
-            <div className={`settings-inline-grid${session.user.isAdmin ? '' : ' settings-only-grid'}`}>
+            <div className="settings-inline-grid settings-only-grid">
               <SettingsPanel onConfig={applyUserConfig} />
-              {session.user.isAdmin ? (
-                <aside className="admin-entry-panel" aria-label="管理员入口">
-                  <strong>管理控制台</strong>
-                  <span>处理站点参数、充值额度、用户余额和管理员角色。</span>
-                  <a className="ghost-link" href="/admin">进入后台</a>
-                </aside>
-              ) : null}
             </div>
           </section>
         ) : null}
-      </main>
+          </main>
+        </div>
+      </div>
 
-      <WorkbenchTabs tabs={tabItems} activeTab={activeTab} onChange={goToTab} className="workflow-tabs mobile-tabs" />
+      <MobileWorkbenchTabs tabs={mobileTabs} activeTab={activeTab} moreActive={mobileMoreActive} moreOpen={mobileMoreOpen} onChange={handleMobileNavChange} onMore={toggleMobileMore} />
+
+      {mobileMoreOpen ? (
+        <div className="mobile-more-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setMobileMoreOpen(false)}>
+          <section ref={mobileMoreSheetRef} className="mobile-more-sheet" id="mobile-more-sheet" role="dialog" aria-modal="true" aria-labelledby="mobile-more-title" tabIndex={-1} onMouseDown={(event) => event.stopPropagation()}>
+            <header className="mobile-more-header">
+              <strong id="mobile-more-title">更多</strong>
+              <button type="button" className="mobile-more-close" aria-label="关闭更多导航" onClick={() => setMobileMoreOpen(false)}>×</button>
+            </header>
+            <div className="mobile-more-list">
+              {mobileMoreTabs.map((tab) => (
+                <button key={tab.id} type="button" className={`mobile-more-item ${activeTab === tab.id ? 'active' : ''} ${tab.tone ? `tone-${tab.tone}` : ''}`} aria-current={activeTab === tab.id ? 'page' : undefined} onClick={() => handleMobileNavChange(tab.id)}>
+                  <strong>{tab.label}</strong>
+                </button>
+              ))}
+            </div>
+          </section>
+        </div>
+      ) : null}
 
       {toast ? <div className="workbench-toast" role="status">{toast}</div> : null}
 
@@ -801,7 +982,7 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
           onDelete={(id) => void handleDelete(id)}
           onReuse={handleReuseTask}
           onToggleFavorite={(id) => void toggleFavorite(id)}
-          onUseAsReference={handleUseResultAsReference}
+          onUseAsReference={handleUseResultAsReferenceVoid}
           onUploadPixhost={handleUploadPixhost}
         />
       ) : null}
@@ -809,32 +990,9 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
   )
 }
 
-function resultSquareKey(taskId: string, imageIndex: number) {
-  return `${taskId}:${imageIndex}`
-}
-
-function loadSubmittedSquareKeys() {
-  if (typeof window === 'undefined') return new Set<string>()
-  try {
-    const raw = window.localStorage.getItem(SUBMITTED_SQUARE_KEYS_STORAGE)
-    const items = raw ? JSON.parse(raw) : []
-    return new Set<string>(Array.isArray(items) ? items.filter((item) => typeof item === 'string') : [])
-  } catch {
-    return new Set<string>()
-  }
-}
-
-function saveSubmittedSquareKeys(keys: Set<string>) {
-  try {
-    window.localStorage.setItem(SUBMITTED_SQUARE_KEYS_STORAGE, JSON.stringify(Array.from(keys).slice(-500)))
-  } catch {
-    // localStorage can be unavailable in hardened browser contexts.
-  }
-}
-
 function defaultSquareTags(task: Task) {
   return [
-    task.mode === 'image-to-image' ? '图生图' : '文生图',
+    task.mode === 'gif' ? 'GIF动图' : task.mode === 'image-to-image' ? '图生图' : '文生图',
     task.provider || 'image-2',
     task.model || '',
   ].filter(Boolean).slice(0, 6)
@@ -864,15 +1022,88 @@ function PageHeader({ eyebrow, title, description }: { eyebrow: string; title: s
   )
 }
 
-function WorkbenchTabs({ tabs = workflowTabs, activeTab, onChange, className }: { tabs?: WorkbenchTabItem[]; activeTab: WorkbenchTab; onChange: (tab: WorkbenchNavId) => void; className: string }) {
+function WorkbenchSidebar({
+  tabs,
+  activeTab,
+  user,
+  creditsBalance,
+  theme,
+  onThemeChange,
+  onLogout,
+  onChange,
+}: {
+  tabs: WorkbenchTabItem[]
+  activeTab: WorkbenchTab
+  user: UserSession['user']
+  creditsBalance: number
+  theme: ThemeMode
+  onThemeChange: (theme?: ThemeMode) => void
+  onLogout: () => void
+  onChange: (tab: WorkbenchNavId) => void
+}) {
   return (
-    <nav className={className} aria-label="工作流标签页" role="tablist">
-      {tabs.map((tab) => (
-        <button key={tab.id} type="button" role="tab" aria-selected={activeTab === tab.id} className={`${activeTab === tab.id ? 'active' : ''} ${tab.tone ? `tone-${tab.tone}` : ''}`} onClick={() => onChange(tab.id)}>
-          <strong>{tab.label}{tab.badge ? <i>{tab.badge}</i> : null}</strong>
-          <span>{tab.hint}</span>
-        </button>
-      ))}
+    <aside className="workbench-sidebar" aria-label="桌面端工作台导航">
+      <div className="workbench-sidebar-brand" aria-label="Lyra Image Workbench">
+        <span>Ly</span>
+        <strong>Lyra Image Workbench</strong>
+      </div>
+      <nav className="workbench-sidebar-nav" aria-label="工作台导航">
+        {tabs.map((tab) => {
+          const active = activeTab === tab.id
+          const className = `workbench-sidebar-button ${active ? 'active' : ''} ${tab.tone ? `tone-${tab.tone}` : ''}`.trim()
+          return (
+            <button key={tab.id} type="button" className={className} aria-current={active ? 'page' : undefined} onClick={() => onChange(tab.id)}>
+              <span className="workbench-sidebar-indicator" aria-hidden="true" />
+              <span className="workbench-sidebar-label">
+                <strong>{tab.label}</strong>
+              </span>
+            </button>
+          )
+        })}
+      </nav>
+      <div className="workbench-sidebar-footer" aria-label="工作台工具">
+        <div className="workbench-sidebar-account">
+          <div>
+            <span>当前登录</span>
+            <strong>{user.displayName || user.username}</strong>
+            {user.displayName && user.displayName !== user.username ? <small>{user.username}</small> : null}
+          </div>
+          <button type="button" className="workbench-sidebar-logout" onClick={onLogout}>退出登录</button>
+        </div>
+        <div className="workbench-sidebar-balance">
+          <span>余额</span>
+          <strong>{formatCredits(creditsBalance)} 次</strong>
+        </div>
+        <div className="workbench-sidebar-tools">
+          <GitHubLink />
+          <ThemeToggle theme={theme} onToggle={onThemeChange} />
+        </div>
+      </div>
+    </aside>
+  )
+}
+function MobileWorkbenchTabs({ tabs, activeTab, moreActive, moreOpen, onChange, onMore }: { tabs: WorkbenchMobileTabItem[]; activeTab: WorkbenchTab; moreActive: boolean; moreOpen: boolean; onChange: (tab: WorkbenchNavId) => void; onMore: () => void }) {
+  return (
+    <nav className="workflow-tabs mobile-tabs" aria-label="移动端工作流导航">
+      {tabs.map((tab) => {
+        const isMore = tab.id === 'more'
+        const active = isMore ? moreActive : activeTab === tab.id
+        const className = `${active ? 'active' : ''} ${tab.tone ? `tone-${tab.tone}` : ''}`.trim()
+        return (
+          <button
+            key={tab.id}
+            type="button"
+            aria-current={active ? 'page' : undefined}
+            aria-expanded={isMore ? moreOpen : undefined}
+            aria-haspopup={isMore ? 'dialog' : undefined}
+            aria-controls={isMore ? 'mobile-more-sheet' : undefined}
+            className={className}
+            onClick={() => { if (tab.id === 'more') onMore(); else onChange(tab.id) }}
+          >
+            <strong>{tab.label}</strong>
+          </button>
+        )
+      })}
     </nav>
   )
 }

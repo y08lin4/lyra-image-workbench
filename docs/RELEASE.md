@@ -57,6 +57,8 @@ Release 还会生成 `checksums.txt`，用于校验下载文件。
 curl -fsSL https://raw.githubusercontent.com/y08lin4/lyra-image-workbench/master/scripts/install.sh | sudo bash
 ```
 
+安装完成后脚本会输出“安装令牌”，首次打开 `/admin` 初始化站点时必须填写；请立即保存该令牌。
+
 指定版本：
 
 ```bash
@@ -95,6 +97,7 @@ curl -fsSL https://raw.githubusercontent.com/y08lin4/lyra-image-workbench/master
 | `RUN_USER` | `lyra-image-workbench` | systemd 运行用户。 |
 | `HOST` | `127.0.0.1` | 服务监听地址；反代部署建议保持默认。 |
 | `PORT` | `8787` | 服务监听端口。 |
+| `LOCAL_IMAGE_ADMIN_SETUP_TOKEN` | 自动生成 | 首次 `/admin` 初始化站点必填；也可以安装前自行指定。 |
 | `NEWAPI_BASE_URL` | `http://127.0.0.1:3000/v1` | OpenAI 兼容图片网关地址。 |
 
 安装后常用命令：

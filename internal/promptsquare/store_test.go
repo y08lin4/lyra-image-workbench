@@ -101,7 +101,8 @@ func TestPromptSquareStoreSubmitFromResultCreatesPermanentCopy(t *testing.T) {
 		Title:             "result title",
 		Prompt:            "result prompt",
 		Model:             "gpt-image-2",
-		Ratio:             "16:9",
+		Ratio:             "auto",
+		ActualSize:        "1536x1024",
 		Quality:           "high",
 		OutputFormat:      "png",
 		Tags:              []string{"daily", "result"},
@@ -117,6 +118,10 @@ func TestPromptSquareStoreSubmitFromResultCreatesPermanentCopy(t *testing.T) {
 	if !item.Permanent || item.Source.Type != "task_result" || item.SourceTaskID != "img_task_01" {
 		t.Fatalf("submitted item should be permanent task result: %+v", item)
 	}
+	if item.Ratio != "1536x1024" || item.Params["actualSize"] != "1536x1024" {
+		t.Fatalf("submitted item actual size metadata mismatch: %+v", item)
+	}
+
 	if item.ImageURL == "" || path.Dir(item.ImageURL) != "/api/prompt-square/images" {
 		t.Fatalf("submitted item should point at prompt-square copy, got %q", item.ImageURL)
 	}

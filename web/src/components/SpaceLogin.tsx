@@ -8,11 +8,12 @@ import { GitHubLink } from './GitHubLink'
 type Mode = 'login' | 'register'
 
 export function SpaceLogin({ onSession, theme, onToggleTheme }: { onSession: (session: UserSession) => void; theme: ThemeMode; onToggleTheme: () => void }) {
-  const [mode, setMode] = useState<Mode>('login')
+  const initialReferralCode = readReferralCodeFromUrl()
+  const [mode, setMode] = useState<Mode>(initialReferralCode ? 'register' : 'login')
   const [identifier, setIdentifier] = useState('')
   const [username, setUsername] = useState('')
   const [email, setEmail] = useState('')
-  const [referralCode, setReferralCode] = useState('')
+  const [referralCode, setReferralCode] = useState(initialReferralCode)
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [twoFactorCode, setTwoFactorCode] = useState('')
@@ -139,6 +140,11 @@ export function SpaceLogin({ onSession, theme, onToggleTheme }: { onSession: (se
       </form>
     </main>
   )
+}
+
+function readReferralCodeFromUrl() {
+  const params = new URLSearchParams(window.location.search)
+  return (params.get('ref') || params.get('referralCode') || params.get('invite') || '').trim()
 }
 
 function PasswordField({ value, onChange, visible, onToggle, placeholder }: { value: string; onChange: (value: string) => void; visible: boolean; onToggle: () => void; placeholder: string }) {

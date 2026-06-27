@@ -69,8 +69,8 @@ web/src/
   components/
     SettingsPanel.tsx
     PromptPanel.tsx
-    TaskQueue.tsx
-    ResultGrid.tsx
+    TaskSidebar.tsx
+    ResultCanvas.tsx
     HistoryPanel.tsx
     ImagePreview.tsx
 

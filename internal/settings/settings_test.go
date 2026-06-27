@@ -174,3 +174,65 @@ func TestFileStoreEpaySettingsMaskAndClearKey(t *testing.T) {
 		t.Fatalf("epay key should be cleared: %+v", cleared)
 	}
 }
+
+func TestFileStoreSMTPSettingsMaskAndClearPassword(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.local.json")
+	store, err := NewFileStore(path, RuntimeConfig{
+		NewAPIBaseURL: config.DefaultNewAPIBaseURL,
+		TimeoutSec:    config.DefaultTimeoutSec,
+		Model:         config.DefaultModel,
+	})
+	if err != nil {
+		t.Fatalf("NewFileStore() error = %v", err)
+	}
+
+	enabled := true
+	host := " smtp.example.com "
+	port := 465
+	user := " noreply@example.com "
+	password := "smtp-secret-1234567890"
+	from := "Lyra Mailer <noreply@example.com>"
+	secure := true
+	updated, err := store.Update(Update{
+		SMTPEnabled:  &enabled,
+		SMTPHost:     &host,
+		SMTPPort:     &port,
+		SMTPUser:     &user,
+		SMTPPassword: &password,
+		SMTPFrom:     &from,
+		SMTPSecure:   &secure,
+	})
+	if err != nil {
+		t.Fatalf("Update(smtp) error = %v", err)
+	}
+	if !updated.SMTPEnabled || updated.SMTPHost != "smtp.example.com" || updated.SMTPPort != port || updated.SMTPUser != "noreply@example.com" || updated.SMTPPassword != password || updated.SMTPFrom == "" || !updated.SMTPSecure {
+		t.Fatalf("smtp settings not normalized/persisted privately: %+v", updated)
+	}
+
+	public := store.Public()
+	if !public.SMTPPasswordSet || public.SMTPPasswordPreview != "smtp********7890" || !public.Email.SMTPPasswordSet || public.Email.SMTPPasswordPreview != public.SMTPPasswordPreview || !public.SMTPSecure || !public.Email.SMTPSecure {
+		t.Fatalf("Public() smtp password status invalid: %+v", public)
+	}
+	payload, err := json.Marshal(public)
+	if err != nil {
+		t.Fatalf("Marshal public config: %v", err)
+	}
+	if strings.Contains(string(payload), password) || strings.Contains(string(payload), `"smtpPassword":`) || strings.Contains(string(payload), `"smtpPass":`) {
+		t.Fatalf("public config leaked smtp password: %s", payload)
+	}
+
+	reopened, err := NewFileStore(path, DefaultsFromConfig(config.Load()))
+	if err != nil {
+		t.Fatalf("reopen NewFileStore() error = %v", err)
+	}
+	if reopened.Get().SMTPPassword != password || !reopened.Get().SMTPSecure {
+		t.Fatalf("private smtp password not persisted")
+	}
+	if _, err := reopened.Update(Update{ClearSMTPPassword: true}); err != nil {
+		t.Fatalf("Update(clear smtp password) error = %v", err)
+	}
+	cleared := reopened.Public()
+	if cleared.SMTPPasswordSet || cleared.SMTPPasswordPreview != "" {
+		t.Fatalf("smtp password should be cleared: %+v", cleared)
+	}
+}

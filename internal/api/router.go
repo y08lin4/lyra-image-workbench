@@ -79,6 +79,8 @@ func NewRouter(deps Dependencies) http.Handler {
 	mux.HandleFunc("GET /api/users/ledger", userHandler.Ledger)
 	mux.HandleFunc("POST /api/users/credits/daily", userHandler.ClaimDailyCredits)
 	mux.HandleFunc("GET /api/billing/topup/options", billingHandler.Options)
+	mux.HandleFunc("GET /api/billing/epay/orders", billingHandler.GetEpayOrder)
+	mux.HandleFunc("GET /api/billing/epay/orders/{tradeNo}", billingHandler.GetEpayOrder)
 	mux.HandleFunc("POST /api/billing/epay/orders", billingHandler.CreateEpayOrder)
 	mux.HandleFunc("GET /api/billing/epay/notify", billingHandler.Notify)
 	mux.HandleFunc("POST /api/billing/epay/notify", billingHandler.Notify)

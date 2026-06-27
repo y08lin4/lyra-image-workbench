@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/mail"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -1003,7 +1004,32 @@ func normalizeAvatarURL(avatarURL string) (string, error) {
 }
 
 func normalizeReferralCode(code string) string {
-	return strings.ToUpper(strings.TrimSpace(code))
+	code = strings.TrimSpace(code)
+	if code == "" {
+		return ""
+	}
+	if parsed, err := url.Parse(code); err == nil {
+		if value := referralCodeFromValues(parsed.Query()); value != "" {
+			return value
+		}
+		if parsed.Fragment != "" {
+			if fragment, err := url.Parse(parsed.Fragment); err == nil {
+				if value := referralCodeFromValues(fragment.Query()); value != "" {
+					return value
+				}
+			}
+		}
+	}
+	return strings.ToUpper(code)
+}
+
+func referralCodeFromValues(values url.Values) string {
+	for _, key := range []string{"ref", "referralCode", "invite"} {
+		if value := strings.TrimSpace(values.Get(key)); value != "" {
+			return strings.ToUpper(value)
+		}
+	}
+	return ""
 }
 
 func randomHex(size int) (string, error) {

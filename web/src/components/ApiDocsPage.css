@@ -1,0 +1,489 @@
+.api-console-page {
+  width: 100%;
+  max-width: 1180px;
+  margin-inline: auto;
+  display: grid;
+  gap: 14px;
+}
+
+.api-console-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+}
+
+.api-console-header h2 {
+  margin: 0;
+  color: var(--text);
+  font-size: 22px;
+  line-height: 1.2;
+  letter-spacing: 0;
+}
+
+.api-console-header p:not(.eyebrow) {
+  max-width: 64ch;
+  margin: 5px 0 0;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.api-console-actions,
+.api-console-button-row {
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.api-console-actions a,
+.api-console-actions button,
+.api-console-button-row button,
+.api-console-panel-head button {
+  min-height: 38px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+  padding: 0 12px;
+  font-size: 13px;
+  font-weight: 850;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.api-console-actions button,
+.api-console-button-row button:first-child,
+.api-console-panel-head button {
+  border-color: var(--primary);
+  background: var(--primary);
+  color: var(--primary-contrast, #fff);
+}
+
+.api-console-actions a:hover,
+.api-console-actions a:focus-visible,
+.api-console-actions button:hover,
+.api-console-actions button:focus-visible,
+.api-console-button-row button:hover,
+.api-console-button-row button:focus-visible,
+.api-console-panel-head button:hover,
+.api-console-panel-head button:focus-visible,
+.api-console-tabs button:hover,
+.api-console-tabs button:focus-visible,
+.api-console-key-input button:hover,
+.api-console-key-input button:focus-visible {
+  border-color: var(--primary);
+  outline: none;
+}
+
+.api-console-grid {
+  display: grid;
+  grid-template-columns: minmax(320px, .82fr) minmax(520px, 1.18fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.api-console-left,
+.api-console-right {
+  min-width: 0;
+  display: grid;
+  gap: 14px;
+}
+
+.api-console-panel {
+  min-width: 0;
+  display: grid;
+  gap: 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--text);
+  padding: 14px;
+  box-shadow: none;
+}
+
+.api-console-panel-head {
+  min-width: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.api-console-panel-head h3 {
+  margin: 0;
+  color: var(--text);
+  font-size: 15px;
+  line-height: 1.25;
+  letter-spacing: 0;
+}
+
+.api-console-panel-head p,
+.api-console-panel-head span {
+  margin: 3px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.45;
+}
+
+.api-console-steps ol {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: api-step;
+}
+
+.api-console-steps li {
+  counter-increment: api-step;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 4px 10px;
+  align-items: start;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-soft);
+}
+
+.api-console-steps li::before {
+  content: counter(api-step);
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--primary);
+  color: var(--primary-contrast, #fff);
+  font-size: 12px;
+  font-weight: 950;
+}
+
+.api-console-steps b {
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.25;
+}
+
+.api-console-steps p {
+  grid-column: 2;
+  margin: -2px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.api-console-key-input {
+  display: grid;
+  gap: 7px;
+}
+
+.api-console-key-input span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.api-console-key-input div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.api-console-key-input input {
+  min-height: 40px;
+  border-radius: 10px;
+}
+
+.api-console-key-input button {
+  min-height: 40px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-soft);
+  color: var(--text);
+  padding: 0 12px;
+  font-size: 13px;
+  font-weight: 850;
+}
+
+.api-console-key-preview {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-soft);
+  padding: 10px 12px;
+}
+
+.api-console-key-preview code {
+  display: block;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 900;
+  overflow-wrap: anywhere;
+}
+
+.api-console-endpoints {
+  display: grid;
+  gap: 8px;
+}
+
+.api-console-endpoint {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 54px minmax(0, 1fr);
+  gap: 5px 9px;
+  align-items: center;
+  border-bottom: 1px solid var(--border);
+  padding: 0 0 9px;
+}
+
+.api-console-endpoint:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.api-console-endpoint span {
+  min-height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--primary) 12%, var(--surface));
+  color: var(--primary);
+  font-size: 11px;
+  font-weight: 950;
+}
+
+.api-console-endpoint code {
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 900;
+  overflow-wrap: anywhere;
+}
+
+.api-console-endpoint p {
+  grid-column: 2;
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.api-console-status-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.api-console-status-row span {
+  min-height: 28px;
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  background: var(--surface-soft);
+  color: var(--text);
+  padding: 0 9px;
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.api-console-error-list {
+  display: grid;
+  gap: 5px;
+  margin: 0;
+  padding-left: 18px;
+}
+
+.api-console-error-list li {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.api-console-tabs {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 5px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-soft);
+}
+
+.api-console-tabs button {
+  min-width: 0;
+  min-height: 34px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  padding: 0 8px;
+  font-size: 12px;
+  font-weight: 900;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.api-console-tabs button.active {
+  border-color: var(--primary);
+  background: var(--primary);
+  color: var(--primary-contrast, #fff);
+}
+
+.api-console-code-shell {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-soft);
+}
+
+.api-console-code-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border-bottom: 1px solid var(--border);
+  padding: 9px 10px;
+}
+
+.api-console-code-meta strong {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.api-console-code-meta span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 850;
+  overflow-wrap: anywhere;
+  text-align: right;
+}
+
+.api-console-page .api-console-code-block,
+:root[data-theme] .api-console-page .api-console-code-block {
+  width: 100%;
+  max-width: 100%;
+  max-height: min(52svh, 520px);
+  overflow: auto;
+  margin: 0;
+  border: 1px solid var(--border) !important;
+  border-radius: 0;
+  background: var(--surface) !important;
+  color: var(--text) !important;
+  padding: 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.58;
+  white-space: pre;
+  box-shadow: none;
+}
+
+.api-console-page .api-console-code-block code,
+:root[data-theme] .api-console-page .api-console-code-block code {
+  display: block;
+  width: max-content;
+  min-width: 100%;
+  color: inherit !important;
+  font-family: inherit;
+  overflow-wrap: normal;
+  white-space: inherit;
+  word-break: normal;
+}
+
+.api-console-prompt-block {
+  max-height: min(42svh, 420px) !important;
+  white-space: pre-wrap !important;
+}
+
+.api-console-prompt-block code {
+  width: 100% !important;
+  white-space: inherit !important;
+  overflow-wrap: anywhere !important;
+}
+
+.api-console-toast {
+  margin: 0;
+}
+
+:root[data-theme] .api-console-panel,
+:root[data-theme] .api-console-code-shell {
+  background: var(--surface) !important;
+  border-color: var(--border) !important;
+  color: var(--text) !important;
+  box-shadow: none !important;
+}
+
+:root[data-theme] .api-console-steps li,
+:root[data-theme] .api-console-tabs,
+:root[data-theme] .api-console-key-preview,
+:root[data-theme] .api-console-key-input button,
+:root[data-theme] .api-console-status-row span {
+  background: var(--surface-soft) !important;
+  border-color: var(--border) !important;
+  color: var(--text) !important;
+}
+
+:root[data-theme] .api-console-endpoint span {
+  background: var(--chip-bg, color-mix(in srgb, var(--primary) 12%, var(--surface))) !important;
+  color: var(--chip-text, var(--primary)) !important;
+}
+
+@media (max-width: 1100px) {
+  .api-console-grid,
+  .api-console-header {
+    grid-template-columns: 1fr;
+  }
+
+  .api-console-actions {
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 640px) {
+  .api-console-page {
+    gap: 10px;
+  }
+
+  .api-console-header,
+  .api-console-grid,
+  .api-console-left,
+  .api-console-right {
+    gap: 10px;
+  }
+
+  .api-console-actions,
+  .api-console-button-row,
+  .api-console-panel-head {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .api-console-actions a,
+  .api-console-actions button,
+  .api-console-button-row button,
+  .api-console-panel-head button {
+    width: 100%;
+  }
+
+  .api-console-key-input div,
+  .api-console-endpoint {
+    grid-template-columns: 1fr;
+  }
+
+  .api-console-endpoint p {
+    grid-column: auto;
+  }
+
+  .api-console-tabs {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

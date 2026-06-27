@@ -9,6 +9,7 @@ LOCAL_IMAGE_HOST="${LOCAL_IMAGE_HOST:-127.0.0.1}"
 LOCAL_IMAGE_PORT="${LOCAL_IMAGE_PORT:-8787}"
 NEWAPI_BASE_URL="${NEWAPI_BASE_URL:-http://127.0.0.1:3000/v1}"
 NEWAPI_TIMEOUT_SEC="${NEWAPI_TIMEOUT_SEC:-600}"
+LOCAL_IMAGE_ADMIN_SETUP_TOKEN="${LOCAL_IMAGE_ADMIN_SETUP_TOKEN:-}"
 SKIP_TEST="${SKIP_TEST:-0}"
 
 log() {
@@ -22,9 +23,34 @@ need_cmd() {
   fi
 }
 
+generate_admin_setup_token() {
+  if [ -n "${LOCAL_IMAGE_ADMIN_SETUP_TOKEN}" ]; then
+    return
+  fi
+
+  local env_file
+  env_file="${APP_DIR}/baota.env.example"
+  if [ -r "${env_file}" ]; then
+    LOCAL_IMAGE_ADMIN_SETUP_TOKEN="$(sed -nE 's/^LOCAL_IMAGE_ADMIN_SETUP_TOKEN=(.*)$/\1/p' "${env_file}" | tail -n1)"
+  fi
+  if [ -n "${LOCAL_IMAGE_ADMIN_SETUP_TOKEN}" ]; then
+    return
+  fi
+
+  if command -v openssl >/dev/null 2>&1; then
+    LOCAL_IMAGE_ADMIN_SETUP_TOKEN="$(openssl rand -hex 32)"
+  elif [ -r /proc/sys/kernel/random/uuid ]; then
+    LOCAL_IMAGE_ADMIN_SETUP_TOKEN="$(cat /proc/sys/kernel/random/uuid)-$(cat /proc/sys/kernel/random/uuid)"
+  else
+    LOCAL_IMAGE_ADMIN_SETUP_TOKEN="$(date +%s)-${RANDOM}-${RANDOM}-${RANDOM}-${RANDOM}"
+  fi
+}
+
 need_cmd git
 need_cmd go
 need_cmd npm
+
+generate_admin_setup_token
 
 log "部署目录：${APP_DIR}"
 mkdir -p "$(dirname "$APP_DIR")"
@@ -81,6 +107,7 @@ LOCAL_IMAGE_HOST=${LOCAL_IMAGE_HOST}
 LOCAL_IMAGE_PORT=${LOCAL_IMAGE_PORT}
 LOCAL_IMAGE_DATA_DIR=${APP_DIR}/data
 LOCAL_IMAGE_WEB_DIR=${APP_DIR}/web/dist
+LOCAL_IMAGE_ADMIN_SETUP_TOKEN=${LOCAL_IMAGE_ADMIN_SETUP_TOKEN}
 NEWAPI_BASE_URL=${NEWAPI_BASE_URL}
 NEWAPI_TIMEOUT_SEC=${NEWAPI_TIMEOUT_SEC}
 EOF
@@ -107,6 +134,9 @@ ${RUN_USER}
 
 环境变量选择「指定变量」，填入：
 $(cat "${APP_DIR}/baota.env.example")
+
+安装令牌（首次打开 /admin 初始化站点必填，请立即保存）：
+${LOCAL_IMAGE_ADMIN_SETUP_TOKEN}
 
 如果绑定域名/走 Nginx 反代，LOCAL_IMAGE_HOST 保持 127.0.0.1。
 如果直接用 服务器IP:${LOCAL_IMAGE_PORT} 访问，把 LOCAL_IMAGE_HOST 改成 0.0.0.0 并放行端口。

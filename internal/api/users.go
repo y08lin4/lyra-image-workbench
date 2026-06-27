@@ -3,7 +3,9 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"net/url"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/y08lin4/lyra-image-workbench/internal/settings"
@@ -79,7 +81,7 @@ func (h UserHandler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	setUserSessionCookie(w, r, session)
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "session": session})
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "session": session, "referralLink": h.referralLink(r, session.User.ReferralCode)})
 }
 
 func (h UserHandler) Login(w http.ResponseWriter, r *http.Request) {
@@ -131,7 +133,7 @@ func (h UserHandler) Profile(w http.ResponseWriter, r *http.Request) {
 		writeUserError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "user": profile})
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "user": profile, "referralLink": h.referralLink(r, profile.ReferralCode)})
 }
 
 func (h UserHandler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
@@ -218,7 +220,23 @@ func (h UserHandler) ReferralCode(w http.ResponseWriter, r *http.Request) {
 		writeUserError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "referralCode": profile.ReferralCode, "user": profile})
+	referralLink := h.referralLink(r, profile.ReferralCode)
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "referralCode": profile.ReferralCode, "referralLink": referralLink, "inviteLink": referralLink, "user": profile})
+}
+
+func (h UserHandler) referralLink(r *http.Request, code string) string {
+	code = strings.TrimSpace(code)
+	if code == "" {
+		return ""
+	}
+	baseURL := ""
+	if h.settings != nil {
+		baseURL = strings.TrimRight(h.settings.Get().PublicBaseURL, "/")
+	}
+	if baseURL == "" {
+		baseURL = requestBaseURL(r)
+	}
+	return strings.TrimRight(baseURL, "/") + "/?ref=" + url.QueryEscape(code)
 }
 
 func (h UserHandler) Logout(w http.ResponseWriter, r *http.Request) {

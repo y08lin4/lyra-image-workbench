@@ -20,10 +20,39 @@ const maxPromptLibraryImageBytes = 12 * 1024 * 1024
 
 var promptLibraryImageNameRe = regexp.MustCompile(`^[a-f0-9]{40}\.(jpg|jpeg|png|webp|gif)$`)
 
+func (s *Service) hasCacheableRemoteImages(lib Library) bool {
+	if s == nil || s.store == nil || s.client == nil {
+		return false
+	}
+	for _, item := range lib.Items {
+		for _, image := range item.Images {
+			imageURL := strings.TrimSpace(image.URL)
+			if imageURL == "" {
+				continue
+			}
+			if strings.HasPrefix(imageURL, "/api/prompt-library/images/") {
+				file := strings.TrimPrefix(imageURL, "/api/prompt-library/images/")
+				if _, ok := s.CachedImagePath(file); ok {
+					continue
+				}
+				if image.OriginalURL != "" && isPromptLibraryCacheableURL(image.OriginalURL) {
+					return true
+				}
+				continue
+			}
+			if isPromptLibraryCacheableURL(imageURL) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func (s *Service) cacheLibraryImages(ctx context.Context, lib Library) (Library, bool) {
 	if s == nil || s.store == nil || s.client == nil {
 		return lib, false
 	}
+	lib = cloneLibrary(lib)
 	changed := false
 	for itemIndex := range lib.Items {
 		for imageIndex := range lib.Items[itemIndex].Images {

@@ -749,7 +749,7 @@ internal/api/v1_image_tasks.go
 cmd/local-server/main.go
 internal/api/router.go
 web/src/api/developerKeys.ts
-web/src/components/SettingsPanel.tsx 或 web/src/components/SettingsWindow.tsx
+web/src/components/SettingsPanel.tsx
 ```
 
 可选新增：
@@ -854,3 +854,156 @@ curl "http://127.0.0.1:8787/v1/image-tasks/img_xxx/images/0" \
 - 多节点队列和 worker。
 
 这些能力不应阻塞第一版 Bearer API 闭环。
+
+## 23. 站内/外部文档同步口径
+
+外部 GitHub 文档仓库不在当前工作区，无法由本次补丁直接提交。以下 Markdown 与站内 `ApiDocsPage` 的 AI 提示词/同步块保持同一口径，可直接复制到外部文档仓库。
+
+# LyAi Image Generation API 快速接入口径
+
+> 本段可同步到外部文档仓库，和站内 API 文档保持同一口径。
+
+## 基础信息
+
+- Base URL: `https://ai-image.ailinyu.de`
+- 注册和配置站点: `https://ai-image.ailinyu.de/`
+- 认证: 所有 `/v1/*` 请求都带 `Authorization: Bearer <API_KEY>`。
+- Bearer Key 格式: `lyra_sk_...`，只代表调用 Lyra 的权限，不是上游 NewAPI/OpenAI 兼容网关 Key。
+- 用户需要先在网页端注册登录，在设置页保存对应 provider 的云端上游 Key，然后生成 Bearer API Key。
+- 不要把 Bearer Key 写死在前端代码里；SDK/脚本优先读取环境变量 `LYRA_API_KEY`。
+
+## 创建任务
+
+推荐 SDK 默认使用 OpenAI 兼容创建端点：
+
+```http
+POST /v1/images/generations
+Authorization: Bearer lyra_sk_xxx
+Content-Type: application/json
+```
+
+示例请求体：
+
+```json
+{
+  "model": "gpt-image-2",
+  "prompt": "A clean product photo of a translucent smart speaker on a stone pedestal",
+  "size": "1024x1024",
+  "quality": "auto",
+  "output_format": "png",
+  "n": 1
+}
+```
+
+也可以使用 Lyra 原生端点：
+
+```http
+POST /v1/image-tasks
+Authorization: Bearer lyra_sk_xxx
+Content-Type: application/json
+```
+
+原生端点请求体示例：
+
+```json
+{
+  "provider": "image-2",
+  "model": "gpt-image-2",
+  "mode": "text-to-image",
+  "prompt": "A clean product photo of a translucent smart speaker on a stone pedestal",
+  "ratio": "1:1",
+  "resolution": "standard",
+  "quality": "auto",
+  "outputFormat": "png",
+  "count": 1,
+  "concurrency": 1
+}
+```
+
+创建成功响应：
+
+```json
+{
+  "ok": true,
+  "taskId": "img_...",
+  "consumedCredits": 1,
+  "task": {
+    "id": "img_...",
+    "status": "queued",
+    "progress": 0,
+    "results": []
+  }
+}
+```
+
+## 参数说明
+
+- `prompt`: 必填，生成提示词。
+- `model`: 可选。`image-2` 会使用服务端默认 `gpt-image-2`；`banana` 可传服务端支持的 banana 模型 ID，不传时使用默认 banana 模型。
+- `provider`: 可选，支持 `image-2`/`gpt-image-2`/`image2` 或 `banana`/`banana-nano`/`nano-banana`。
+- `size`: OpenAI 兼容字段，可传 `auto`、`1024x1024`、`1024x1536`、`1536x1024`、`768x1024`、`1024x768`、`1008x1792`、`1792x1008`，以及 2K/4K 对应尺寸；服务端会映射为 `ratio` + `resolution`。
+- `ratio`: 可选，`auto`、`1:1`、`2:3`、`3:2`、`3:4`、`4:3`、`9:16`、`16:9`。
+- `resolution`: 可选，`auto`、`standard`、`2k`、`4k`。
+- `quality`: 可选，`auto`、`low`、`medium`、`high`；未知值归一为 `auto`。
+- `output_format`/`outputFormat`: 可选，`png`、`jpeg`/`jpg`、`webp`、`auto`；未知值归一为 `png`。
+- `n`/`count`: 可选，生成张数，服务端归一到 1-24。
+- `concurrency`: 可选，最小 1。
+- 外部 API 第一版仅支持 `text-to-image`；`image-to-image` 参考图上传仍走网页工作台，外部 Bearer 版本后续再扩展。
+- `/v1/*` 不读取 `apiKey`、`bananaApiKey`、`X-Image-Workbench-API-Key` 或 `X-Image-Workbench-Banana-API-Key` 作为上游 Key。
+
+## 轮询任务
+
+```http
+GET /v1/image-tasks/{taskId}
+Authorization: Bearer lyra_sk_xxx
+```
+
+SDK 轮询逻辑：
+
+- 每 2-5 秒轮询一次；默认最长等待建议 15 分钟。
+- `queued`、`running`: 继续轮询。
+- `succeeded`: 停止轮询，下载所有 `task.results` 中 `ok=true` 的结果。
+- `partial_failed`: 停止轮询，下载所有 `ok=true` 的结果，同时把失败 result 暴露给调用方。
+- `failed`、`cancelled`、`interrupted`: 停止轮询并抛出任务失败错误。
+
+任务结果中的 `imageUrl` 是相对路径，推荐仍用下载接口并附带 Bearer 认证。
+
+## 下载结果
+
+```http
+GET /v1/image-tasks/{taskId}/images/{index}
+Authorization: Bearer lyra_sk_xxx
+```
+
+`index` 来自 `task.results[].index`，从 0 开始。只下载 `ok=true` 的结果；响应 body 是图片二进制，按 `png`/`jpeg`/`webp` 写入文件。
+
+## 取消任务
+
+```http
+POST /v1/image-tasks/{taskId}/cancel
+Authorization: Bearer lyra_sk_xxx
+```
+
+排队任务可取消；运行中任务为尽力取消，不能保证上游不计费。
+
+## 错误码
+
+- `400 BAD_JSON`: 请求体不是有效 JSON。
+- `400 UPSTREAM_KEY_REQUIRED`: 用户空间没有对应 provider 的云端上游 Key。
+- `400 TASK_CREATE_FAILED`: 创建任务失败，message 包含参数或上游失败原因。
+- `401 UNAUTHORIZED`: Bearer 缺失、格式错误或无效。
+- `402 USER_CREDITS_NOT_ENOUGH`: 账号生成次数不足。
+- `404 TASK_NOT_FOUND`: 任务不存在或不属于当前 Bearer Key。
+- `404 TASK_IMAGE_NOT_FOUND`: 图片不存在、结果未成功或不属于当前 Bearer Key。
+- `429 AUTH_RATE_LIMITED`: 无效 Bearer 尝试过多，请稍后重试。
+- `500 INTERNAL_ERROR`: 服务端内部错误。
+
+错误响应统一为：
+
+```json
+{
+  "ok": false,
+  "code": "TASK_NOT_FOUND",
+  "message": "任务不存在"
+}
+```

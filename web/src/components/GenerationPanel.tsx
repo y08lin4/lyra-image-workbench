@@ -81,7 +81,7 @@ export function GenerationPanel({
       <section className="request-status-row">
         <div>
           <strong>当前请求</strong>
-          <span>{providerLabel(provider)} · {isImageToImage ? '图生图' : '文生图'}</span>
+          <span>{providerLabel(provider)} · {isImageToImage ? '参考图生成' : '文字生成'}</span>
         </div>
         <button type="button" className={keyReady ? 'key-ready' : 'key-missing'} onClick={onOpenSettings}>
           {keyReady ? `Key ${keyPreview || '已设置'}` : '去设置 Key'}
@@ -98,15 +98,15 @@ export function GenerationPanel({
         </section>
 
         <section className="generate-step model-step">
-          <StepTitle index="②" title="模型与模式" note="先选模型分组，再选文生图或图生图。" />
+          <StepTitle index="②" title="模型与模式" note="先选模型分组，再选文字生成或参考图生成。" />
           <div className="generate-control-grid two">
             <div className="mode-tabs provider-tabs" role="tablist" aria-label="模型分组">
               <button type="button" className={provider === 'image-2' ? 'active' : ''} onClick={() => onProviderChange('image-2')}>Image-2</button>
               <button type="button" className={provider === BANANA_PROVIDER ? 'active' : ''} onClick={() => onProviderChange(BANANA_PROVIDER)}>Banana</button>
             </div>
             <div className="mode-tabs" role="tablist" aria-label="生成模式">
-              <button type="button" className={mode === 'text-to-image' ? 'active' : ''} onClick={() => onModeChange('text-to-image')}>文生图</button>
-              <button type="button" className={mode === 'image-to-image' ? 'active' : ''} onClick={() => onModeChange('image-to-image')}>图生图</button>
+              <button type="button" className={mode === 'text-to-image' ? 'active' : ''} onClick={() => onModeChange('text-to-image')}>文字生成</button>
+              <button type="button" className={mode === 'image-to-image' ? 'active' : ''} onClick={() => onModeChange('image-to-image')}>参考图生成</button>
             </div>
           </div>
         </section>

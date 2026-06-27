@@ -1,4 +1,4 @@
-﻿import { useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { ReferenceUpload } from '../types'
 import { formatBytes } from '../lib/format'
 import { getReferenceUploadBlob } from '../api/uploads'
@@ -43,7 +43,7 @@ export function UploadPanel({ uploads, onUpload, onDelete }: Props) {
     <section className="form-section upload-section">
       <div className="section-title upload-title-row">
         <span>参考图</span>
-        <small>{uploads.length ? `当前 ${uploads.length}/8 张` : '图生图最多 8 张'}</small>
+        <small>{uploads.length ? `当前 ${uploads.length}/8 张` : '参考图最多 8 张'}</small>
       </div>
       <label className="upload-dropzone">
         <input type="file" accept="image/png,image/jpeg,image/webp" multiple onChange={(event) => { onUpload(Array.from(event.target.files || [])); event.currentTarget.value = '' }} />

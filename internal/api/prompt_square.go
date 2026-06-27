@@ -137,9 +137,10 @@ func (h PromptSquareHandler) FromResult(w http.ResponseWriter, r *http.Request) 
 	username := promptSquareUsername(r)
 	item, err := h.store.SubmitFromResult(promptsquare.SubmitFromResultRequest{
 		Title:             payload.Title,
-		Prompt:            firstPromptSquareText(job.Prompt, result.RevisedPrompt),
+		Prompt:            firstPromptSquareText(result.RevisedPrompt, job.Prompt),
 		Model:             job.Model,
 		Ratio:             job.Ratio,
+		ActualSize:        result.ActualSize,
 		Quality:           firstPromptSquareText(result.ActualQuality, job.Quality),
 		OutputFormat:      firstPromptSquareText(result.OutputFormat, job.OutputFormat),
 		Tags:              payload.Tags,

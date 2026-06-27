@@ -9,10 +9,15 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 )
 
-const defaultTTL = 20 * time.Minute
+const (
+	defaultTTL                  = 20 * time.Minute
+	backgroundRefreshTimeout    = 30 * time.Second
+	backgroundImageCacheTimeout = 90 * time.Second
+)
 
 type Service struct {
 	owner  string
@@ -21,16 +26,61 @@ type Service struct {
 	ttl    time.Duration
 	client *http.Client
 	store  *Store
+
+	mu       sync.Mutex
+	cache    map[string]Library
+	inFlight map[string]*inFlightCall
+	warmOnce sync.Once
+}
+
+type inFlightCall struct {
+	done chan struct{}
 }
 
 func NewService(cacheDir string) *Service {
 	return &Service{
-		owner:  DefaultOwner,
-		repo:   DefaultRepo,
-		branch: DefaultBranch,
-		ttl:    defaultTTL,
-		client: &http.Client{Timeout: 15 * time.Second},
-		store:  NewStore(cacheDir),
+		owner:    DefaultOwner,
+		repo:     DefaultRepo,
+		branch:   DefaultBranch,
+		ttl:      defaultTTL,
+		client:   &http.Client{Timeout: 15 * time.Second},
+		store:    NewStore(cacheDir),
+		cache:    make(map[string]Library),
+		inFlight: make(map[string]*inFlightCall),
+	}
+}
+
+func (s *Service) StartWarmCache(ctx context.Context) {
+	if s == nil {
+		return
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	s.warmOnce.Do(func() {
+		go s.warmCache(ctx, DefaultLang)
+	})
+}
+
+func (s *Service) warmCache(ctx context.Context, langs ...string) {
+	for _, rawLang := range langs {
+		if err := ctx.Err(); err != nil {
+			return
+		}
+		lang, readmePath := normalizeLang(rawLang)
+		cached, ok, err := s.loadCached(lang)
+		if err != nil {
+			continue
+		}
+		if !ok || len(cached.Items) == 0 {
+			s.syncInBackground(lang, readmePath)
+			continue
+		}
+		cached.Stale = time.Since(cached.FetchedAt) >= s.ttl
+		if cached.Stale {
+			s.syncInBackground(lang, readmePath)
+		}
+		s.cacheImagesInBackground(lang, cached)
 	}
 }
 
@@ -39,37 +89,204 @@ func (s *Service) List(ctx context.Context, query Query) (Library, error) {
 		return Library{}, fmt.Errorf("提示词库服务未初始化")
 	}
 	lang, readmePath := normalizeLang(query.Lang)
-	cached, ok, err := s.store.Load(lang)
+	cached, ok, err := s.loadCached(lang)
 	if err != nil {
 		return Library{}, err
 	}
-	if ok {
-		if next, changed := s.cacheLibraryImages(ctx, cached); changed {
-			cached = next
-			_ = s.store.Save(lang, cached)
-		}
-	}
-	if ok && !query.Force && time.Since(cached.FetchedAt) < s.ttl && len(cached.Items) > 0 {
-		cached.Stale = false
+	if ok && !query.Force && len(cached.Items) > 0 {
+		cached.Stale = time.Since(cached.FetchedAt) >= s.ttl
 		cached.FetchError = ""
+		if cached.Stale {
+			s.syncInBackground(lang, readmePath)
+		}
+		s.cacheImagesInBackground(lang, cached)
 		return filterLibrary(cached, query), nil
 	}
-	fresh, err := s.fetch(ctx, lang, readmePath, cached, ok)
+	fresh, err := s.sync(ctx, lang, readmePath, cached, ok)
 	if err != nil {
 		if ok && len(cached.Items) > 0 {
 			cached.Stale = true
 			cached.FetchError = err.Error()
+			s.cacheImagesInBackground(lang, cached)
 			return filterLibrary(cached, query), nil
 		}
 		return Library{}, err
 	}
-	if next, changed := s.cacheLibraryImages(ctx, fresh); changed {
-		fresh = next
-	}
-	if err := s.store.Save(lang, fresh); err != nil {
-		return Library{}, err
-	}
 	return filterLibrary(fresh, query), nil
+}
+
+func (s *Service) loadCached(lang string) (Library, bool, error) {
+	s.mu.Lock()
+	if s.cache != nil {
+		if cached, ok := s.cache[lang]; ok {
+			s.mu.Unlock()
+			return cloneLibrary(cached), true, nil
+		}
+	}
+	s.mu.Unlock()
+
+	cached, ok, err := s.store.Load(lang)
+	if err != nil || !ok {
+		return cached, ok, err
+	}
+	s.rememberCached(lang, cached)
+	return cloneLibrary(cached), true, nil
+}
+
+func (s *Service) saveCached(lang string, lib Library) error {
+	if err := s.store.Save(lang, lib); err != nil {
+		return err
+	}
+	s.rememberCached(lang, lib)
+	return nil
+}
+
+func (s *Service) rememberCached(lang string, lib Library) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.cache == nil {
+		s.cache = make(map[string]Library)
+	}
+	s.cache[lang] = cloneLibrary(lib)
+}
+
+func (s *Service) syncInBackground(lang string, readmePath string) {
+	key := syncInFlightKey(lang)
+	if !s.beginInFlight(key) {
+		return
+	}
+	go func() {
+		defer s.endInFlight(key)
+		ctx, cancel := context.WithTimeout(context.Background(), backgroundRefreshTimeout)
+		defer cancel()
+		cached, ok, err := s.loadCached(lang)
+		if err != nil {
+			return
+		}
+		fresh, err := s.fetch(ctx, lang, readmePath, cached, ok)
+		if err != nil {
+			return
+		}
+		if err := s.saveCached(lang, fresh); err != nil {
+			return
+		}
+		s.cacheImagesInBackground(lang, fresh)
+	}()
+}
+
+func (s *Service) sync(ctx context.Context, lang string, readmePath string, cached Library, hasCache bool) (Library, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	key := syncInFlightKey(lang)
+	for {
+		if s.beginInFlight(key) {
+			defer s.endInFlight(key)
+			fresh, err := s.fetch(ctx, lang, readmePath, cached, hasCache)
+			if err != nil {
+				return Library{}, err
+			}
+			if err := s.saveCached(lang, fresh); err != nil {
+				return Library{}, err
+			}
+			s.cacheImagesInBackground(lang, fresh)
+			return fresh, nil
+		}
+		if err := s.waitInFlight(ctx, key); err != nil {
+			return Library{}, err
+		}
+		current, ok, err := s.loadCached(lang)
+		if err != nil {
+			return Library{}, err
+		}
+		if ok && len(current.Items) > 0 {
+			current.Stale = time.Since(current.FetchedAt) >= s.ttl
+			if !current.Stale {
+				current.FetchError = ""
+				s.cacheImagesInBackground(lang, current)
+				return current, nil
+			}
+		}
+		cached = current
+		hasCache = ok
+	}
+}
+
+func (s *Service) cacheImagesInBackground(lang string, lib Library) {
+	if !s.hasCacheableRemoteImages(lib) {
+		return
+	}
+	key := "images:" + lang
+	if !s.beginInFlight(key) {
+		return
+	}
+	go func() {
+		defer s.endInFlight(key)
+		ctx, cancel := context.WithTimeout(context.Background(), backgroundImageCacheTimeout)
+		defer cancel()
+		next, changed := s.cacheLibraryImages(ctx, lib)
+		if !changed {
+			return
+		}
+		current, ok, err := s.loadCached(lang)
+		if err != nil || !ok || !sameLibraryVersion(current, lib) {
+			return
+		}
+		next.FetchedAt = current.FetchedAt
+		next.ETag = current.ETag
+		next.Stale = current.Stale
+		next.FetchError = current.FetchError
+		_ = s.saveCached(lang, next)
+	}()
+}
+
+func (s *Service) beginInFlight(key string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.inFlight == nil {
+		s.inFlight = make(map[string]*inFlightCall)
+	}
+	if _, ok := s.inFlight[key]; ok {
+		return false
+	}
+	s.inFlight[key] = &inFlightCall{done: make(chan struct{})}
+	return true
+}
+
+func (s *Service) waitInFlight(ctx context.Context, key string) error {
+	s.mu.Lock()
+	call := s.inFlight[key]
+	s.mu.Unlock()
+	if call == nil {
+		return nil
+	}
+	select {
+	case <-call.done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (s *Service) endInFlight(key string) {
+	s.mu.Lock()
+	call := s.inFlight[key]
+	delete(s.inFlight, key)
+	s.mu.Unlock()
+	if call != nil {
+		close(call.done)
+	}
+}
+
+func syncInFlightKey(lang string) string {
+	return "sync:" + lang
+}
+
+func sameLibraryVersion(a Library, b Library) bool {
+	if a.ContentSHA != "" || b.ContentSHA != "" {
+		return a.ContentSHA == b.ContentSHA
+	}
+	return a.FetchedAt.Equal(b.FetchedAt)
 }
 
 type contentsResponse struct {

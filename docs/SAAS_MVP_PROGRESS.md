@@ -139,7 +139,7 @@
 2. 派 billing 路由接线后端代理，写入范围限定为 `internal/api/billing.go`、`internal/api/router.go`，只消费 A1/A2 已有接口。
 3. 派 A3 收口代理，优先补 `internal/api/prompt_square.go` 的 `from-result`、like、daily、mine 路由和测试；完成后再派前端广场重构。
 4. 派 A4/B5 协同收口：先完成后端 MiniMax 残留扫描，再派唯一前端写入者删除视频 tab、MiniMax UI/API/类型。
-5. 派 B2 结果队列合并，独占 `WorkbenchPage.tsx`、`ResultCanvas`、`TaskSidebar`、`TaskQueue` 当前窗口；FE-nav 不要同时改这些文件。
+5. 派 B2 结果队列合并，独占 `WorkbenchPage.tsx`、`ResultCanvas`、`TaskSidebar` 当前窗口（`TaskQueue` 已删除/已清理）；FE-nav 不要同时改这些文件。
 6. 派 B3/B4 支付和管理员 UI，等 billing 路由可编译后再接真实接口。
 7. 最后派 C1/C2/C3/C4 做后端集成、前端构建、安全审查和浏览器验收，再由 C6 整理提交。
 

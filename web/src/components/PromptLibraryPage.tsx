@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { KeyboardEvent } from 'react'
 import { formatError } from '../api/client'
-import { listPromptLibrary, refreshPromptLibrary } from '../api/promptLibrary'
+import { getCachedPromptLibrary, listPromptLibrary, refreshPromptLibrary } from '../api/promptLibrary'
 import type { ModelProvider, PromptLibrary, PromptLibraryItem } from '../types'
 import { BANANA_PROVIDER, DEFAULT_IMAGE2_MODEL, providerLabel } from '../lib/models'
 
@@ -12,28 +12,39 @@ type Props = {
 }
 
 const AUTO_REFRESH_MS = 10 * 60 * 1000
+const DEFAULT_PROMPT_LIBRARY_PARAMS = { lang: 'zh-CN', limit: 120 }
+
+function promptLibraryParams(query: string, category: string) {
+  return { ...DEFAULT_PROMPT_LIBRARY_PARAMS, q: query.trim(), category }
+}
 
 export function PromptLibraryPage({ provider, bananaModel, onUsePrompt }: Props) {
-  const [library, setLibrary] = useState<PromptLibrary | null>(null)
+  const cachedOnOpen = useMemo(() => getCachedPromptLibrary(DEFAULT_PROMPT_LIBRARY_PARAMS), [])
+  const [library, setLibrary] = useState<PromptLibrary | null>(cachedOnOpen)
   const [query, setQuery] = useState('')
   const [category, setCategory] = useState('')
-  const [activeItem, setActiveItem] = useState<PromptLibraryItem | null>(null)
+  const [activeItem, setActiveItem] = useState<PromptLibraryItem | null>(() => cachedOnOpen?.items[0] || null)
   const [loading, setLoading] = useState(false)
-  const [loaded, setLoaded] = useState(false)
+  const [loaded, setLoaded] = useState(Boolean(cachedOnOpen))
   const [autoCheckedAt, setAutoCheckedAt] = useState('')
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
   const loadingRef = useRef(false)
+  const filterRefreshReadyRef = useRef(false)
   const previewRef = useRef<HTMLElement | null>(null)
 
   const selectedModel = useMemo(() => provider === BANANA_PROVIDER ? bananaModel : DEFAULT_IMAGE2_MODEL, [bananaModel, provider])
 
   useEffect(() => {
-    if (!loaded && !loading) void refresh(false)
-  }, [loaded, loading])
+    void refresh(false)
+  }, [])
 
   useEffect(() => {
     if (!loaded) return
+    if (!filterRefreshReadyRef.current) {
+      filterRefreshReadyRef.current = true
+      return
+    }
     const timer = window.setTimeout(() => {
       void refresh(false)
     }, 280)
@@ -53,26 +64,33 @@ export function PromptLibraryPage({ provider, bananaModel, onUsePrompt }: Props)
 
   async function refresh(force = false) {
     if (loadingRef.current) return
+    const params = promptLibraryParams(query, category)
+    const cached = force ? null : getCachedPromptLibrary(params)
+    const hasVisibleLibrary = Boolean(cached || library)
+    if (cached) applyLibrary(cached)
     loadingRef.current = true
     setLoading(true)
     setError('')
     try {
-      const params = { lang: 'zh-CN', q: query.trim(), category, limit: 120 }
       const nextLibrary = force ? await refreshPromptLibrary(params) : await listPromptLibrary(params)
-      setLibrary(nextLibrary)
-      setLoaded(true)
-      setActiveItem((current) => {
-        if (!current) return nextLibrary.items[0] || null
-        return nextLibrary.items.find((item) => item.id === current.id) || nextLibrary.items[0] || null
-      })
+      applyLibrary(nextLibrary)
       if (force) setAutoCheckedAt(new Date().toISOString())
     } catch (err) {
       setLoaded(true)
-      setError(formatError(err, '提示词库加载失败'))
+      if (!hasVisibleLibrary) setError(formatError(err, '提示词库加载失败'))
     } finally {
       loadingRef.current = false
       setLoading(false)
     }
+  }
+
+  function applyLibrary(nextLibrary: PromptLibrary) {
+    setLibrary(nextLibrary)
+    setLoaded(true)
+    setActiveItem((current) => {
+      if (!current) return nextLibrary.items[0] || null
+      return nextLibrary.items.find((item) => item.id === current.id) || nextLibrary.items[0] || null
+    })
   }
 
   async function copyPrompt(prompt: string) {

@@ -1,0 +1,339 @@
+.workbench-with-sidebar .workflow-content.workflow-gif {
+  overflow: auto !important;
+}
+
+.gif-page {
+  height: 100%;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 12px;
+  overflow: hidden;
+}
+
+.gif-page-shell {
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  gap: 12px;
+}
+
+.gif-status-row {
+  margin: 0;
+}
+
+.gif-workflow-grid {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 380px);
+  gap: 14px;
+  align-items: start;
+  margin: 0;
+}
+
+.gif-main-column {
+  min-width: 0;
+  display: grid;
+  gap: 12px;
+}
+
+.gif-step {
+  min-width: 0;
+}
+
+.gif-step .upload-section {
+  border: 0;
+  padding: 0;
+}
+
+.gif-reference-picker,
+.gif-options-row fieldset {
+  min-width: 0;
+  margin: 12px 0 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.gif-reference-picker legend,
+.gif-options-row legend {
+  padding: 0 6px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.gif-reference-list {
+  display: grid;
+  gap: 8px;
+}
+
+.gif-reference-list label {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  min-height: 48px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 9px 10px;
+  background: var(--surface);
+  cursor: pointer;
+}
+
+.gif-reference-list label.active {
+  border-color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 8%, var(--surface));
+}
+
+.gif-reference-list input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--primary);
+}
+
+.gif-reference-list span,
+.gif-reference-list strong,
+.gif-reference-list small {
+  min-width: 0;
+}
+
+.gif-reference-list span {
+  display: grid;
+  gap: 3px;
+}
+
+.gif-reference-list strong {
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.2;
+}
+
+.gif-reference-list small {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gif-preset-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.gif-preset-grid button {
+  min-width: 0;
+  min-height: 96px;
+  display: grid;
+  align-content: start;
+  gap: 7px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  padding: 12px;
+  text-align: left;
+}
+
+.gif-preset-grid button:hover,
+.gif-preset-grid button:focus-visible {
+  border-color: color-mix(in srgb, var(--primary) 46%, var(--border));
+  background: color-mix(in srgb, var(--primary) 5%, var(--surface));
+}
+
+.gif-preset-grid button.active {
+  border-color: var(--primary);
+  background: var(--primary);
+  color: var(--primary-contrast, #ffffff);
+}
+
+.gif-preset-grid strong {
+  font-size: 14px;
+  line-height: 1.25;
+}
+
+.gif-preset-grid span {
+  color: currentColor;
+  font-size: 12px;
+  font-weight: 750;
+  line-height: 1.45;
+  opacity: .78;
+}
+
+.gif-description-field {
+  width: 100%;
+}
+
+.gif-options-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(180px, 240px);
+  gap: 12px;
+  align-items: end;
+  margin-top: 12px;
+}
+
+.gif-options-row fieldset {
+  margin: 0;
+}
+
+.gif-segmented {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.gif-select-field {
+  min-width: 0;
+  display: grid;
+  gap: 7px;
+}
+
+.gif-select-field span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.gif-select-field select {
+  width: 100%;
+  min-height: 44px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  padding: 0 12px;
+  font: inherit;
+  font-weight: 850;
+}
+
+.gif-submit-step {
+  display: grid;
+  gap: 12px;
+}
+
+.gif-submit-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+}
+
+.gif-submit-row .generate-submit {
+  min-height: 44px;
+  white-space: nowrap;
+}
+
+.gif-backend-note {
+  margin: 0;
+  border: 1px solid color-mix(in srgb, var(--primary) 18%, var(--border));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--primary) 6%, var(--surface));
+  color: var(--muted);
+  padding: 10px 12px;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.5;
+}
+
+.gif-draft-panel {
+  position: sticky;
+  top: 0;
+  min-width: 0;
+  display: grid;
+  gap: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  padding: 14px;
+}
+
+.gif-draft-panel > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+}
+
+.gif-draft-panel span,
+.gif-draft-summary dt {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.gif-draft-panel strong {
+  color: var(--text);
+  font-size: 14px;
+}
+
+.gif-draft-summary {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 7px 12px;
+  margin: 0;
+  padding: 12px 0;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+
+.gif-draft-summary dd {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 850;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gif-draft-panel pre {
+  max-height: 420px;
+  min-width: 0;
+  overflow: auto;
+  margin: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-soft);
+  color: var(--text);
+  padding: 12px;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+:root[data-theme='dark'] .gif-preset-grid button.active {
+  background: var(--primary);
+  color: var(--primary-contrast, #ffffff);
+}
+
+@media (max-width: 1180px) {
+  .gif-workflow-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .gif-draft-panel {
+    position: static;
+  }
+}
+
+@media (max-width: 760px) {
+  .gif-page {
+    height: auto;
+    overflow: visible;
+  }
+
+  .gif-preset-grid,
+  .gif-options-row,
+  .gif-submit-row {
+    grid-template-columns: 1fr;
+  }
+
+  .gif-submit-row .generate-submit {
+    width: 100%;
+  }
+}

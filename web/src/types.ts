@@ -1,26 +1,46 @@
-export type Mode = 'text-to-image' | 'image-to-image'
-export type ModelProvider = 'image-2' | 'banana' | (string & {})
-export type TaskSource = 'web' | 'api' | (string & {})
-export type TaskStatus = 'queued' | 'running' | 'succeeded' | 'partial_failed' | 'failed' | 'cancelled' | 'interrupted'
+import type { ModelProvider } from './api/contracts/tasks'
 
-export interface PublicUser {
-  username: string
-  displayName: string
-  email: string
-  avatarUrl: string
-  isAdmin: boolean
-  creditsBalance: number
-  referralCode: string
-  referredByUsername?: string
-  createdAt: string
-  lastLoginAt?: string
-  twoFactorEnabled: boolean
-}
-
-export interface UserSession {
-  user: PublicUser
-  expiresAt: string
-}
+export type {
+  PublicUser,
+  UserSession,
+  CreditLedgerType,
+  CreditLedgerEntry,
+  DailyCreditClaim,
+} from './api/contracts/users'
+export type {
+  AdminUser,
+  AdminBillingConfig,
+  AdminEmailConfig,
+  AdminConfig,
+  AdminAuthStatus,
+  AdminSession,
+  AdminSetupRequest,
+  AdminSetupResponse,
+} from './api/contracts/admin'
+export type {
+  Mode,
+  ModelProvider,
+  TaskSource,
+  TaskStatus,
+  TaskResult,
+  DebugLog,
+  TaskReference,
+  Task,
+  TaskEvent,
+  CreateTaskRequest,
+} from './api/contracts/tasks'
+export type {
+  PromptSquareItem,
+  CreatePromptSquareItemRequest,
+} from './api/contracts/promptSquare'
+export type {
+  EpayMethod,
+  TopUpOption,
+  BillingTopUpOptions,
+  CreateEpayOrderRequest,
+  EpayOrder,
+  BillingTopUp,
+} from './api/contracts/billing'
 
 export interface UserConfig {
   apiKeySet: boolean
@@ -51,113 +71,6 @@ export interface DeveloperApiKey {
   lastUsedAt?: string
 }
 
-export type CreditLedgerType =
-  | 'initial_free'
-  | 'daily_free'
-  | 'admin_add'
-  | 'purchase'
-  | 'referral_reward'
-  | 'task_charge'
-  | 'task_refund'
-  | 'refund'
-  | string
-
-export interface CreditLedgerEntry {
-  id: string
-  username: string
-  delta: number
-  balanceAfter: number
-  type: CreditLedgerType
-  reason?: string
-  sourceId?: string
-  adminActor?: string
-  relatedUsername?: string
-  createdAt: string
-}
-
-export interface AdminUser extends PublicUser {
-  role?: string
-  disabled?: boolean
-}
-
-export interface AdminBillingConfig {
-  epayEnabled?: boolean
-  epayApiUrl?: string
-  epayPid?: string
-  epayKeySet?: boolean
-  epayKeyPreview?: string
-  epayMethods?: string[]
-  creditPriceCents?: number
-  minTopUpCredits?: number
-  referralRewardCredits?: number
-  newUserInitialCredits?: number
-  dailyFreeCredits?: number
-}
-
-export interface AdminConfig {
-  siteName: string
-  newApiBaseUrl: string
-  publicBaseUrl: string
-  debugEnabled: boolean
-  timeoutSec: number
-  model: string
-  modelLocked: boolean
-  billing?: AdminBillingConfig
-  epayEnabled?: boolean
-  epayApiUrl?: string
-  epayPid?: string
-  epayKeySet?: boolean
-  epayKeyPreview?: string
-  epayMethods?: string[]
-  creditPriceCents?: number
-  minTopUpCredits?: number
-  referralRewardCredits?: number
-  newUserInitialCredits?: number
-  dailyFreeCredits?: number
-  timeoutCode: string
-  updatedAt: string
-  limits: { minTimeoutSec: number; maxTimeoutSec: number }
-}
-
-export interface AdminAuthStatus {
-  passwordSet: boolean
-  initialized?: boolean
-  setupRequired?: boolean
-  sessionTtlSec: number
-  updatedAt: string
-}
-
-export interface AdminSession {
-  token: string
-  expiresAt: string
-}
-export interface AdminSetupRequest {
-  siteName: string
-  admin: {
-    username: string
-    email?: string
-    password: string
-  }
-  config: {
-    newApiBaseUrl: string
-    publicBaseUrl?: string
-    timeoutSec: number
-    debugEnabled: boolean
-    newUserInitialCredits?: number
-    dailyFreeCredits?: number
-  }
-}
-
-export interface AdminSetupResponse {
-  ok: boolean
-  session: AdminSession
-  auth: AdminAuthStatus
-  config?: AdminConfig
-  adminUser?: AdminUser
-  userSession?: UserSession
-}
-
-
 export interface ReferenceUpload {
   id: string
   originalName: string
@@ -165,107 +78,6 @@ export interface ReferenceUpload {
   mime: string
   size: number
   createdAt: string
-}
-
-export interface TaskResult {
-  index: number
-  ok: boolean
-  status: TaskStatus
-  statusText: string
-  statusCode: string
-  imageUrl?: string
-  outputDate?: string
-  outputFileName?: string
-  remoteUrl?: string
-  remoteThumbUrl?: string
-  uploadError?: string
-  mime?: string
-  bytes?: number
-  revisedPrompt?: string
-  actualSize?: string
-  actualQuality?: string
-  outputFormat?: string
-  error?: string
-  errorText?: string
-  errorCode?: string
-  errorEnglish?: string
-  elapsedMs?: number
-}
-
-export interface DebugLog {
-  time: string
-  level: string
-  stage: string
-  message: string
-  imageIndex: number
-  fields?: Record<string, unknown>
-}
-
-export interface TaskReference {
-  uploadId?: string
-  originalName: string
-  fileName: string
-  mime: string
-  size?: number
-}
-
-export interface Task {
-  id: string
-  provider?: ModelProvider
-  model?: string
-  mode: Mode
-  source?: TaskSource
-  prompt: string
-  framePrompts?: string[]
-  ratio: string
-  resolution: string
-  quality: string
-  outputFormat: string
-  size: string
-  count: number
-  consumedCredits?: number
-  concurrency: number
-  uploadIds?: string[]
-  references?: TaskReference[]
-  status: TaskStatus
-  statusText: string
-  statusCode: string
-  stage: string
-  stageText: string
-  stageCode: string
-  progress: number
-  results: TaskResult[]
-  debugEnabled?: boolean
-  debugLogs?: DebugLog[]
-  favorite?: boolean
-  error?: string
-  createdAt: string
-  updatedAt: string
-  startedAt?: string
-  finishedAt?: string
-}
-
-export interface TaskEvent {
-  event: string
-  code: string
-  english: string
-  chinese: string
-  data?: { job?: Task; result?: TaskResult; [key: string]: unknown }
-}
-
-export interface CreateTaskRequest {
-  provider: ModelProvider
-  model: string
-  mode: Mode
-  prompt: string
-  framePrompts?: string[]
-  ratio: string
-  resolution: string
-  quality: string
-  outputFormat: string
-  count: number
-  concurrency: number
-  uploadIds: string[]
 }
 
 export interface PromptLibraryImage {
@@ -301,120 +113,6 @@ export interface PromptLibrary {
   total: number
   matching: number
   items: PromptLibraryItem[]
-}
-
-export interface PromptSquareItem {
-  id: string
-  title: string
-  prompt: string
-  negativePrompt?: string
-  model?: string
-  params?: Record<string, string>
-  imageUrl?: string
-  thumbnailUrl?: string
-  ratio?: string
-  resolution?: string
-  quality?: string
-  outputFormat?: string
-  tags?: string[]
-  authorUsername?: string
-  authorDisplayName?: string
-  authorUrl?: string
-  author: string | {
-    name: string
-    url?: string
-  }
-  source: {
-    type: 'user_upload' | 'external' | 'task_result' | (string & {})
-    name?: string
-    url?: string
-    license?: string
-  }
-  likeCount?: number
-  likes?: number
-  likedByMe?: boolean
-  dailyRank?: number
-  permanent?: boolean
-  submittedToSquare?: boolean
-  taskId?: string
-  sourceTaskId?: string
-  imageIndex?: number
-  submittedAt?: string
-  status: string
-  createdAt: string
-  updatedAt: string
-}
-
-export interface CreatePromptSquareItemRequest {
-  title: string
-  prompt: string
-  negativePrompt?: string
-  model?: string
-  tags?: string
-  imageUrl?: string
-  sourceName?: string
-  sourceUrl?: string
-  license?: string
-  authorName?: string
-  authorUrl?: string
-  ratio?: string
-  resolution?: string
-  quality?: string
-  outputFormat?: string
-  image?: File | null
-}
-
-export type EpayMethod = 'alipay' | 'wxpay' | 'qqpay' | string
-
-export interface TopUpOption {
-  credits: number
-  amountCents: number
-  label?: string
-  bonusCredits?: number
-  methods?: EpayMethod[]
-}
-
-export interface BillingTopUpOptions {
-  enabled: boolean
-  methods: EpayMethod[]
-  options: TopUpOption[]
-}
-
-export interface CreateEpayOrderRequest {
-  credits: number
-  method: EpayMethod
-}
-
-export interface EpayOrder {
-  tradeNo: string
-  payUrl: string
-  credits: number
-  amountCents: number
-  status: string
-  method?: EpayMethod
-  createdAt?: string
-  paidAt?: string
-}
-
-export interface BillingTopUp {
-  tradeNo: string
-  payUrl?: string
-  credits: number
-  amountCents: number
-  status: string
-  method?: EpayMethod
-  createdAt: string
-  paidAt?: string
-  thirdPartyTradeNo?: string
-}
-
-export interface DailyCreditClaim {
-  claimed: boolean
-  alreadyClaimed: boolean
-  amount: number
-  claimDate?: string
-  user?: PublicUser
-  entry?: CreditLedgerEntry | null
 }
 
 export type PromptToolMode = 'text-to-prompt' | 'image-to-prompt'

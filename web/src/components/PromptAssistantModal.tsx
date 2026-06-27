@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { type ClipboardEvent as ReactClipboardEvent, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent, useEffect, useMemo, useRef, useState } from 'react'
 import { formatError } from '../api/client'
 import {
   deletePromptHistory,
@@ -12,11 +12,25 @@ import {
   refinePromptSession,
   textToPrompt,
 } from '../api/promptTools'
-import { uploadReferenceImages } from '../api/uploads'
-import type { InspirationIdea, ModelProvider, PromptRecord, PromptSession, PromptVersion, ReferenceUpload, Task } from '../types'
-import { BANANA_MODEL_OPTIONS, BANANA_PROVIDER, DEFAULT_BANANA_MODEL, DEFAULT_IMAGE2_MODEL, getBananaModelForRatio, getBananaModelOption, providerLabel } from '../lib/models'
+import { deleteReferenceUpload, uploadReferenceImages } from '../api/uploads'
+import type { InspirationIdea, ModelProvider, PromptRecord, PromptSession, ReferenceUpload, Task } from '../types'
+import { BANANA_PROVIDER, DEFAULT_BANANA_MODEL, DEFAULT_IMAGE2_MODEL, providerLabel } from '../lib/models'
+import { PromptResultPanel } from './promptAssistant/PromptResultPanel'
+import {
+  categoryOptions,
+  emptyInspirationAnswers,
+  inspirationSteps,
+  inspirationStyleOptions,
+  kindLabel,
+  moodOptions,
+  promptTabs,
+  ratioOptions,
+  styleOptions,
+  type InspirationStepId,
+  type Tab,
+} from './promptAssistant/constants'
+import { buildInspirationBrief, buildInspirationMessages, normalizeRandom } from './promptAssistant/inspiration'
 
-type Tab = 'text' | 'image' | 'inspiration' | 'history'
 
 type Props = {
   tasks: Task[]
@@ -29,55 +43,6 @@ type Props = {
   onRefreshUploads: () => Promise<void>
 }
 
-const styleOptions = [
-  { value: 'auto', label: '自动判断' },
-  { value: 'cinematic', label: '电影感' },
-  { value: 'photo', label: '写实摄影' },
-  { value: 'poster', label: '海报设计' },
-  { value: 'anime', label: '二次元' },
-  { value: 'product', label: '产品图' },
-]
-
-const ratioOptions = ['auto', '1:1', '2:3', '3:2', '3:4', '4:3', '9:16', '16:9']
-const categoryOptions = ['随机', '人像', '场景', '产品', '海报', '插画', '壁纸', '建筑', '美食']
-const moodOptions = ['随机', '治愈', '孤独', '高级', '梦幻', '压迫感', '温暖', '荒诞', '浪漫']
-const inspirationStyleOptions = ['随机', '写实摄影', '电影感', '日系胶片', '二次元', '3D 渲染', '极简设计', '国风']
-const quickRefines = ['更写实', '更电影感', '更简洁', '更高级', '更梦幻', '增强光影', '减少元素', '改成竖屏构图', '改成商业海报']
-const promptTabs: Array<{ id: Tab; label: string }> = [
-  { id: 'text', label: '文生图' },
-  { id: 'image', label: '图片还原' },
-  { id: 'inspiration', label: '灵感模式' },
-  { id: 'history', label: '历史' },
-]
-const observationLabels: Record<string, string> = {
-  subject: '主体',
-  composition: '构图',
-  camera: '镜头',
-  style: '风格',
-  lighting: '光线',
-  background: '背景',
-  colors: '色彩',
-  materials: '材质',
-  depth: '景深/层次',
-  mood: '氛围',
-  textOrGraphics: '文字/图形',
-  ratio: '比例',
-  sourceSize: '源图尺寸',
-  orientation: '画幅方向',
-  metadataPrompt: '原提示词',
-  metadataNegativePrompt: '原负面词',
-  parameters: '生成参数',
-  prompt: 'Prompt',
-  negativePrompt: 'Negative Prompt',
-  workflow: 'Workflow',
-  software: '软件',
-  comment: '注释',
-  userComment: '用户注释',
-  imageDescription: '图片描述',
-  xmp: 'XMP',
-  exif: 'EXIF',
-}
-
 export function PromptAssistantModal({ tasks, uploads, provider, bananaModel, onClose, onUsePrompt, onRefreshUploads, embedded = false }: Props) {
   const [tab, setTab] = useState<Tab>('text')
   const [idea, setIdea] = useState('')
@@ -87,6 +52,7 @@ export function PromptAssistantModal({ tasks, uploads, provider, bananaModel, on
   const [applyBananaModel, setApplyBananaModel] = useState(bananaModel || DEFAULT_BANANA_MODEL)
   const [sourceType, setSourceType] = useState<'upload' | 'result'>('upload')
   const [uploadId, setUploadId] = useState('')
+  const [uploadAutoSelectEnabled, setUploadAutoSelectEnabled] = useState(true)
   const [resultKey, setResultKey] = useState('')
   const [records, setRecords] = useState<PromptRecord[]>([])
   const [sessions, setSessions] = useState<PromptSession[]>([])
@@ -99,8 +65,12 @@ export function PromptAssistantModal({ tasks, uploads, provider, bananaModel, on
   const [inspirationStyle, setInspirationStyle] = useState('随机')
   const [inspirationSeed, setInspirationSeed] = useState('')
   const [inspirationRatio, setInspirationRatio] = useState('auto')
+  const [inspirationAnswers, setInspirationAnswers] = useState<Record<InspirationStepId, string>>({ ...emptyInspirationAnswers })
+  const [inspirationDraft, setInspirationDraft] = useState('')
+  const [inspirationStepIndex, setInspirationStepIndex] = useState(0)
   const [ideas, setIdeas] = useState<InspirationIdea[]>([])
   const [loading, setLoading] = useState(false)
+  const [imageDropActive, setImageDropActive] = useState(false)
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
 
@@ -115,14 +85,37 @@ export function PromptAssistantModal({ tasks, uploads, provider, bananaModel, on
     }))), [tasks])
 
   const activeVersion = useMemo(() => pickVersion(activeSession, activeVersionId), [activeSession, activeVersionId])
+  const visibleRecord = tab === 'image' && activeRecord?.mode !== 'image-to-prompt' ? null : activeRecord
+  const visibleSession = tab === 'image' && activeSession?.kind !== 'image' ? null : activeSession
+  const visibleActiveVersion = visibleSession ? activeVersion : null
+  const visibleActiveVersionId = visibleSession ? activeVersionId : ''
+  const hasPromptResult = Boolean(visibleRecord || visibleSession)
+  const resultScrollAnchorRef = useRef<HTMLDivElement | null>(null)
+  const imageInputRef = useRef<HTMLInputElement | null>(null)
+  const resultScrollKey = visibleActiveVersion?.id || visibleSession?.id || visibleRecord?.id || ''
+  const inspirationCurrentStep = inspirationSteps[inspirationStepIndex] || inspirationSteps[0]
+  const inspirationAnsweredCount = inspirationSteps.filter((stepItem) => inspirationAnswers[stepItem.id]?.trim()).length
+  const inspirationComplete = inspirationAnsweredCount === inspirationSteps.length
+  const inspirationProgress = `${inspirationAnsweredCount}/${inspirationSteps.length}`
+  const inspirationMessages = useMemo(() => buildInspirationMessages(inspirationAnswers, inspirationStepIndex), [inspirationAnswers, inspirationStepIndex])
+  const imagePreviewUrl = sourceType === 'upload' && uploadId ? `/api/uploads/reference/${uploadId}/image` : ''
+
+  useEffect(() => {
+    if (!resultScrollKey || typeof window === 'undefined') return
+    if (!window.matchMedia('(max-width: 980px)').matches) return
+    window.requestAnimationFrame(() => {
+      const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+      resultScrollAnchorRef.current?.scrollIntoView({ behavior: prefersReducedMotion ? 'auto' : 'smooth', block: 'start' })
+    })
+  }, [resultScrollKey])
 
   useEffect(() => {
     void refreshHistory()
   }, [])
 
   useEffect(() => {
-    if (!uploadId && uploads[0]) setUploadId(uploads[0].id)
-  }, [uploads, uploadId])
+    if (uploadAutoSelectEnabled && !uploadId && uploads[0]) setUploadId(uploads[0].id)
+  }, [uploads, uploadId, uploadAutoSelectEnabled])
 
   useEffect(() => {
     if (!resultKey && resultOptions[0]) setResultKey(resultOptions[0].key)
@@ -132,6 +125,17 @@ export function PromptAssistantModal({ tasks, uploads, provider, bananaModel, on
     setApplyProvider(provider || 'image-2')
     setApplyBananaModel(bananaModel || DEFAULT_BANANA_MODEL)
   }, [provider, bananaModel])
+  useEffect(() => {
+    if (tab !== 'image') return
+    const handlePaste = (event: ClipboardEvent) => {
+      const files = Array.from(event.clipboardData?.files || []).filter(isSupportedImageFile)
+      if (!files.length) return
+      event.preventDefault()
+      void uploadImageFiles(files, '粘贴的图片')
+    }
+    window.addEventListener('paste', handlePaste)
+    return () => window.removeEventListener('paste', handlePaste)
+  }, [tab])
 
   async function refreshHistory() {
     try {
@@ -147,6 +151,48 @@ export function PromptAssistantModal({ tasks, uploads, provider, bananaModel, on
 
   function selectedModel(nextProvider = applyProvider) {
     return nextProvider === BANANA_PROVIDER ? applyBananaModel : DEFAULT_IMAGE2_MODEL
+  }
+
+  function inspirationTarget() {
+    return `${providerLabel(applyProvider)} / ${selectedModel()}`
+  }
+
+  function selectInspirationStep(index: number) {
+    const nextIndex = Math.max(0, Math.min(index, inspirationSteps.length - 1))
+    setInspirationStepIndex(nextIndex)
+    setInspirationDraft(inspirationAnswers[inspirationSteps[nextIndex].id] || '')
+  }
+
+  function appendInspirationQuick(value: string) {
+    setInspirationDraft((current) => current.trim() ? `${current.trim()}，${value}` : value)
+  }
+
+  function submitInspirationAnswer() {
+    const value = inspirationDraft.trim()
+    if (!value) {
+      setError(`先回答「${inspirationCurrentStep.label}」`)
+      return
+    }
+    setError('')
+    setMessage('')
+    setInspirationAnswers((current) => ({ ...current, [inspirationCurrentStep.id]: value }))
+    if (inspirationStepIndex < inspirationSteps.length - 1) {
+      const nextIndex = inspirationStepIndex + 1
+      setInspirationStepIndex(nextIndex)
+      setInspirationDraft(inspirationAnswers[inspirationSteps[nextIndex].id] || '')
+      return
+    }
+    setInspirationDraft('')
+    setMessage('追问信息已整理，可以生成完整提示词')
+  }
+
+  function resetInspirationConversation() {
+    setInspirationAnswers({ ...emptyInspirationAnswers })
+    setInspirationDraft('')
+    setInspirationStepIndex(0)
+    setIdeas([])
+    setMessage('已重开灵感对话')
+    setError('')
   }
 
   async function loadSession(id: string) {
@@ -173,6 +219,8 @@ export function PromptAssistantModal({ tasks, uploads, provider, bananaModel, on
         target: '通用图片模型',
       })
       setActiveRecord(record)
+      setActiveSession(null)
+      setActiveVersionId('')
       if (record.sessionId) await loadSession(record.sessionId)
       setMessage('文字提示词已生成，可以继续对话修改')
       await refreshHistory()
@@ -195,6 +243,8 @@ export function PromptAssistantModal({ tasks, uploads, provider, bananaModel, on
     try {
       const record = await imageToPrompt({ source, language: 'zh', target: '通用图片模型' })
       setActiveRecord(record)
+      setActiveSession(null)
+      setActiveVersionId('')
       if (record.sessionId) await loadSession(record.sessionId)
       setMessage('图片还原提示词已生成，可以继续对话修改')
       await refreshHistory()
@@ -206,39 +256,162 @@ export function PromptAssistantModal({ tasks, uploads, provider, bananaModel, on
   }
 
   async function handleLocalUpload(files: FileList | null) {
-    if (!files?.length) return
+    await uploadImageFiles(files ? Array.from(files) : [], '选择的图片')
+    if (imageInputRef.current) imageInputRef.current.value = ''
+  }
+
+  async function uploadImageFiles(files: File[], label = '图片') {
+    const imageFiles = files.filter(isSupportedImageFile)
+    if (!imageFiles.length) {
+      setError('请粘贴或拖入 PNG、JPG、WEBP 图片')
+      return
+    }
+    setError('')
+    setMessage('')
+    setSourceType('upload')
+    setUploadAutoSelectEnabled(true)
+    setLoading(true)
+    try {
+      const created = await uploadReferenceImages(imageFiles.slice(0, 1))
+      if (created[0]) setUploadId(created[0].id)
+      await onRefreshUploads()
+      setMessage(`${label}已载入，可以还原提示词`)
+    } catch (err) {
+      setError(formatError(err, '上传失败'))
+    } finally {
+      setLoading(false)
+      setImageDropActive(false)
+    }
+  }
+
+  async function clearReferenceImage() {
+    if (!uploadId) return
+    const currentUploadId = uploadId
     setError('')
     setMessage('')
     setLoading(true)
     try {
-      const created = await uploadReferenceImages(Array.from(files))
-      if (created[0]) setUploadId(created[0].id)
+      await deleteReferenceUpload(currentUploadId)
+      setUploadAutoSelectEnabled(false)
+      setUploadId('')
+      if (imageInputRef.current) imageInputRef.current.value = ''
       await onRefreshUploads()
-      setMessage('参考图已上传，可直接还原提示词')
+      setMessage('参考图已删除')
     } catch (err) {
-      setError(formatError(err, '上传失败'))
+      setError(formatError(err, '删除参考图失败'))
     } finally {
       setLoading(false)
     }
   }
 
+  function handleImagePanelClick(event: ReactMouseEvent<HTMLElement>) {
+    const target = event.target as HTMLElement | null
+    if (target?.closest('button, input, select, textarea, a, .prompt-image-dropzone')) return
+    imageInputRef.current?.click()
+  }
+
+  function handleImageDragEnter(event: ReactDragEvent<HTMLElement>) {
+    if (!hasImageTransfer(event.dataTransfer)) return
+    event.preventDefault()
+    setImageDropActive(true)
+  }
+
+  function handleImageDragOver(event: ReactDragEvent<HTMLElement>) {
+    if (!hasImageTransfer(event.dataTransfer)) return
+    event.preventDefault()
+    event.dataTransfer.dropEffect = 'copy'
+    setImageDropActive(true)
+  }
+
+  function handleImageDragLeave(event: ReactDragEvent<HTMLElement>) {
+    if (event.currentTarget.contains(event.relatedTarget as Node | null)) return
+    setImageDropActive(false)
+  }
+
+  function handleImageDrop(event: ReactDragEvent<HTMLElement>) {
+    if (!hasImageTransfer(event.dataTransfer)) return
+    event.preventDefault()
+    const files = Array.from(event.dataTransfer.files || [])
+    void uploadImageFiles(files, '拖入的图片')
+  }
+
+  function handleImagePanelPaste(event: ReactClipboardEvent<HTMLElement>) {
+    const files = Array.from(event.clipboardData.files || []).filter(isSupportedImageFile)
+    if (!files.length) return
+    event.preventDefault()
+    void uploadImageFiles(files, '粘贴的图片')
+  }
+
   async function makeIdeas() {
     setError('')
     setMessage('')
+    const seed = buildInspirationBrief(inspirationAnswers, inspirationSeed)
+    if (!seed.trim()) {
+      setError('先在灵感对话里输入一句想法')
+      return
+    }
     setLoading(true)
     try {
       const nextIdeas = await generateInspirationIdeas({
         category: normalizeRandom(inspirationCategory),
         mood: normalizeRandom(inspirationMood),
         style: normalizeRandom(inspirationStyle),
-        target: `${providerLabel(applyProvider)} / ${selectedModel()}`,
+        target: inspirationTarget(),
         count: 6,
-        seed: inspirationSeed,
+        seed,
       })
       setIdeas(nextIdeas)
-      setMessage('灵感已生成，选择一个即可扩写成提示词')
+      setMessage('已生成备选灵感，也可以直接生成完整提示词')
     } catch (err) {
       setError(formatError(err, '生成灵感失败'))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function generateInspirationPrompt() {
+    setError('')
+    setMessage('')
+    const seed = buildInspirationBrief(inspirationAnswers, inspirationSeed)
+    if (!inspirationAnswers.idea.trim()) {
+      setError('先在灵感对话里输入一句想法')
+      return
+    }
+    if (!inspirationComplete) {
+      setError(`继续回答「${inspirationCurrentStep.label}」后再生成完整提示词`)
+      return
+    }
+    setLoading(true)
+    try {
+      const nextIdeas = await generateInspirationIdeas({
+        category: normalizeRandom(inspirationCategory),
+        mood: normalizeRandom(inspirationMood),
+        style: normalizeRandom(inspirationStyle),
+        target: inspirationTarget(),
+        count: 4,
+        seed,
+      })
+      const primaryIdea: InspirationIdea = nextIdeas[0] || {
+        id: `guided-${Date.now()}`,
+        title: inspirationAnswers.idea.trim().slice(0, 28) || '灵感方案',
+        summary: seed,
+        tags: ['对话灵感'],
+      }
+      const session = await expandInspirationIdea({
+        idea: primaryIdea,
+        ratio: inspirationRatio,
+        target: inspirationTarget(),
+        provider: applyProvider,
+        model: selectedModel(),
+      })
+      setIdeas(nextIdeas)
+      setActiveRecord(null)
+      setActiveSession(session)
+      setActiveVersionId(session.activeVersionId)
+      setMessage('完整提示词已生成，可以继续对话优化')
+      await refreshHistory()
+    } catch (err) {
+      setError(formatError(err, '生成完整提示词失败'))
     } finally {
       setLoading(false)
     }
@@ -252,7 +425,7 @@ export function PromptAssistantModal({ tasks, uploads, provider, bananaModel, on
       const session = await expandInspirationIdea({
         idea: ideaItem,
         ratio: inspirationRatio,
-        target: `${providerLabel(applyProvider)} / ${selectedModel()}`,
+        target: inspirationTarget(),
         provider: applyProvider,
         model: selectedModel(),
       })
@@ -328,14 +501,13 @@ export function PromptAssistantModal({ tasks, uploads, provider, bananaModel, on
 
   function openRecord(record: PromptRecord) {
     setActiveRecord(record)
+    setActiveSession(null)
+    setActiveVersionId('')
     if (record.sessionId) {
       void loadSession(record.sessionId).catch(() => {
         setActiveSession(null)
         setActiveVersionId('')
       })
-    } else {
-      setActiveSession(null)
-      setActiveVersionId('')
     }
   }
 
@@ -350,8 +522,8 @@ export function PromptAssistantModal({ tasks, uploads, provider, bananaModel, on
         <header className="prompt-assistant-header">
           <div>
             <p className="eyebrow">Prompt Assistant</p>
-            <h2>提示词助手</h2>
-            <p>生成、还原、找灵感；会话可继续修改版本。</p>
+            <h2>提示词工作台</h2>
+            <p>从想法、图片和历史会话组织提示词，生成后可继续对话优化并直接填入生成页。</p>
           </div>
           {embedded ? null : <button type="button" onClick={onClose}>关闭</button>}
         </header>
@@ -373,7 +545,7 @@ export function PromptAssistantModal({ tasks, uploads, provider, bananaModel, on
           ))}
         </div>
 
-        <div className={`prompt-assistant-body ${tab === 'inspiration' ? 'is-inspiration' : ''}`}>
+        <div className={`prompt-assistant-body is-${tab}${tab === 'inspiration' ? ' is-inspiration' : ''}${hasPromptResult ? ' has-result' : ''}`}>
           {tab === 'text' ? (
             <section className="prompt-tool-panel" id="prompt-panel-text" role="tabpanel" aria-labelledby="prompt-tab-text">
               <label>
@@ -399,78 +571,145 @@ export function PromptAssistantModal({ tasks, uploads, provider, bananaModel, on
           ) : null}
 
           {tab === 'image' ? (
-            <section className="prompt-tool-panel" id="prompt-panel-image" role="tabpanel" aria-labelledby="prompt-tab-image">
-              <div className="prompt-source-tabs" role="tablist" aria-label="图片来源">
-                <button type="button" role="tab" aria-selected={sourceType === 'upload'} className={sourceType === 'upload' ? 'active' : ''} onClick={() => setSourceType('upload')}>参考图</button>
-                <button type="button" role="tab" aria-selected={sourceType === 'result'} className={sourceType === 'result' ? 'active' : ''} onClick={() => setSourceType('result')}>历史结果图</button>
+            <section
+              className={`prompt-tool-panel prompt-image-restore-panel ${imageDropActive ? 'is-dragging' : ''} ${imagePreviewUrl ? 'has-preview' : ''}`}
+              id="prompt-panel-image"
+              role="tabpanel"
+              aria-labelledby="prompt-tab-image"
+              tabIndex={0}
+              onDragEnter={handleImageDragEnter}
+              onDragOver={handleImageDragOver}
+              onDragLeave={handleImageDragLeave}
+              onDrop={handleImageDrop}
+              onPaste={handleImagePanelPaste}
+              onClick={handleImagePanelClick}
+            >
+              <input ref={imageInputRef} className="prompt-image-hidden-input" type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => void handleLocalUpload(event.target.files)} />
+              <div className="prompt-image-restore-controls">
+                <div className="prompt-image-dropzone" role="button" tabIndex={0} onClick={() => imageInputRef.current?.click()} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); imageInputRef.current?.click() } }}>
+                  <div className="prompt-image-empty-state">
+                    <strong>{imagePreviewUrl ? '参考图已载入' : '粘贴或拖入图片'}</strong>
+                    <span>点击此区域选择文件，Ctrl+V 粘贴截图，或把图片拖到整块图片还原区域后松开。</span>
+                  </div>
+                  {imageDropActive ? <div className="prompt-image-drop-overlay">松开粘贴</div> : null}
+                </div>
+                <div className="prompt-image-restore-actions">
+                  <button type="button" className="primary" disabled={loading || !uploadId} onClick={generateImagePrompt}>{loading ? '还原中...' : '还原提示词'}</button>
+                  {imagePreviewUrl ? <button type="button" onClick={() => imageInputRef.current?.click()}>换一张</button> : null}
+                  {imagePreviewUrl ? <button type="button" disabled={loading} onClick={() => void clearReferenceImage()}>删除参考图</button> : null}
+                </div>
               </div>
-              {sourceType === 'upload' ? (
-                <>
-                  <label>
-                    <span>上传新参考图</span>
-                    <input type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => void handleLocalUpload(event.target.files)} />
-                  </label>
-                  <label>
-                    <span>选择已上传参考图</span>
-                    <select value={uploadId} onChange={(event) => setUploadId(event.target.value)}>
-                      <option value="">请选择</option>
-                      {uploads.map((item) => <option key={item.id} value={item.id}>{item.originalName} · {Math.round(item.size / 1024)}KB</option>)}
-                    </select>
-                  </label>
-                </>
-              ) : (
-                <label>
-                  <span>选择历史结果图</span>
-                  <select value={resultKey} onChange={(event) => setResultKey(event.target.value)}>
-                    <option value="">请选择</option>
-                    {resultOptions.map((item) => <option key={item.key} value={item.key}>{item.label}</option>)}
-                  </select>
-                </label>
-              )}
-              <button type="button" className="primary" disabled={loading} onClick={generateImagePrompt}>{loading ? '分析中...' : '还原图片提示词'}</button>
+              <figure className="prompt-image-preview">
+                {imagePreviewUrl ? (
+                  <img src={imagePreviewUrl} alt="待还原参考图预览" />
+                ) : (
+                  <figcaption>预览区会完整显示参考图</figcaption>
+                )}
+              </figure>
             </section>
           ) : null}
 
           {tab === 'inspiration' ? (
-            <section className="prompt-tool-panel inspiration-panel" id="prompt-panel-inspiration" role="tabpanel" aria-labelledby="prompt-tab-inspiration">
-              <div className="prompt-tool-grid">
-                <label>
-                  <span>类别</span>
-                  <select value={inspirationCategory} onChange={(event) => setInspirationCategory(event.target.value)}>
-                    {categoryOptions.map((item) => <option key={item} value={item}>{item}</option>)}
-                  </select>
-                </label>
-                <label>
-                  <span>情绪</span>
-                  <select value={inspirationMood} onChange={(event) => setInspirationMood(event.target.value)}>
-                    {moodOptions.map((item) => <option key={item} value={item}>{item}</option>)}
-                  </select>
-                </label>
-                <label>
-                  <span>风格</span>
-                  <select value={inspirationStyle} onChange={(event) => setInspirationStyle(event.target.value)}>
-                    {inspirationStyleOptions.map((item) => <option key={item} value={item}>{item}</option>)}
-                  </select>
-                </label>
-                <label>
-                  <span>比例</span>
-                  <select value={inspirationRatio} onChange={(event) => setInspirationRatio(event.target.value)}>
-                    {ratioOptions.map((item) => <option key={item} value={item}>{item === 'auto' ? '自动' : item}</option>)}
-                  </select>
-                </label>
+            <section className="prompt-tool-panel inspiration-panel inspiration-chat-panel" id="prompt-panel-inspiration" role="tabpanel" aria-labelledby="prompt-tab-inspiration">
+              <div className="inspiration-chat-head">
+                <div>
+                  <strong>从一句话聊到完整提示词</strong>
+                  <span>已完成 {inspirationProgress}</span>
+                </div>
+                <button type="button" onClick={resetInspirationConversation}>重开</button>
               </div>
-              <label>
-                <span>补充方向（可选）</span>
-                <textarea value={inspirationSeed} onChange={(event) => setInspirationSeed(event.target.value)} placeholder="例如：想做手机壁纸，干净一点，有孤独感" rows={3} />
-              </label>
-              <button type="button" className="primary" disabled={loading} onClick={makeIdeas}>{loading ? '生成中...' : '生成 6 个灵感'}</button>
+
+              <div className="inspiration-stepper" aria-label="灵感追问进度">
+                {inspirationSteps.map((stepItem, index) => {
+                  const answered = Boolean(inspirationAnswers[stepItem.id]?.trim())
+                  return (
+                    <button
+                      key={stepItem.id}
+                      type="button"
+                      className={`${index === inspirationStepIndex ? 'active' : ''}${answered ? ' done' : ''}`}
+                      onClick={() => selectInspirationStep(index)}
+                    >
+                      <span>{index + 1}</span>
+                      <b>{stepItem.label}</b>
+                    </button>
+                  )
+                })}
+              </div>
+
+              <div className="inspiration-chat-window" aria-live="polite">
+                {inspirationMessages.map((item) => (
+                  <div key={item.id} className={`inspiration-message ${item.role === 'user' ? 'from-user' : 'from-assistant'}`}>
+                    {item.label ? <b>{item.label}</b> : null}
+                    <p>{item.content}</p>
+                  </div>
+                ))}
+              </div>
+
+              <div className="inspiration-composer">
+                <label>
+                  <span>{inspirationCurrentStep.label}</span>
+                  <textarea
+                    value={inspirationDraft}
+                    onChange={(event) => setInspirationDraft(event.target.value)}
+                    placeholder={inspirationCurrentStep.placeholder}
+                    rows={3}
+                  />
+                </label>
+                <div className="inspiration-quick-row">
+                  {inspirationCurrentStep.quick.map((item) => (
+                    <button key={item} type="button" onClick={() => appendInspirationQuick(item)}>{item}</button>
+                  ))}
+                </div>
+                <div className="inspiration-action-row">
+                  <button type="button" onClick={submitInspirationAnswer}>{inspirationStepIndex === inspirationSteps.length - 1 ? '完成追问' : '继续追问'}</button>
+                  <button type="button" className="primary" disabled={loading || !inspirationComplete} onClick={() => void generateInspirationPrompt()}>{loading ? '生成中...' : '生成完整提示词'}</button>
+                </div>
+              </div>
+
+              <section className="inspiration-options-panel" aria-label="输出设置">
+                <div className="prompt-tool-grid">
+                  <label>
+                    <span>类别</span>
+                    <select value={inspirationCategory} onChange={(event) => setInspirationCategory(event.target.value)}>
+                      {categoryOptions.map((item) => <option key={item} value={item}>{item}</option>)}
+                    </select>
+                  </label>
+                  <label>
+                    <span>情绪</span>
+                    <select value={inspirationMood} onChange={(event) => setInspirationMood(event.target.value)}>
+                      {moodOptions.map((item) => <option key={item} value={item}>{item}</option>)}
+                    </select>
+                  </label>
+                  <label>
+                    <span>风格</span>
+                    <select value={inspirationStyle} onChange={(event) => setInspirationStyle(event.target.value)}>
+                      {inspirationStyleOptions.map((item) => <option key={item} value={item}>{item}</option>)}
+                    </select>
+                  </label>
+                  <label>
+                    <span>比例</span>
+                    <select value={inspirationRatio} onChange={(event) => setInspirationRatio(event.target.value)}>
+                      {ratioOptions.map((item) => <option key={item} value={item}>{item === 'auto' ? '自动' : item}</option>)}
+                    </select>
+                  </label>
+                </div>
+                <label className="inspiration-note-field">
+                  <span>额外备注（可选）</span>
+                  <textarea value={inspirationSeed} onChange={(event) => setInspirationSeed(event.target.value)} placeholder="例如：要适合商业投放，画面里不要出现可读文字" rows={2} />
+                </label>
+              </section>
+
+              <div className="inspiration-secondary-actions">
+                <button type="button" disabled={loading} onClick={() => void makeIdeas()}>{loading ? '生成中...' : '给我备选灵感'}</button>
+              </div>
+
               {ideas.length ? (
                 <div className="prompt-idea-head">
-                  <strong>已生成 {ideas.length} 个灵感</strong>
-                  <span>点击「扩写成提示词」后，右侧会生成可直接应用的完整提示词。</span>
+                  <strong>备选灵感 {ideas.length} 个</strong>
+                  <span>点击任意方案可扩写成右侧完整提示词。</span>
                 </div>
               ) : null}
-              <div className="prompt-idea-grid">
+              <div className="prompt-idea-grid inspiration-idea-grid">
                 {ideas.map((item) => (
                   <article key={item.id || item.title} className="prompt-idea-item">
                     <strong>{item.title}</strong>
@@ -512,11 +751,12 @@ export function PromptAssistantModal({ tasks, uploads, provider, bananaModel, on
             </section>
           ) : null}
 
-          <PromptResult
-            record={activeRecord}
-            session={activeSession}
-            activeVersion={activeVersion}
-            activeVersionId={activeVersionId}
+          <div ref={resultScrollAnchorRef} className="prompt-result-scroll-anchor" aria-hidden="true" />
+          <PromptResultPanel
+            record={visibleRecord}
+            session={visibleSession}
+            activeVersion={visibleActiveVersion}
+            activeVersionId={visibleActiveVersionId}
             provider={applyProvider}
             bananaModel={applyBananaModel}
             refineText={refineText}
@@ -544,229 +784,14 @@ export function PromptAssistantModal({ tasks, uploads, provider, bananaModel, on
     </div>
   )
 }
-function PromptResult({
-  record,
-  session,
-  activeVersion,
-  activeVersionId,
-  provider,
-  bananaModel,
-  refineText,
-  loading,
-  onVersionChange,
-  onProviderChange,
-  onBananaModelChange,
-  onRefineTextChange,
-  onQuickRefine,
-  onRefine,
-  onCopy,
-  onUse,
-}: {
-  record: PromptRecord | null
-  session: PromptSession | null
-  activeVersion: PromptVersion | null
-  activeVersionId: string
-  provider: ModelProvider
-  bananaModel: string
-  refineText: string
-  loading: boolean
-  onVersionChange: (id: string) => void
-  onProviderChange: (provider: ModelProvider) => void
-  onBananaModelChange: (model: string) => void
-  onRefineTextChange: (value: string) => void
-  onQuickRefine: (value: string) => void
-  onRefine: () => void
-  onCopy: (prompt: string) => void
-  onUse: (prompt: string, options: { provider: ModelProvider; model: string; ratio?: string }) => void
-}) {
-  const prompt = activeVersion?.prompt || record?.flatPrompt || ''
-  const negativePrompt = activeVersion?.negativePrompt || record?.negativePrompt || ''
-  const promptRatio = activeVersion?.ratio || record?.ratio || session?.ratio || ''
-  const mustKeep = activeVersion?.mustKeep?.length ? activeVersion.mustKeep : record?.mustKeep
-  const title = session ? `${kindLabel(session.kind)} · ${session.title}` : record ? (record.mode === 'image-to-prompt' ? '图片还原提示词' : '文字生成图片提示词') : '结果预览'
-  const elapsedMs = activeVersion?.elapsedMs || record?.elapsedMs || 0
-  const promptModel = activeVersion?.model || record?.model || 'gpt-5.5'
-  const preferredBananaResolution = getBananaModelOption(bananaModel).resolution
-  const matchedBananaModel = promptRatio && promptRatio !== 'auto'
-    ? getBananaModelForRatio(promptRatio, preferredBananaResolution === 'auto' ? '2k' : preferredBananaResolution)
-    : getBananaModelOption(bananaModel)
-  const model = provider === BANANA_PROVIDER ? matchedBananaModel.id : DEFAULT_IMAGE2_MODEL
-  const useOptions = { provider, model, ratio: promptRatio || undefined }
-
-  if (!prompt) {
-    return (
-      <aside className="prompt-result empty">
-        <strong>结果预览</strong>
-        <span>生成后会在这里显示，可继续对话修改、复制或填入主输入框。</span>
-      </aside>
-    )
-  }
-  return (
-    <aside className="prompt-result">
-      <div className="prompt-result-title">
-        <div className="prompt-result-title-main">
-          <strong>{title}</strong>
-          <span>{promptModel} · {elapsedMs ? `${(elapsedMs / 1000).toFixed(1)}s` : '会话'}</span>
-        </div>
-        <div className="prompt-result-title-actions">
-          <button type="button" onClick={() => onCopy(prompt)}>复制</button>
-          <button type="button" className="primary" onClick={() => onUse(prompt, useOptions)}>应用此提示词</button>
-        </div>
-      </div>
-
-      {session?.versions.length ? (
-        <section className="prompt-version-list" aria-label="提示词版本">
-          {session.versions.map((version) => (
-            <button key={version.id} type="button" className={version.id === activeVersionId ? 'active' : ''} onClick={() => onVersionChange(version.id)}>
-              V{version.index}
-            </button>
-          ))}
-        </section>
-      ) : null}
-
-      <div className="prompt-result-actions prompt-result-actions-top">
-        <button type="button" onClick={() => onCopy(prompt)}>复制提示词</button>
-        <button type="button" className="primary" onClick={() => onUse(prompt, useOptions)}>填入并使用该模型</button>
-      </div>
-
-      {promptRatio ? (
-        <div className="prompt-chips">
-          <span>{promptRatio === 'auto' ? '自动比例' : `画面比例 ${promptRatio}`}</span>
-        </div>
-      ) : null}
-
-      <PromptInspector title="结构化观察" data={record?.jsonDescription} defaultOpen />
-      <PromptInspector title="图片 Metadata / 原提示词" data={record?.metadata} />
-
-      <label>
-        <span>正向提示词</span>
-        <textarea value={prompt} readOnly rows={8} />
-      </label>
-      {negativePrompt ? (
-        <label>
-          <span>负面提示词</span>
-          <textarea value={negativePrompt} readOnly rows={3} />
-        </label>
-      ) : null}
-      {mustKeep?.length ? (
-        <div className="prompt-chips">
-          {mustKeep.map((item) => <span key={item}>{item}</span>)}
-        </div>
-      ) : null}
-      {activeVersion?.notes ? <p className="prompt-version-note">{activeVersion.notes}</p> : null}
-
-      {session ? (
-        <section className="prompt-refine-box">
-          <div className="section-title">
-            <span>继续对话修改</span>
-            <small>会生成新版本，不覆盖旧版本</small>
-          </div>
-          <div className="prompt-quick-refines">
-            {quickRefines.map((item) => <button key={item} type="button" onClick={() => onQuickRefine(item)}>{item}</button>)}
-          </div>
-          <textarea value={refineText} onChange={(event) => onRefineTextChange(event.target.value)} placeholder="例如：更写实一点，减少动漫感；主体换成猫；保留雨夜和霓虹灯" rows={3} />
-          <button type="button" className="primary" disabled={loading} onClick={onRefine}>{loading ? '修改中...' : '生成新版本'}</button>
-          {session.messages.length ? (
-            <details className="prompt-chat-log">
-              <summary>查看最近对话</summary>
-              {session.messages.slice(-8).map((item) => <p key={item.id}><b>{item.role === 'user' ? '你' : '助手'}：</b>{item.content}</p>)}
-            </details>
-          ) : null}
-        </section>
-      ) : null}
-
-      <section className="prompt-apply-model" aria-label="选择应用模型">
-        <div className="section-title">
-          <span>应用到模型</span>
-          <small>生成完再选择</small>
-        </div>
-        <div className="mode-tabs provider-tabs">
-          <button type="button" className={provider === 'image-2' ? 'active' : ''} onClick={() => onProviderChange('image-2')}>Image-2</button>
-          <button type="button" className={provider === BANANA_PROVIDER ? 'active' : ''} onClick={() => onProviderChange(BANANA_PROVIDER)}>Banana</button>
-        </div>
-        {provider === BANANA_PROVIDER ? (
-          <label>
-            <span>Banana 模型 ID</span>
-            <select value={bananaModel} onChange={(event) => onBananaModelChange(event.target.value)}>
-              {BANANA_MODEL_OPTIONS.map((item) => <option key={item.id} value={item.id}>{item.label} · {item.id}</option>)}
-            </select>
-            {promptRatio && promptRatio !== 'auto' ? (
-              <small>应用时会按还原比例自动匹配：{matchedBananaModel.label} · {matchedBananaModel.size}</small>
-            ) : null}
-          </label>
-        ) : (
-          <div className="status-line">模型：{DEFAULT_IMAGE2_MODEL}</div>
-        )}
-      </section>
-      <div className="prompt-result-actions">
-        <button type="button" onClick={() => onCopy(prompt)}>复制提示词</button>
-        <button type="button" className="primary" onClick={() => onUse(prompt, useOptions)}>填入并使用该模型</button>
-      </div>
-    </aside>
-  )
+function isSupportedImageFile(file: File) {
+  return ['image/png', 'image/jpeg', 'image/webp'].includes(file.type)
 }
 
-function PromptInspector({ title, data, defaultOpen = false }: { title: string; data?: Record<string, unknown>; defaultOpen?: boolean }) {
-  const entries = Object.entries(data || {}).filter(([, value]) => hasMetaValue(value))
-  if (!entries.length) return null
-  return (
-    <details className="prompt-inspector" open={defaultOpen}>
-      <summary>
-        <span>{title}</span>
-        <small>{entries.length} 项</small>
-      </summary>
-      <div className="prompt-inspector-grid">
-        {entries.map(([key, value]) => (
-          <div key={key} className="prompt-inspector-row">
-            <span className="prompt-inspector-key">{observationLabel(key)}</span>
-            <pre className="prompt-inspector-value">{prettyMetaValue(value)}</pre>
-          </div>
-        ))}
-      </div>
-    </details>
-  )
+function hasImageTransfer(dataTransfer: DataTransfer) {
+  return Array.from(dataTransfer.items || []).some((item) => item.kind === 'file' && item.type.startsWith('image/')) || Array.from(dataTransfer.files || []).some((file) => file.type.startsWith('image/'))
 }
-
-function hasMetaValue(value: unknown): boolean {
-  if (value == null) return false
-  if (typeof value === 'string') return value.trim().length > 0
-  if (Array.isArray(value)) return value.some(hasMetaValue)
-  if (typeof value === 'object') return Object.values(value as Record<string, unknown>).some(hasMetaValue)
-  return true
-}
-
-function observationLabel(key: string) {
-  return observationLabels[key] || key
-}
-
-function prettyMetaValue(value: unknown): string {
-  if (value == null) return ''
-  if (typeof value === 'string') return value
-  if (typeof value === 'number' || typeof value === 'boolean') return String(value)
-  if (Array.isArray(value)) {
-    if (value.every((item) => ['string', 'number', 'boolean'].includes(typeof item))) {
-      return value.map(String).join(' / ')
-    }
-  }
-  try {
-    return JSON.stringify(value, null, 2)
-  } catch {
-    return String(value)
-  }
-}
-
 function pickVersion(session: PromptSession | null, versionId: string) {
   if (!session?.versions.length) return null
   return session.versions.find((item) => item.id === versionId) || session.versions.find((item) => item.id === session.activeVersionId) || session.versions[session.versions.length - 1]
-}
-
-function kindLabel(kind?: string) {
-  if (kind === 'image') return '图片还原'
-  if (kind === 'inspiration') return '灵感扩写'
-  if (kind === 'manual') return '手动会话'
-  return '文字扩写'
-}
-
-function normalizeRandom(value: string) {
-  return value === '随机' ? '' : value
 }

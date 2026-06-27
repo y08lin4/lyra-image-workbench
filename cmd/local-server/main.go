@@ -19,6 +19,7 @@ import (
 	"github.com/y08lin4/lyra-image-workbench/internal/promptlibrary"
 	"github.com/y08lin4/lyra-image-workbench/internal/promptsquare"
 	"github.com/y08lin4/lyra-image-workbench/internal/prompttools"
+	"github.com/y08lin4/lyra-image-workbench/internal/retention"
 	"github.com/y08lin4/lyra-image-workbench/internal/server"
 	"github.com/y08lin4/lyra-image-workbench/internal/settings"
 	"github.com/y08lin4/lyra-image-workbench/internal/spaceconfig"
@@ -29,6 +30,9 @@ import (
 
 func main() {
 	cfg := config.Load()
+	if cfg.AdminSetupToken == "" {
+		log.Print("警告：未设置 LOCAL_IMAGE_ADMIN_SETUP_TOKEN，首次 /admin 初始化站点会被拒绝；请设置安装令牌后重启服务。")
+	}
 	settingsStore, err := settings.NewFileStore(cfg.RuntimeConfigPath(), settings.DefaultsFromConfig(cfg))
 	if err != nil {
 		log.Fatalf("加载本机配置失败：%v", err)
@@ -55,7 +59,8 @@ func main() {
 	}
 	spaceConfigStore := spaceconfig.NewStore(spaceStore)
 	uploadStore := uploads.NewStore(spaceStore)
-	outputStore, err := output.NewStore("outputs")
+	outputRoot := "outputs"
+	outputStore, err := output.NewStore(outputRoot)
 	if err != nil {
 		log.Fatalf("加载输出目录失败：%v", err)
 	}
@@ -86,6 +91,12 @@ func main() {
 	}}); err != nil {
 		log.Printf("恢复任务状态失败：%v", err)
 	}
+	retention.StartDaily(retention.Config{
+		OutputRoot:   outputRoot,
+		Spaces:       spaceStore,
+		Jobs:         jobStore,
+		PromptSquare: promptSquareStore,
+	})
 
 	router := api.NewRouter(api.Dependencies{
 		Config:        cfg,

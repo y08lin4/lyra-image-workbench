@@ -118,6 +118,7 @@ type SubmitFromResultRequest struct {
 	Negative          string
 	Model             string
 	Ratio             string
+	ActualSize        string
 	Quality           string
 	OutputFormat      string
 	Tags              []string
@@ -239,13 +240,16 @@ func (s *Store) SubmitFromResult(req SubmitFromResultRequest) (Item, error) {
 		Prompt:            req.Prompt,
 		Negative:          req.Negative,
 		Model:             req.Model,
-		Ratio:             req.Ratio,
+		Ratio:             firstNonAuto(req.Ratio, req.ActualSize),
 		Quality:           req.Quality,
 		OutputFormat:      req.OutputFormat,
 		Tags:              req.Tags,
 		Author:            req.Author,
 		AuthorDisplayName: req.AuthorDisplayName,
 		SourceTaskID:      req.SourceTaskID,
+		Params: map[string]string{
+			"actualSize": req.ActualSize,
+		},
 	})
 	if err != nil {
 		return Item{}, err
@@ -280,6 +284,26 @@ func (s *Store) SubmitFromResult(req SubmitFromResultRequest) (Item, error) {
 	return publicItem(item, string(item.Author)), nil
 }
 
+func (s *Store) SourceTaskIDs() (map[string]struct{}, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	items, err := s.loadLocked()
+	if err != nil {
+		return nil, err
+	}
+	ids := map[string]struct{}{}
+	for _, item := range items {
+		id := strings.TrimSpace(item.SourceTaskID)
+		if id == "" && item.Source.Type == "task_result" {
+			id = strings.TrimSpace(item.Source.Name)
+		}
+		if id != "" {
+			ids[id] = struct{}{}
+		}
+	}
+	return ids, nil
+}
 func (s *Store) SetLike(id string, username string, liked bool) (Item, error) {
 	user := normalizeUsername(username)
 	if user == "" {
@@ -568,6 +592,16 @@ func containsUser(users []string, username string) bool {
 
 func normalizeUsername(username string) string {
 	return strings.ToLower(strings.TrimSpace(username))
+}
+
+func firstNonAuto(values ...string) string {
+	for _, value := range values {
+		trimmed := strings.TrimSpace(value)
+		if trimmed != "" && !strings.EqualFold(trimmed, "auto") && trimmed != "自动" {
+			return trimmed
+		}
+	}
+	return firstNonEmpty(values...)
 }
 
 func firstNonEmpty(values ...string) string {

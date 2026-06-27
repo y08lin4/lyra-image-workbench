@@ -58,6 +58,8 @@ func TestPromptSquareRoutesUseAuthenticatedUserAndResultDependencies(t *testing.
 	result.OutputFileName = saved.FileName
 	result.Mime = saved.Mime
 	result.ActualQuality = "high"
+	result.ActualSize = "1536x1024"
+	result.RevisedPrompt = "route revised prompt"
 	result.OutputFormat = "png"
 	now := time.Now()
 	job := jobs.Job{
@@ -92,6 +94,10 @@ func TestPromptSquareRoutesUseAuthenticatedUserAndResultDependencies(t *testing.
 		"tags":       []string{"router"},
 	})
 	fromResultID := decodePromptSquareItemID(t, fromResultBody)
+	if !strings.Contains(fromResultBody, `"prompt":"route revised prompt"`) || !strings.Contains(fromResultBody, `"actualSize":"1536x1024"`) {
+		t.Fatalf("from-result response missing copied metadata: %s", fromResultBody)
+	}
+
 	if fromResultID == "" {
 		t.Fatalf("from-result response missing item id: %s", fromResultBody)
 	}

@@ -2,7 +2,7 @@
 import type { Task } from '../types'
 import { BANANA_PROVIDER, getBananaModelOption, providerLabel } from '../lib/models'
 
-type SidebarFilter = 'all' | 'active' | 'succeeded' | 'failed' | 'favorite'
+type SidebarFilter = 'all' | 'active' | 'succeeded' | 'failed' | 'api' | 'favorite'
 
 type Props = {
   tasks: Task[]
@@ -31,6 +31,7 @@ const filterOptions: Array<{ value: SidebarFilter; label: string }> = [
   { value: 'active', label: '进行中' },
   { value: 'succeeded', label: '成功' },
   { value: 'failed', label: '失败' },
+  { value: 'api', label: 'API' },
   { value: 'favorite', label: '收藏' },
 ]
 
@@ -56,13 +57,32 @@ export function TaskSidebar({
   onToggleFavorite,
 }: Props) {
   const [filter, setFilter] = useState<SidebarFilter>('all')
+  const [copiedTaskId, setCopiedTaskId] = useState('')
   const filteredTasks = useMemo(() => filterTasks(tasks, query, filter, favoriteIds), [tasks, query, filter, favoriteIds])
+  const apiTasks = useMemo(() => tasks.filter((task) => task.source === 'api'), [tasks])
+  const latestApiTask = apiTasks[0]
   const stats = useMemo(() => ({
     total: tasks.length,
     active: tasks.filter((task) => !isFinal(task)).length,
     succeeded: tasks.filter((task) => task.status === 'succeeded').length,
     failed: tasks.filter((task) => ['failed', 'partial_failed', 'cancelled', 'interrupted'].includes(task.status)).length,
+    api: tasks.filter((task) => task.source === 'api').length,
   }), [tasks])
+  const apiStats = useMemo(() => ({
+    total: apiTasks.length,
+    active: apiTasks.filter((task) => !isFinal(task)).length,
+    succeeded: apiTasks.filter((task) => task.status === 'succeeded' || task.status === 'partial_failed').length,
+  }), [apiTasks])
+
+  async function copyTaskId(id: string) {
+    try {
+      await copyToClipboard(id)
+      setCopiedTaskId(id)
+      window.setTimeout(() => setCopiedTaskId((current) => current === id ? '' : current), 1800)
+    } catch {
+      setCopiedTaskId('')
+    }
+  }
 
   return (
     <section className={`queue-sidebar ${selectedIds.size ? 'has-selection' : ''}`} aria-label="任务队列">
@@ -80,6 +100,27 @@ export function TaskSidebar({
         <div><strong>{stats.succeeded}</strong><span>成功</span></div>
         <div><strong>{stats.failed}</strong><span>异常</span></div>
       </div>
+
+      {latestApiTask ? (
+        <div className="api-task-sync-card" aria-label="API 请求同步状态">
+          <div className="api-task-sync-main">
+            <span className="queue-source-badge">API</span>
+            <div>
+              <strong>API 请求同步</strong>
+              <p>{apiStats.active ? `${apiStats.active} 个 API 任务执行中` : 'API 任务已同步到生成历史'}</p>
+            </div>
+          </div>
+          <div className="api-task-sync-meta">
+            <span className={`status-pill ${latestApiTask.status}`}>{latestApiTask.statusText} / {latestApiTask.statusCode}</span>
+            <code title={latestApiTask.id}>ID {latestApiTask.id}</code>
+            <small>历史 {apiStats.total} · 成功/部分成功 {apiStats.succeeded}</small>
+          </div>
+          <div className="api-task-sync-actions">
+            <button type="button" onClick={() => onSelect(latestApiTask)}>查看最新</button>
+            <button type="button" onClick={() => void copyTaskId(latestApiTask.id)}>{copiedTaskId === latestApiTask.id ? '已复制 ID' : '复制 ID'}</button>
+          </div>
+        </div>
+      ) : null}
 
       <div className="queue-filter-row" role="tablist" aria-label="任务筛选">
         {filterOptions.map((item) => (
@@ -150,9 +191,10 @@ function TaskQueueItem({ task, active, favorite, selected, onSelect, onOpenDetai
   const error = firstError(task)
   const modelLabel = task.provider === BANANA_PROVIDER ? getBananaModelOption(task.model || '').label : task.model || 'gpt-image-2'
   const sourceLabel = taskSourceLabel(task.source)
+  const sourceIsApi = task.source === 'api'
 
   return (
-    <article className={`queue-item ${active ? 'active' : ''} ${selected ? 'selected' : ''}`} onClick={onSelect}>
+    <article className={`queue-item ${active ? 'active' : ''} ${selected ? 'selected' : ''} ${sourceIsApi ? 'source-api' : ''}`} onClick={onSelect}>
       <div className="queue-thumb">
         {cover ? <img src={cover.remoteThumbUrl || cover.imageUrl} alt="任务缩略图" /> : <QueuePlaceholder task={task} />}
         <label className="queue-check" onClick={(event) => event.stopPropagation()}>
@@ -162,6 +204,7 @@ function TaskQueueItem({ task, active, favorite, selected, onSelect, onOpenDetai
       <div className="queue-item-main">
         <div className="queue-status-line">
           <span className={`status-pill ${task.status}`}>{task.statusText} / {task.statusCode}</span>
+          {sourceIsApi ? <span className="queue-source-badge">API</span> : null}
           <small>{okCount}/{task.count || 1} · {formatElapsed(task)}</small>
         </div>
         <div className="queue-title-line">
@@ -173,7 +216,7 @@ function TaskQueueItem({ task, active, favorite, selected, onSelect, onOpenDetai
           <span>{providerLabel(task.provider)}</span>
           <span>{modelLabel}</span>
           <span>来源 {sourceLabel}</span>
-          <span>ID {compactTaskId(task.id)}</span>
+          <span title={task.id}>ID {compactTaskId(task.id)}</span>
         </div>
         <progress value={task.progress} max={100} />
         <div className="queue-meta">
@@ -207,6 +250,7 @@ function filterTasks(tasks: Task[], query: string, filter: SidebarFilter, favori
     if (filter === 'active' && isFinal(task)) return false
     if (filter === 'succeeded' && task.status !== 'succeeded') return false
     if (filter === 'failed' && !['failed', 'partial_failed', 'cancelled', 'interrupted'].includes(task.status)) return false
+    if (filter === 'api' && task.source !== 'api') return false
     if (!q) return true
     return [
       task.prompt,
@@ -259,4 +303,25 @@ function taskSourceLabel(source?: string) {
 function compactTaskId(id: string) {
   if (id.length <= 22) return id
   return `${id.slice(0, 12)}...${id.slice(-6)}`
+}
+
+async function copyToClipboard(value: string) {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(value)
+    return
+  }
+  const textArea = document.createElement('textarea')
+  textArea.value = value
+  textArea.setAttribute('readonly', '')
+  textArea.style.position = 'fixed'
+  textArea.style.left = '-9999px'
+  textArea.style.top = '0'
+  document.body.appendChild(textArea)
+  try {
+    textArea.focus()
+    textArea.select()
+    document.execCommand('copy')
+  } finally {
+    textArea.remove()
+  }
 }

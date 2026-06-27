@@ -1,10 +1,12 @@
 export const THEME_OPTIONS = [
-  { key: 'white-blue', label: '白蓝' },
-  { key: 'black-purple', label: '黑紫' },
-  { key: 'white-purple', label: '白紫' },
+  { key: 'white', label: '白色' },
+  { key: 'black', label: '黑色' },
   { key: 'green', label: '绿色' },
   { key: 'pink', label: '粉色' },
   { key: 'blue', label: '蓝色' },
+  { key: 'white-blue', label: '白蓝' },
+  { key: 'black-purple', label: '黑紫' },
+  { key: 'white-purple', label: '白紫' },
 ] as const
 
 export type ThemeMode = (typeof THEME_OPTIONS)[number]['key']
@@ -19,9 +21,9 @@ export function isThemeMode(value: string | null): value is ThemeMode {
 
 export function resolveTheme(value: string | null, prefersDark = false): ThemeMode {
   if (isThemeMode(value)) return value
-  if (value === 'dark') return 'black-purple'
-  if (value === 'light') return 'white-blue'
-  return prefersDark ? 'black-purple' : DEFAULT_THEME
+  if (value === 'dark') return 'black'
+  if (value === 'light') return 'white'
+  return prefersDark ? 'black' : DEFAULT_THEME
 }
 
 export function nextTheme(current: ThemeMode): ThemeMode {

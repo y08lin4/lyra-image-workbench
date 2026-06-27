@@ -13,6 +13,7 @@ HOST="${HOST:-127.0.0.1}"
 PORT="${PORT:-8787}"
 NEWAPI_BASE_URL="${NEWAPI_BASE_URL:-http://127.0.0.1:3000/v1}"
 NEWAPI_TIMEOUT_SEC="${NEWAPI_TIMEOUT_SEC:-600}"
+LOCAL_IMAGE_ADMIN_SETUP_TOKEN="${LOCAL_IMAGE_ADMIN_SETUP_TOKEN:-}"
 
 log() {
   printf '\033[1;34m==>\033[0m %s\n' "$*"
@@ -32,6 +33,29 @@ curl_json() {
     curl -fsSL -H "Authorization: Bearer ${GITHUB_TOKEN}" "$1"
   else
     curl -fsSL "$1"
+  fi
+}
+
+generate_admin_setup_token() {
+  if [ -n "${LOCAL_IMAGE_ADMIN_SETUP_TOKEN}" ]; then
+    return
+  fi
+
+  local service_file
+  service_file="/etc/systemd/system/${SERVICE_NAME}.service"
+  if [ -r "${service_file}" ]; then
+    LOCAL_IMAGE_ADMIN_SETUP_TOKEN="$(sed -nE 's/^Environment=LOCAL_IMAGE_ADMIN_SETUP_TOKEN=(.*)$/\1/p' "${service_file}" | tail -n1)"
+  fi
+  if [ -n "${LOCAL_IMAGE_ADMIN_SETUP_TOKEN}" ]; then
+    return
+  fi
+
+  if command -v openssl >/dev/null 2>&1; then
+    LOCAL_IMAGE_ADMIN_SETUP_TOKEN="$(openssl rand -hex 32)"
+  elif [ -r /proc/sys/kernel/random/uuid ]; then
+    LOCAL_IMAGE_ADMIN_SETUP_TOKEN="$(cat /proc/sys/kernel/random/uuid)-$(cat /proc/sys/kernel/random/uuid)"
+  else
+    LOCAL_IMAGE_ADMIN_SETUP_TOKEN="$(date +%s)-${RANDOM}-${RANDOM}-${RANDOM}-${RANDOM}"
   fi
 }
 
@@ -132,6 +156,7 @@ Environment=LOCAL_IMAGE_HOST=${HOST}
 Environment=LOCAL_IMAGE_PORT=${PORT}
 Environment=LOCAL_IMAGE_DATA_DIR=${DATA_ROOT}/data
 Environment=LOCAL_IMAGE_WEB_DIR=${INSTALL_DIR}/current/web/dist
+Environment=LOCAL_IMAGE_ADMIN_SETUP_TOKEN=${LOCAL_IMAGE_ADMIN_SETUP_TOKEN}
 Environment=NEWAPI_BASE_URL=${NEWAPI_BASE_URL}
 Environment=NEWAPI_TIMEOUT_SEC=${NEWAPI_TIMEOUT_SEC}
 ExecStart=${INSTALL_DIR}/current/${APP_NAME}
@@ -159,6 +184,7 @@ main() {
   detect_sudo
   detect_arch
   resolve_version
+  generate_admin_setup_token
   install_user_and_dirs
   download_and_install
   write_systemd_service
@@ -166,6 +192,8 @@ main() {
   log "安装完成：${APP_NAME} ${VERSION} linux/${ARCH}"
   printf '\n访问地址：\n'
   printf '  http://127.0.0.1:%s\n' "${PORT}"
+  printf '\n安装令牌（首次打开 /admin 初始化站点必填，请立即保存）：\n'
+  printf '  %s\n' "${LOCAL_IMAGE_ADMIN_SETUP_TOKEN}"
   printf '\n常用命令：\n'
   printf '  systemctl status %s --no-pager\n' "${SERVICE_NAME}"
   printf '  journalctl -u %s -f\n' "${SERVICE_NAME}"

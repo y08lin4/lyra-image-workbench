@@ -15,7 +15,7 @@
 curl -fsSL https://raw.githubusercontent.com/y08lin4/lyra-image-workbench/master/scripts/install.sh | sudo bash
 ```
 
-脚本会自动识别 Linux `amd64` / `arm64` / `armv7`，安装到 `/opt/lyra-image-workbench`，并创建 `lyra-image-workbench` systemd 服务。手动部署细节继续看下文。
+脚本会自动识别 Linux `amd64` / `arm64` / `armv7`，安装到 `/opt/lyra-image-workbench`，创建 `lyra-image-workbench` systemd 服务，并在结束时输出首次 `/admin` 初始化必填的安装令牌。请立即保存该令牌；手动部署细节继续看下文。
 
 ---
 

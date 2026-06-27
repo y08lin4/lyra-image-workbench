@@ -249,6 +249,76 @@ func TestEpayNotifyRewardsInviterOnce(t *testing.T) {
 		t.Fatalf("inviter creditsBalance=%d, want %d", inviter.CreditsBalance, reward)
 	}
 }
+
+func TestAdminConfigDoesNotLeakSMTPPassword(t *testing.T) {
+	router := newTestRouter(t)
+	adminToken := createAdminToken(t, router)
+	rawPassword := "smtp-secret-1234567890"
+
+	body := doAdminJSON(t, router, http.MethodPost, "/api/admin/config", adminToken, map[string]any{
+		"smtpEnabled":  true,
+		"smtpHost":     "smtp.example.com",
+		"smtpPort":     587,
+		"smtpUser":     "noreply@example.com",
+		"smtpPassword": rawPassword,
+		"smtpFrom":     "noreply@example.com",
+	})
+	assertSMTPPasswordHidden(t, body, rawPassword)
+	if !strings.Contains(body, `"smtpPasswordSet":true`) || !strings.Contains(body, `"smtpPasswordPreview":"smtp********7890"`) {
+		t.Fatalf("admin config response missing smtp password status/preview: %s", body)
+	}
+
+	body = doAdminJSON(t, router, http.MethodGet, "/api/admin/config", adminToken, nil)
+	assertSMTPPasswordHidden(t, body, rawPassword)
+
+	body = doAdminJSON(t, router, http.MethodPut, "/api/admin/config", adminToken, map[string]any{
+		"smtpEnabled":       false,
+		"clearSmtpPassword": true,
+	})
+	if strings.Contains(body, rawPassword) || !strings.Contains(body, `"smtpPasswordSet":false`) {
+		t.Fatalf("cleared smtp password response invalid: %s", body)
+	}
+}
+
+func TestEpayOrderStatusQuery(t *testing.T) {
+	env := newTestAPIEnv(t)
+	key := configureTestBilling(t, env)
+	token := createNamedUserSession(t, env.Router, "buyer04", "R7!Buyer#Vault$2026", "")
+
+	tradeNo := createTestEpayOrder(t, env.Router, token, 10, "alipay")
+	body := doJSON(t, env.Router, http.MethodGet, "/api/billing/epay/orders/"+tradeNo, token, nil)
+	if !strings.Contains(body, `"status":"pending"`) || !strings.Contains(body, `"payUrl"`) {
+		t.Fatalf("pending order status response invalid: %s", body)
+	}
+
+	order, ok := env.Billing.GetByTradeNo(tradeNo)
+	if !ok {
+		t.Fatalf("created order %s missing", tradeNo)
+	}
+	code, notifyBody := postNotifyForm(t, env.Router, signedNotifyValues(order, key))
+	if code != http.StatusOK || strings.TrimSpace(notifyBody) != "success" {
+		t.Fatalf("valid notify code=%d body=%s", code, notifyBody)
+	}
+
+	body = doJSON(t, env.Router, http.MethodGet, "/api/billing/epay/orders?tradeNo="+url.QueryEscape(tradeNo), token, nil)
+	if !strings.Contains(body, `"status":"success"`) || !strings.Contains(body, `"providerTradeNo":"E202606260001"`) {
+		t.Fatalf("success order status response invalid: %s", body)
+	}
+
+	otherToken := createNamedUserSession(t, env.Router, "buyer05", "R7!Buyer#Vault$2026", "")
+	status, otherBody := doJSONStatus(t, env.Router, http.MethodGet, "/api/billing/epay/orders/"+tradeNo, otherToken, nil, "")
+	if status != http.StatusNotFound || !strings.Contains(otherBody, "TOPUP_ORDER_NOT_FOUND") {
+		t.Fatalf("other user order lookup status=%d body=%s", status, otherBody)
+	}
+}
+
+func assertSMTPPasswordHidden(t *testing.T, body string, rawPassword string) {
+	t.Helper()
+	if strings.Contains(body, rawPassword) || strings.Contains(body, `"smtpPassword":`) || strings.Contains(body, `"smtpPass":`) {
+		t.Fatalf("admin config leaked smtp password: %s", body)
+	}
+}
+
 func assertEpayKeyHidden(t *testing.T, body string, rawKey string) {
 	t.Helper()
 	if strings.Contains(body, rawKey) || strings.Contains(body, `"epayKey":`) {

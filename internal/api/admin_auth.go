@@ -107,7 +107,7 @@ func (h AdminAuthHandler) Setup(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, "ADMIN_SETUP_USERS_EXIST", "已有用户数据，不能覆盖初始化管理员账号")
 		return
 	}
-	if hasAdminSettingsUpdate(update) {
+	if update.HasChanges() {
 		if h.settings == nil {
 			writeError(w, http.StatusServiceUnavailable, "SETTINGS_UNAVAILABLE", "系统设置服务未初始化")
 			return
@@ -141,6 +141,9 @@ func (h AdminAuthHandler) Setup(w http.ResponseWriter, r *http.Request) {
 		writeAdminAuthError(w, err)
 		return
 	}
+	if createdAdminUser {
+		h.store.SetSessionActor(session.Token, adminUser.Username)
+	}
 	recordAuthAttempt("admin-setup", r, "setup", true)
 	if createdAdminUser {
 		setUserSessionCookie(w, r, userSession)
@@ -173,6 +176,9 @@ func (h AdminAuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		writeAdminAuthError(w, err)
 		return
 	}
+	if userSession, ok := currentUserSession(h.users, r); ok && userSession.User.IsAdmin {
+		h.store.SetSessionActor(session.Token, userSession.User.Username)
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "session": session, "auth": h.publicStatus()})
 }
 
@@ -191,11 +197,7 @@ func (h AdminAuthHandler) publicStatus() adminAuthStatusResponse {
 }
 
 func hasAdminSetupDetails(payload adminSetupRequest) bool {
-	return strings.TrimSpace(payload.SiteName) != "" || strings.TrimSpace(payload.Admin.Username) != "" || strings.TrimSpace(payload.Admin.Email) != "" || strings.TrimSpace(payload.Admin.Password) != "" || hasAdminSettingsUpdate(payload.Config)
-}
-
-func hasAdminSettingsUpdate(update settings.Update) bool {
-	return update.SiteName != nil || update.NewAPIBaseURL != nil || update.PublicBaseURL != nil || update.DebugEnabled != nil || update.TimeoutSec != nil || update.EpayEnabled != nil || update.EpayAPIURL != nil || update.EpayPID != nil || update.EpayKey != nil || update.ClearEpayKey || update.EpayMethods != nil || update.CreditPriceCents != nil || update.MinTopUpCredits != nil || update.ReferralRewardCredits != nil || update.NewUserInitialCredits != nil || update.DailyFreeCredits != nil
+	return strings.TrimSpace(payload.SiteName) != "" || strings.TrimSpace(payload.Admin.Username) != "" || strings.TrimSpace(payload.Admin.Email) != "" || strings.TrimSpace(payload.Admin.Password) != "" || payload.Config.HasChanges()
 }
 
 func writeAdminAuthError(w http.ResponseWriter, err error) {

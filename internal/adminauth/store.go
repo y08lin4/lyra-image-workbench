@@ -23,7 +23,7 @@ type Store struct {
 	mu       sync.Mutex
 	path     string
 	current  record
-	sessions map[string]time.Time
+	sessions map[string]sessionRecord
 }
 
 type record struct {
@@ -31,6 +31,11 @@ type record struct {
 	HashHex   string `json:"hashHex"`
 	CreatedAt string `json:"createdAt"`
 	UpdatedAt string `json:"updatedAt"`
+}
+
+type sessionRecord struct {
+	ExpiresAt time.Time
+	Actor     string
 }
 
 type PublicStatus struct {
@@ -45,7 +50,7 @@ type Session struct {
 }
 
 func NewStore(path string) (*Store, error) {
-	store := &Store{path: path, sessions: make(map[string]time.Time)}
+	store := &Store{path: path, sessions: make(map[string]sessionRecord)}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -122,8 +127,40 @@ func (s *Store) ValidateToken(token string) bool {
 	}
 	now := time.Now()
 	s.pruneLocked(now)
-	expires, ok := s.sessions[token]
-	return ok && now.Before(expires)
+	session, ok := s.sessions[token]
+	return ok && now.Before(session.ExpiresAt)
+}
+
+func (s *Store) SetSessionActor(token string, actor string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	token = strings.TrimSpace(token)
+	actor = strings.TrimSpace(actor)
+	if token == "" || actor == "" {
+		return
+	}
+	session, ok := s.sessions[token]
+	if !ok || !time.Now().Before(session.ExpiresAt) {
+		return
+	}
+	session.Actor = actor
+	s.sessions[token] = session
+}
+
+func (s *Store) TokenActor(token string) (string, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	token = strings.TrimSpace(token)
+	if token == "" || !s.passwordSetLocked() {
+		return "", false
+	}
+	now := time.Now()
+	s.pruneLocked(now)
+	session, ok := s.sessions[token]
+	if !ok || !now.Before(session.ExpiresAt) || strings.TrimSpace(session.Actor) == "" {
+		return "", false
+	}
+	return session.Actor, true
 }
 
 func (s *Store) Logout(token string) {
@@ -157,13 +194,13 @@ func (s *Store) newSessionLocked() (Session, error) {
 		return Session{}, err
 	}
 	expires := time.Now().Add(SessionTTL)
-	s.sessions[token] = expires
+	s.sessions[token] = sessionRecord{ExpiresAt: expires}
 	return Session{Token: token, ExpiresAt: expires.Format(time.RFC3339)}, nil
 }
 
 func (s *Store) pruneLocked(now time.Time) {
-	for token, expires := range s.sessions {
-		if !now.Before(expires) {
+	for token, session := range s.sessions {
+		if !now.Before(session.ExpiresAt) {
 			delete(s.sessions, token)
 		}
 	}

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"mime"
 	"net/http"
 	"path/filepath"
@@ -14,6 +15,9 @@ type PromptLibraryHandler struct {
 }
 
 func NewPromptLibraryHandler(service *promptlibrary.Service) PromptLibraryHandler {
+	if service != nil {
+		service.StartWarmCache(context.Background())
+	}
 	return PromptLibraryHandler{service: service}
 }
 

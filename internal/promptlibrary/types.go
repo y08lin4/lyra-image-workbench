@@ -53,3 +53,17 @@ type Query struct {
 	Limit    int
 	Force    bool
 }
+
+func cloneLibrary(lib Library) Library {
+	lib.Categories = append([]string(nil), lib.Categories...)
+	if len(lib.Items) > 0 {
+		items := make([]Item, len(lib.Items))
+		for index, item := range lib.Items {
+			item.Images = append([]Image(nil), item.Images...)
+			item.Sources = append([]Source(nil), item.Sources...)
+			items[index] = item
+		}
+		lib.Items = items
+	}
+	return lib
+}

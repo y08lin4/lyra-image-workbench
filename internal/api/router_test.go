@@ -566,6 +566,79 @@ func TestAdminUsersCanAddCreditsAndReadLedger(t *testing.T) {
 	}
 }
 
+func TestFullAdminSetupAttributesCreditGrantToAdminUser(t *testing.T) {
+	env := newTestAPIEnv(t)
+	setupPayload := map[string]any{
+		"siteName": "Lyra Test",
+		"admin": map[string]string{
+			"username": "rootAdmin01",
+			"email":    "root@example.com",
+			"password": "R7!Root#Vault$2026",
+		},
+		"config": map[string]any{
+			"newUserInitialCredits": 3,
+			"dailyFreeCredits":      1,
+		},
+	}
+	var setupBody bytes.Buffer
+	if err := json.NewEncoder(&setupBody).Encode(setupPayload); err != nil {
+		t.Fatalf("encode full setup payload: %v", err)
+	}
+	setupReq := httptest.NewRequest(http.MethodPost, "/api/admin/auth/setup", &setupBody)
+	setupReq.Header.Set("Content-Type", "application/json")
+	setupReq.Header.Set("X-Admin-Setup-Token", "test-admin-setup-token")
+	setupRes := httptest.NewRecorder()
+	env.Router.ServeHTTP(setupRes, setupReq)
+	if setupRes.Code != http.StatusOK {
+		t.Fatalf("full admin setup failed: code=%d body=%s", setupRes.Code, setupRes.Body.String())
+	}
+	var setupResponse struct {
+		Session   adminauth.Session `json:"session"`
+		AdminUser users.AdminUser   `json:"adminUser"`
+	}
+	if err := json.Unmarshal(setupRes.Body.Bytes(), &setupResponse); err != nil {
+		t.Fatalf("decode full setup response: %v body=%s", err, setupRes.Body.String())
+	}
+	if setupResponse.Session.Token == "" || setupResponse.AdminUser.Username != "rootAdmin01" || !setupResponse.AdminUser.IsAdmin {
+		t.Fatalf("full setup response missing admin session/user: %+v", setupResponse)
+	}
+
+	body, cookies := doJSONWithCookies(t, env.Router, http.MethodPost, "/api/users/register", "", map[string]string{
+		"username": "creditTarget01",
+		"password": "R7!Target#Vault$2026",
+	})
+	targetToken := userSessionFromCookies(t, cookies)
+	var registered struct {
+		Session users.Session `json:"session"`
+	}
+	if err := json.Unmarshal([]byte(body), &registered); err != nil {
+		t.Fatalf("decode target register response: %v body=%s", err, body)
+	}
+	if registered.Session.User.CreditsBalance != 3 {
+		t.Fatalf("target initial credits = %d, want 3", registered.Session.User.CreditsBalance)
+	}
+
+	grantBody := doAdminJSON(t, env.Router, http.MethodPost, "/api/admin/users/credits/add", setupResponse.Session.Token, map[string]any{
+		"username": "creditTarget01",
+		"amount":   4,
+		"reason":   "manual back office grant",
+	})
+	var grantResponse struct {
+		User  users.AdminUser         `json:"user"`
+		Entry users.CreditLedgerEntry `json:"entry"`
+	}
+	if err := json.Unmarshal([]byte(grantBody), &grantResponse); err != nil {
+		t.Fatalf("decode grant response: %v body=%s", err, grantBody)
+	}
+	if grantResponse.User.CreditsBalance != 7 || grantResponse.Entry.AdminActor != "rootAdmin01" || grantResponse.Entry.Reason != "manual back office grant" {
+		t.Fatalf("grant response did not attribute admin actor: %+v body=%s", grantResponse, grantBody)
+	}
+
+	ledgerBody := doJSON(t, env.Router, http.MethodGet, "/api/users/ledger", targetToken, nil)
+	if !strings.Contains(ledgerBody, `"adminActor":"rootAdmin01"`) || !strings.Contains(ledgerBody, `"type":"admin_add"`) {
+		t.Fatalf("user ledger missing attributed admin grant: %s", ledgerBody)
+	}
+}
 func TestAdminConfigRequiresPasswordSession(t *testing.T) {
 	router := newTestRouter(t)
 

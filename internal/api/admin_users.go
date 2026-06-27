@@ -92,10 +92,7 @@ func (h AdminUsersHandler) requireAdminAccess(w http.ResponseWriter, r *http.Req
 		writeError(w, http.StatusForbidden, "ADMIN_PASSWORD_NOT_SET", "请先初始化站点和 Admin 管理密码")
 		return false
 	}
-	token := r.Header.Get("X-Admin-Token")
-	if token == "" {
-		token = bearerToken(r.Header.Get("Authorization"))
-	}
+	token := adminTokenFromRequest(r)
 	if h.auth.ValidateToken(token) {
 		return true
 	}
@@ -110,5 +107,18 @@ func (h AdminUsersHandler) adminActorFromRequest(r *http.Request) string {
 	if session, ok := currentUserSession(h.store, r); ok && session.User.IsAdmin {
 		return session.User.Username
 	}
+	if h.auth != nil {
+		if actor, ok := h.auth.TokenActor(adminTokenFromRequest(r)); ok {
+			return actor
+		}
+	}
 	return "admin"
+}
+
+func adminTokenFromRequest(r *http.Request) string {
+	token := r.Header.Get("X-Admin-Token")
+	if token == "" {
+		token = bearerToken(r.Header.Get("Authorization"))
+	}
+	return token
 }

@@ -1,28 +1,18 @@
 import { clearLocalKeyScope, requestJson, saveLocalKeyScope } from './client'
-import type { CreditLedgerEntry, DailyCreditClaim, PromptSquareItem, PublicUser, UserSession } from '../types'
+import type {
+  DailyCreditClaim,
+  DailyCreditClaimResponse,
+  ReferralCodeResponse,
+  RegisterUserInput,
+  TwoFactorSetupResponse,
+  UpdateUserProfileInput,
+  UserLedgerResponse,
+  UserProfileResponse,
+  UserPromptSquareItemsResponse,
+  UserSessionResponse,
+} from './contracts/users'
 
-type UserSessionResponse = { ok: boolean; session: UserSession }
-type UserProfileResponse = { ok: boolean; user?: PublicUser; profile?: PublicUser; session?: UserSession }
-type UserLedgerResponse = { ok: boolean; ledger?: CreditLedgerEntry[]; entries?: CreditLedgerEntry[] }
-type UserPromptSquareItemsResponse = { ok: boolean; items?: PromptSquareItem[] }
-type DailyCreditClaimResponse = DailyCreditClaim & { ok: boolean }
-type ReferralCodeResponse = { ok: boolean; referralCode?: string; user?: PublicUser; profile?: PublicUser }
-
-export type TwoFactorSetup = { secret: string; otpauthUrl: string }
-
-export type RegisterUserInput = {
-  username: string
-  email: string
-  password: string
-  referralCode?: string
-  legacySpacePassword?: string
-}
-
-export type UpdateUserProfileInput = {
-  displayName: string
-  email: string
-  avatarUrl: string
-}
+export type { RegisterUserInput, TwoFactorSetup, UpdateUserProfileInput } from './contracts/users'
 
 export async function registerUser(input: RegisterUserInput) {
   const body: Record<string, string> = {
@@ -104,12 +94,14 @@ export async function createReferralCode() {
   const data = await requestJson<ReferralCodeResponse>('/api/users/referral-code', { method: 'POST' })
   return {
     referralCode: data.referralCode || data.user?.referralCode || data.profile?.referralCode || '',
+    referralLink: data.referralLink || data.inviteLink || data.user?.referralLink || data.profile?.referralLink || '',
+    inviteLink: data.inviteLink || data.referralLink || data.user?.inviteLink || data.profile?.inviteLink || '',
     user: data.user || data.profile,
   }
 }
 
 export async function setupTwoFactor() {
-  const data = await requestJson<{ ok: boolean; setup: TwoFactorSetup }>('/api/users/2fa/setup', { method: 'POST' })
+  const data = await requestJson<TwoFactorSetupResponse>('/api/users/2fa/setup', { method: 'POST' })
   return data.setup
 }
 

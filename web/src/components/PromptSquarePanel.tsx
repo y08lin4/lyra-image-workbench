@@ -36,7 +36,7 @@ const viewOptions: Array<{ value: PromptSquareView; label: string; description: 
     label: '我的投稿',
     description: '只看当前登录用户的作品',
     emptyTitle: '你还没有投稿',
-    emptyBody: '从生成结果提交作品后，它们会出现在这里并永久保留。',
+    emptyBody: '从生成结果提交作品后，它们会按当前广场展示策略出现在这里。',
   },
 ]
 
@@ -137,6 +137,7 @@ export function PromptSquarePanel({ onUsePrompt }: PromptSquarePanelProps) {
         runtime.params?.ratio,
         runtime.params?.quality,
         runtime.params?.outputFormat,
+        runtime.params?.actualSize,
         authorName(runtime),
         ...(runtime.tags || []),
       ].join(' ').toLowerCase()
@@ -238,6 +239,7 @@ function PromptSquareCard({
   const runtime = asRuntimeItem(item)
   const title = itemTitle(runtime)
   const ratio = itemParam(runtime, 'ratio')
+  const actualSize = itemParam(runtime, 'actualSize')
   const quality = itemParam(runtime, 'quality')
   const outputFormat = itemParam(runtime, 'outputFormat')
   const likes = likeCount(runtime)
@@ -248,7 +250,7 @@ function PromptSquareCard({
 
   return (
     <article className="prompt-square-card">
-      <div className="prompt-square-image" style={imageAspectStyle(ratio)}>
+      <div className="prompt-square-image" style={imageAspectStyle(actualSize || ratio)}>
         {rank > 0 ? <span className="prompt-square-rank">每日 #{rank}</span> : null}
         {imageUrl ? <img src={imageUrl} alt={title} loading="lazy" /> : <div className="prompt-square-placeholder">Prompt</div>}
       </div>
@@ -348,7 +350,8 @@ function authorName(item: RuntimePromptSquareItem) {
   return item.author?.name?.trim() || item.authorUsername || '匿名用户'
 }
 
-function itemParam(item: RuntimePromptSquareItem, key: 'ratio' | 'quality' | 'outputFormat') {
+function itemParam(item: RuntimePromptSquareItem, key: 'ratio' | 'quality' | 'outputFormat' | 'actualSize') {
+  if (key === 'actualSize') return (item.params?.actualSize || '').trim()
   return (item[key] || item.params?.[key] || '').trim()
 }
 

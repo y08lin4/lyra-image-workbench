@@ -81,7 +81,7 @@
 - 设置页：`web/src/components/SettingsPanel.tsx`
 - 广场：`web/src/components/PromptSquarePanel.tsx`
 - 结果：`web/src/components/ResultCanvas.tsx`
-- 队列：`web/src/components/TaskQueue.tsx`、`web/src/components/TaskSidebar.tsx`
+- 队列/任务侧栏：`web/src/components/TaskSidebar.tsx`（`TaskQueue` 已删除/已清理）
 - 提示词助手：`web/src/components/PromptAssistantModal.tsx`
 - 主题切换：`web/src/components/ThemeToggle.tsx`
 
@@ -689,7 +689,7 @@ FFmpeg 安全备注：
 
 - `web/src/components/ResultCanvas.tsx`
 - `web/src/components/TaskSidebar.tsx`
-- `web/src/components/TaskQueue.tsx`
+- `web/src/components/TaskQueue.tsx`（已删除/已清理，仅作历史记录）
 - `web/src/components/WorkbenchPage.tsx`
 - `web/src/api/promptSquare.ts`
 - `web/src/styles.css`
@@ -846,7 +846,7 @@ FFmpeg 安全备注：
 | Wave 1 | A5 | 待派发 | frontend-engineer | 前端账号、资料、API 文档 | `web/src/types.ts`, `web/src/api/users.ts`, `web/src/api/admin.ts`, `web/src/components/SpaceLogin.tsx`, `web/src/components/SettingsPanel.tsx`, `ProfilePage`, `ApiDocsPage` |
 | Wave 1 | A6 | 待派发 | frontend-engineer | 多主题、暗色模式、提示词助手一级页 | `web/src/main.tsx`, `ThemeToggle`, `PromptAssistantModal`, `WorkbenchPage`, `styles.css`, `themes.ts` |
 | Wave 2 | B1 | 未开始 | frontend-engineer | 广场页面重构 | `PromptSquarePanel`, `promptSquare.ts`, `styles.css` |
-| Wave 2 | B2 | 未开始 | frontend-engineer | 结果和队列合并 | `ResultCanvas`, `TaskSidebar`, `TaskQueue`, `WorkbenchPage`, `styles.css` |
+| Wave 2 | B2 | 未开始 | frontend-engineer | 结果和队列合并 | `ResultCanvas`, `TaskSidebar`, `WorkbenchPage`, `styles.css`（`TaskQueue` 已删除/已清理） |
 | Wave 2 | B3 | 未开始 | frontend-engineer | 充值支付前端 | `billing.ts`, `ProfilePage`, `AdminPage`, `styles.css` |
 | Wave 2 | B4 | 未开始 | frontend-engineer | 管理用户和流水界面 | `AdminPage`, `admin.ts`, `styles.css` |
 | Wave 2 | B5 | 未开始 | frontend-engineer | 前端视频删除 | `WorkbenchPage`, `AdminPage`, `admin.ts`, `types.ts`, `styles.css` |

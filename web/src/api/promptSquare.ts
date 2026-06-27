@@ -1,21 +1,13 @@
 import { requestJson } from './client'
-import type { CreatePromptSquareItemRequest, PromptSquareItem } from '../types'
+import type {
+  CreatePromptSquareItemRequest,
+  PromptSquareItemResponse,
+  PromptSquareItemsResponse,
+  PromptSquareListOptions,
+  SubmitPromptSquareFromResultRequest,
+} from './contracts/promptSquare'
 
-export type PromptSquareListOptions = {
-  sort?: 'latest' | 'daily' | 'mine'
-  mine?: boolean
-  daily?: boolean
-}
-
-type PromptSquareItemsResponse = { ok: boolean; items?: PromptSquareItem[] }
-type PromptSquareItemResponse = { ok: boolean; item?: PromptSquareItem }
-
-export type SubmitPromptSquareFromResultRequest = {
-  taskId: string
-  imageIndex: number
-  title?: string
-  tags?: string[] | string
-}
+export type { PromptSquareListOptions, SubmitPromptSquareFromResultRequest } from './contracts/promptSquare'
 
 export async function listPromptSquareItems(options: PromptSquareListOptions = {}) {
   const data = await requestJson<PromptSquareItemsResponse>(promptSquareListPath(options))

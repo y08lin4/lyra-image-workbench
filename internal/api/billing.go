@@ -134,6 +134,46 @@ func (h BillingHandler) CreateEpayOrder(w http.ResponseWriter, r *http.Request) 
 	})
 }
 
+func (h BillingHandler) GetEpayOrder(w http.ResponseWriter, r *http.Request) {
+	if h.topups == nil {
+		writeError(w, http.StatusServiceUnavailable, "BILLING_STORE_UNAVAILABLE", "充值订单服务未初始化")
+		return
+	}
+	username := strings.TrimSpace(r.Header.Get("X-User-Name"))
+	if username == "" {
+		if session, ok := currentUserSession(h.users, r); ok {
+			username = session.User.Username
+		}
+	}
+	if username == "" {
+		writeError(w, http.StatusUnauthorized, "USER_AUTH_REQUIRED", "请先登录")
+		return
+	}
+	tradeNo := strings.TrimSpace(r.PathValue("tradeNo"))
+	if tradeNo == "" {
+		tradeNo = strings.TrimSpace(r.URL.Query().Get("tradeNo"))
+	}
+	if tradeNo == "" {
+		writeError(w, http.StatusBadRequest, "TOPUP_TRADE_NO_REQUIRED", "缺少充值订单号")
+		return
+	}
+	order, found := h.topups.GetByTradeNo(tradeNo)
+	if !found || order.Username != username {
+		writeError(w, http.StatusNotFound, "TOPUP_ORDER_NOT_FOUND", "充值订单不存在")
+		return
+	}
+	response := topUpResponse(order)
+	if order.Status == billing.TopUpStatusPending && h.settings != nil {
+		cfg := h.settings.Get()
+		if cfg.EpayEnabled && validateBillingConfig(cfg) == nil && epayMethodAllowed(order.Method, cfg.EpayMethods) {
+			if payURL, err := billing.BuildEpayPaymentURL(epayConfigFromRequest(r, cfg), order); err == nil {
+				response.PayURL = payURL
+			}
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "order": response, "tradeNo": response.TradeNo, "status": response.Status})
+}
+
 func (h BillingHandler) Notify(w http.ResponseWriter, r *http.Request) {
 	if h.topups == nil || h.users == nil {
 		writeEpayNotify(w, false)

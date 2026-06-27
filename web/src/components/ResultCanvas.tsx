@@ -10,8 +10,8 @@ type SquareSubmitOptions = { title?: string; tags?: string[] }
 
 type ResultCanvasProps = {
   task?: Task
-  onUseAsReference?: (src: string, index: number) => Promise<void>
-  onUploadPixhost?: (taskId: string, index: number) => Promise<void>
+  onUseAsReference?: (src: string, index: number) => Promise<unknown>
+  onUploadPixhost?: (taskId: string, index: number) => Promise<unknown>
   onOpenGenerate?: () => void
   onReuse?: (task: Task) => void
   onRetry?: (id: string) => void
@@ -35,15 +35,15 @@ export function ResultCanvas({ task, onUseAsReference, onUploadPixhost, onOpenGe
         {task ? <span className={`status-pill ${task.status}`}>{task.statusText} / {task.statusCode}</span> : null}
       </header>
 
-      <p className="result-retention-note">未提交到广场的结果会在 30 天后清理；提交后将永久保留。</p>
+      <p className="result-retention-note">普通结果按当前保留策略处理；提交到广场后会生成用于广场展示的副本。</p>
 
       {!task ? (
         <div className="empty-state">
-          <strong>先到“生成”标签提交任务</strong>
-          <span>提交文生图或图生图后，当前任务的图片、进度和操作会固定显示在这里。刷新页面也能恢复历史结果。</span>
+          <strong>先到“创作画布”提交任务</strong>
+          <span>提交文字生成或参考图生成后，当前任务的图片、进度和操作会固定显示在这里。刷新页面也能恢复历史结果。</span>
           {onOpenGenerate ? (
             <div className="empty-actions">
-              <button type="button" className="primary" onClick={onOpenGenerate}>去生成</button>
+              <button type="button" className="primary" onClick={onOpenGenerate}>去创作画布</button>
             </div>
           ) : null}
         </div>
@@ -145,7 +145,7 @@ function squareDefaultTitle(task: Task, result: TaskResult, index: number) {
 
 function squareDefaultTags(task: Task) {
   return [
-    task.mode === 'image-to-image' ? '图生图' : '文生图',
+    task.mode === 'image-to-image' ? '参考图生成' : '文字生成',
     task.provider || 'image-2',
     task.model || '',
   ].filter(Boolean).slice(0, 6)
@@ -213,8 +213,8 @@ function ResultCard({ task, index, result, submittedToSquare, onUseAsReference, 
   index: number
   result?: TaskResult
   submittedToSquare: boolean
-  onUseAsReference?: (src: string, index: number) => Promise<void>
-  onUploadPixhost?: (taskId: string, index: number) => Promise<void>
+  onUseAsReference?: (src: string, index: number) => Promise<unknown>
+  onUploadPixhost?: (taskId: string, index: number) => Promise<unknown>
   onSubmitToSquare?: (task: Task, result: TaskResult, index: number, options?: SquareSubmitOptions) => Promise<boolean>
 }) {
   const [previewOpen, setPreviewOpen] = useState(false)
@@ -244,7 +244,24 @@ function ResultCard({ task, index, result, submittedToSquare, onUseAsReference, 
         {imageUrl ? (
           <>
             <div className="result-image-frame" style={imageFrameStyle}>
-              <img src={imageUrl} alt={`生成结果 ${index + 1}`} />
+              <img
+                src={imageUrl}
+                alt={`生成结果 ${index + 1}`}
+                draggable
+                onDragStart={(event) => {
+                  event.dataTransfer.effectAllowed = 'copy'
+                  event.dataTransfer.setData('application/x-lyra-history-result', JSON.stringify({
+                    id: `${task.id}:${index}`,
+                    src: imageUrl,
+                    title: `生成结果 ${index + 1}`,
+                    subtitle: `${task.statusText} · #${index + 1}`,
+                    taskId: task.id,
+                    index,
+                    prompt: result.revisedPrompt || task.prompt,
+                  }))
+                  event.dataTransfer.setData('text/plain', imageUrl)
+                }}
+              />
             </div>
             <div className="card-toolbar">
               <button type="button" onClick={() => setPreviewOpen(true)}>预览</button>
@@ -261,10 +278,10 @@ function ResultCard({ task, index, result, submittedToSquare, onUseAsReference, 
                   {result.uploadError ? '重试图床' : '上传图床'}
                 </button>
               ) : null}
-              <button type="button" onClick={() => void useAsReference(imageUrl, index, onUseAsReference, setNotice)}>作为参考图</button>
+              <button type="button" onClick={() => void useAsReference(imageUrl, index, onUseAsReference, setNotice)}>@ 作为参考图</button>
             </div>
             <small className="card-meta">#{index + 1} · {result.elapsedMs ? `${(result.elapsedMs / 1000).toFixed(1)}s` : '完成'} · {formatBytes(result.bytes)}{result.remoteUrl ? ' · 已上传图床' : result.uploadError ? ` · 图床失败：${result.uploadError}` : ''}</small>
-            <small className={`square-retention-state ${submittedToSquare ? 'is-permanent' : ''}`}>{submittedToSquare ? '已提交到广场：永久保留' : '未提交到广场：30 天后清理'}</small>
+            <small className={`square-retention-state ${submittedToSquare ? 'is-square-copy' : ''}`}>{submittedToSquare ? '已提交到广场：广场展示副本' : '普通结果：按当前保留策略处理'}</small>
             {resultParameters(result).length ? (
               <div className="actual-chips" aria-label="上游实际参数">
                 {resultParameters(result).map((item) => <span key={item}>{item}</span>)}
@@ -335,7 +352,7 @@ function SquareSubmitDialog({ task, result, index, imageUrl, submitting, onClose
         <header>
           <div>
             <span>提交到广场</span>
-            <h3 id="square-submit-title">确认永久保留这张结果图</h3>
+            <h3 id="square-submit-title">确认提交这张结果图</h3>
           </div>
           <button type="button" aria-label="关闭" onClick={onClose} disabled={submitting}>×</button>
         </header>
@@ -350,7 +367,7 @@ function SquareSubmitDialog({ task, result, index, imageUrl, submitting, onClose
             </label>
             <label>
               <span>标签</span>
-              <input value={tagInput} onChange={(event) => setTagInput(event.target.value)} placeholder="图生图, gpt-image-2, 1:1" />
+              <input value={tagInput} onChange={(event) => setTagInput(event.target.value)} placeholder="参考图生成, gpt-image-2, 1:1" />
             </label>
             <dl className="square-submit-meta">
               <div><dt>模型</dt><dd>{task.model || 'gpt-image-2'}</dd></div>
@@ -362,7 +379,7 @@ function SquareSubmitDialog({ task, result, index, imageUrl, submitting, onClose
               <span>提示词</span>
               <p>{promptText}</p>
             </div>
-            <p className="square-submit-note">提交后会复制到广场永久目录；未提交结果仍按 30 天清理。</p>
+            <p className="square-submit-note">提交成功后会复制为广场展示副本；普通结果继续按当前保留策略处理。</p>
           </div>
         </div>
         <footer>
@@ -379,7 +396,7 @@ async function submitResultToSquare(task: Task, result: TaskResult, index: numbe
     setSubmittingToSquare(true)
     flash(setNotice, '正在提交到广场...')
     const submitted = await onSubmitToSquare(task, result, index, options)
-    flash(setNotice, submitted ? '已提交到广场，图片将永久保留' : '已取消提交')
+    flash(setNotice, submitted ? '已提交到广场，已生成广场展示副本' : '已取消提交')
     return submitted
   } catch (err) {
     flash(setNotice, err instanceof Error ? err.message : '提交到广场失败')
@@ -389,7 +406,7 @@ async function submitResultToSquare(task: Task, result: TaskResult, index: numbe
   }
 }
 
-async function uploadPixhost(taskId: string, index: number, onUploadPixhost: ((taskId: string, index: number) => Promise<void>) | undefined, setNotice: (value: string) => void) {
+async function uploadPixhost(taskId: string, index: number, onUploadPixhost: ((taskId: string, index: number) => Promise<unknown>) | undefined, setNotice: (value: string) => void) {
   if (!onUploadPixhost) return
   try {
     flash(setNotice, '正在上传图床...')
@@ -400,7 +417,7 @@ async function uploadPixhost(taskId: string, index: number, onUploadPixhost: ((t
   }
 }
 
-async function useAsReference(src: string, index: number, onUseAsReference: ((src: string, index: number) => Promise<void>) | undefined, setNotice: (value: string) => void) {
+async function useAsReference(src: string, index: number, onUseAsReference: ((src: string, index: number) => Promise<unknown>) | undefined, setNotice: (value: string) => void) {
   if (!onUseAsReference) return
   try {
     await onUseAsReference(src, index)
@@ -608,7 +625,7 @@ function taskParameters(task: Task) {
   if (provider === BANANA_PROVIDER) {
     const option = getBananaModelOption(task.model || '')
     return [
-      task.mode === 'image-to-image' ? '图生图' : '文生图',
+      task.mode === 'image-to-image' ? '参考图生成' : '文字生成',
       `模型分组 ${providerLabel(provider)}`,
       `规格 ${option.label}`,
       `模型 ID ${option.id}`,
@@ -618,7 +635,7 @@ function taskParameters(task: Task) {
     ]
   }
   return [
-    task.mode === 'image-to-image' ? '图生图' : '文生图',
+    task.mode === 'image-to-image' ? '参考图生成' : '文字生成',
     `模型分组 ${providerLabel(provider)}`,
     `模型 ${task.model || 'gpt-image-2'}`,
     !task.ratio || task.ratio === 'auto' ? '自动比例' : `比例 ${task.ratio}`,

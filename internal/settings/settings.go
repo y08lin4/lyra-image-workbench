@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/mail"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -29,6 +30,13 @@ type RuntimeConfig struct {
 	CreditPriceCents      int      `json:"creditPriceCents"`
 	MinTopUpCredits       int      `json:"minTopUpCredits"`
 	ReferralRewardCredits int      `json:"referralRewardCredits"`
+	SMTPEnabled           bool     `json:"smtpEnabled"`
+	SMTPHost              string   `json:"smtpHost"`
+	SMTPPort              int      `json:"smtpPort"`
+	SMTPUser              string   `json:"smtpUser"`
+	SMTPPassword          string   `json:"smtpPassword"`
+	SMTPFrom              string   `json:"smtpFrom"`
+	SMTPSecure            bool     `json:"smtpSecure"`
 	NewUserInitialCredits int      `json:"newUserInitialCredits"`
 	DailyFreeCredits      int      `json:"dailyFreeCredits"`
 	UpdatedAt             string   `json:"updatedAt"`
@@ -51,6 +59,15 @@ type PublicRuntimeConfig struct {
 	CreditPriceCents      int                 `json:"creditPriceCents"`
 	MinTopUpCredits       int                 `json:"minTopUpCredits"`
 	ReferralRewardCredits int                 `json:"referralRewardCredits"`
+	SMTPEnabled           bool                `json:"smtpEnabled"`
+	SMTPHost              string              `json:"smtpHost"`
+	SMTPPort              int                 `json:"smtpPort"`
+	SMTPUser              string              `json:"smtpUser"`
+	SMTPPasswordSet       bool                `json:"smtpPasswordSet"`
+	SMTPPasswordPreview   string              `json:"smtpPasswordPreview"`
+	SMTPFrom              string              `json:"smtpFrom"`
+	SMTPSecure            bool                `json:"smtpSecure"`
+	Email                 PublicEmailConfig   `json:"email"`
 	NewUserInitialCredits int                 `json:"newUserInitialCredits"`
 	DailyFreeCredits      int                 `json:"dailyFreeCredits"`
 	Billing               PublicBillingConfig `json:"billing"`
@@ -73,6 +90,17 @@ type PublicBillingConfig struct {
 	DailyFreeCredits      int      `json:"dailyFreeCredits"`
 }
 
+type PublicEmailConfig struct {
+	SMTPEnabled         bool   `json:"smtpEnabled"`
+	SMTPHost            string `json:"smtpHost"`
+	SMTPPort            int    `json:"smtpPort"`
+	SMTPUser            string `json:"smtpUser"`
+	SMTPPasswordSet     bool   `json:"smtpPasswordSet"`
+	SMTPPasswordPreview string `json:"smtpPasswordPreview"`
+	SMTPFrom            string `json:"smtpFrom"`
+	SMTPSecure          bool   `json:"smtpSecure"`
+}
+
 type Limits struct {
 	MinTimeoutSec int `json:"minTimeoutSec"`
 	MaxTimeoutSec int `json:"maxTimeoutSec"`
@@ -93,6 +121,16 @@ type Update struct {
 	CreditPriceCents      *int     `json:"creditPriceCents"`
 	MinTopUpCredits       *int     `json:"minTopUpCredits"`
 	ReferralRewardCredits *int     `json:"referralRewardCredits"`
+	SMTPEnabled           *bool    `json:"smtpEnabled"`
+	SMTPHost              *string  `json:"smtpHost"`
+	SMTPPort              *int     `json:"smtpPort"`
+	SMTPUser              *string  `json:"smtpUser"`
+	SMTPPassword          *string  `json:"smtpPassword"`
+	SMTPPass              *string  `json:"smtpPass"`
+	ClearSMTPPassword     bool     `json:"clearSmtpPassword"`
+	ClearSMTPPass         bool     `json:"clearSmtpPass"`
+	SMTPFrom              *string  `json:"smtpFrom"`
+	SMTPSecure            *bool    `json:"smtpSecure"`
 	NewUserInitialCredits *int     `json:"newUserInitialCredits"`
 	DailyFreeCredits      *int     `json:"dailyFreeCredits"`
 }
@@ -102,6 +140,7 @@ const (
 	DefaultCreditPriceCents      = 10
 	DefaultMinTopUpCredits       = 10
 	DefaultReferralRewardCredits = 0
+	DefaultSMTPPort              = 587
 	DefaultNewUserInitialCredits = 0
 	DefaultDailyFreeCredits      = 0
 )
@@ -146,6 +185,7 @@ func DefaultsFromConfig(cfg config.Config) RuntimeConfig {
 		CreditPriceCents:      DefaultCreditPriceCents,
 		MinTopUpCredits:       DefaultMinTopUpCredits,
 		ReferralRewardCredits: DefaultReferralRewardCredits,
+		SMTPPort:              DefaultSMTPPort,
 		NewUserInitialCredits: DefaultNewUserInitialCredits,
 		DailyFreeCredits:      DefaultDailyFreeCredits,
 		UpdatedAt:             time.Now().Format(time.RFC3339),
@@ -208,6 +248,33 @@ func (s *FileStore) Update(update Update) (RuntimeConfig, error) {
 	}
 	if update.ReferralRewardCredits != nil {
 		next.ReferralRewardCredits = *update.ReferralRewardCredits
+	}
+	if update.SMTPEnabled != nil {
+		next.SMTPEnabled = *update.SMTPEnabled
+	}
+	if update.SMTPHost != nil {
+		next.SMTPHost = strings.TrimSpace(*update.SMTPHost)
+	}
+	if update.SMTPPort != nil {
+		next.SMTPPort = *update.SMTPPort
+	}
+	if update.SMTPUser != nil {
+		next.SMTPUser = strings.TrimSpace(*update.SMTPUser)
+	}
+	if update.ClearSMTPPassword || update.ClearSMTPPass {
+		next.SMTPPassword = ""
+	}
+	if update.SMTPPassword != nil {
+		next.SMTPPassword = strings.TrimSpace(*update.SMTPPassword)
+	}
+	if update.SMTPPass != nil {
+		next.SMTPPassword = strings.TrimSpace(*update.SMTPPass)
+	}
+	if update.SMTPFrom != nil {
+		next.SMTPFrom = strings.TrimSpace(*update.SMTPFrom)
+	}
+	if update.SMTPSecure != nil {
+		next.SMTPSecure = *update.SMTPSecure
 	}
 	if update.NewUserInitialCredits != nil {
 		next.NewUserInitialCredits = *update.NewUserInitialCredits
@@ -278,6 +345,23 @@ func merge(base RuntimeConfig, loaded RuntimeConfig) RuntimeConfig {
 	if loaded.ReferralRewardCredits != 0 {
 		base.ReferralRewardCredits = loaded.ReferralRewardCredits
 	}
+	base.SMTPEnabled = loaded.SMTPEnabled
+	if strings.TrimSpace(loaded.SMTPHost) != "" {
+		base.SMTPHost = loaded.SMTPHost
+	}
+	if loaded.SMTPPort != 0 {
+		base.SMTPPort = loaded.SMTPPort
+	}
+	if strings.TrimSpace(loaded.SMTPUser) != "" {
+		base.SMTPUser = loaded.SMTPUser
+	}
+	if strings.TrimSpace(loaded.SMTPPassword) != "" {
+		base.SMTPPassword = loaded.SMTPPassword
+	}
+	if strings.TrimSpace(loaded.SMTPFrom) != "" {
+		base.SMTPFrom = loaded.SMTPFrom
+	}
+	base.SMTPSecure = loaded.SMTPSecure
 	if loaded.NewUserInitialCredits != 0 {
 		base.NewUserInitialCredits = loaded.NewUserInitialCredits
 	}
@@ -303,6 +387,7 @@ func normalize(value RuntimeConfig) RuntimeConfig {
 			CreditPriceCents:      DefaultCreditPriceCents,
 			MinTopUpCredits:       DefaultMinTopUpCredits,
 			ReferralRewardCredits: DefaultReferralRewardCredits,
+			SMTPPort:              DefaultSMTPPort,
 			UpdatedAt:             time.Now().Format(time.RFC3339),
 		}
 	}
@@ -352,6 +437,26 @@ func validate(value RuntimeConfig) (RuntimeConfig, error) {
 	if value.ReferralRewardCredits < 0 {
 		return RuntimeConfig{}, errors.New("邀请奖励次数不能小于 0")
 	}
+	smtpHost, err := normalizeSMTPHost(value.SMTPHost)
+	if err != nil {
+		return RuntimeConfig{}, err
+	}
+	smtpPort := value.SMTPPort
+	if smtpPort == 0 {
+		smtpPort = DefaultSMTPPort
+	}
+	if smtpPort < 1 || smtpPort > 65535 {
+		return RuntimeConfig{}, errors.New("SMTP 端口必须在 1 到 65535 之间")
+	}
+	smtpUser := strings.TrimSpace(value.SMTPUser)
+	smtpPassword := strings.TrimSpace(value.SMTPPassword)
+	smtpFrom, err := normalizeSMTPFrom(value.SMTPFrom)
+	if err != nil {
+		return RuntimeConfig{}, err
+	}
+	if value.SMTPEnabled && (smtpHost == "" || smtpFrom == "") {
+		return RuntimeConfig{}, errors.New("启用邮件发件前必须填写 SMTP host 和 from")
+	}
 	if value.NewUserInitialCredits < 0 {
 		return RuntimeConfig{}, errors.New("新用户初始免费次数不能小于 0")
 	}
@@ -376,6 +481,13 @@ func validate(value RuntimeConfig) (RuntimeConfig, error) {
 		CreditPriceCents:      creditPriceCents,
 		MinTopUpCredits:       minTopUpCredits,
 		ReferralRewardCredits: value.ReferralRewardCredits,
+		SMTPEnabled:           value.SMTPEnabled,
+		SMTPHost:              smtpHost,
+		SMTPPort:              smtpPort,
+		SMTPUser:              smtpUser,
+		SMTPPassword:          smtpPassword,
+		SMTPFrom:              smtpFrom,
+		SMTPSecure:            value.SMTPSecure,
 		NewUserInitialCredits: value.NewUserInitialCredits,
 		DailyFreeCredits:      value.DailyFreeCredits,
 		UpdatedAt:             strings.TrimSpace(value.UpdatedAt),
@@ -422,6 +534,35 @@ func normalizeOptionalHTTPURL(raw string, label string) (string, error) {
 		return "", fmt.Errorf("%s仅支持 http 或 https", label)
 	}
 	return strings.TrimRight(parsed.String(), "/"), nil
+}
+
+func normalizeSMTPHost(raw string) (string, error) {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return "", nil
+	}
+	if strings.Contains(trimmed, "://") || strings.ContainsAny(trimmed, "/\\") || len(strings.Fields(trimmed)) != 1 {
+		return "", errors.New("SMTP host 只填写主机名或 IP，不要包含协议、路径或空格")
+	}
+	if len(trimmed) > 255 {
+		return "", errors.New("SMTP host 不能超过 255 个字符")
+	}
+	return trimmed, nil
+}
+
+func normalizeSMTPFrom(raw string) (string, error) {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return "", nil
+	}
+	address, err := mail.ParseAddress(trimmed)
+	if err != nil || address.Address == "" || !strings.Contains(address.Address, "@") {
+		return "", errors.New("SMTP from 邮箱格式无效")
+	}
+	if len(address.String()) > 320 {
+		return "", errors.New("SMTP from 不能超过 320 个字符")
+	}
+	return address.String(), nil
 }
 
 func normalizeBaseURL(raw string) (string, error) {
@@ -476,6 +617,7 @@ func MaskSecret(value string) string {
 
 func toPublic(value RuntimeConfig) PublicRuntimeConfig {
 	epayKeyPreview := MaskSecret(value.EpayKey)
+	smtpPasswordPreview := MaskSecret(value.SMTPPassword)
 	billing := PublicBillingConfig{
 		EpayEnabled:           value.EpayEnabled,
 		EpayAPIURL:            value.EpayAPIURL,
@@ -488,6 +630,16 @@ func toPublic(value RuntimeConfig) PublicRuntimeConfig {
 		ReferralRewardCredits: value.ReferralRewardCredits,
 		NewUserInitialCredits: value.NewUserInitialCredits,
 		DailyFreeCredits:      value.DailyFreeCredits,
+	}
+	email := PublicEmailConfig{
+		SMTPEnabled:         value.SMTPEnabled,
+		SMTPHost:            value.SMTPHost,
+		SMTPPort:            value.SMTPPort,
+		SMTPUser:            value.SMTPUser,
+		SMTPPasswordSet:     value.SMTPPassword != "",
+		SMTPPasswordPreview: smtpPasswordPreview,
+		SMTPFrom:            value.SMTPFrom,
+		SMTPSecure:          value.SMTPSecure,
 	}
 	return PublicRuntimeConfig{
 		SiteName:              value.SiteName,
@@ -506,6 +658,15 @@ func toPublic(value RuntimeConfig) PublicRuntimeConfig {
 		CreditPriceCents:      billing.CreditPriceCents,
 		MinTopUpCredits:       billing.MinTopUpCredits,
 		ReferralRewardCredits: billing.ReferralRewardCredits,
+		SMTPEnabled:           email.SMTPEnabled,
+		SMTPHost:              email.SMTPHost,
+		SMTPPort:              email.SMTPPort,
+		SMTPUser:              email.SMTPUser,
+		SMTPPasswordSet:       email.SMTPPasswordSet,
+		SMTPPasswordPreview:   email.SMTPPasswordPreview,
+		SMTPFrom:              email.SMTPFrom,
+		SMTPSecure:            email.SMTPSecure,
+		Email:                 email,
 		NewUserInitialCredits: billing.NewUserInitialCredits,
 		DailyFreeCredits:      billing.DailyFreeCredits,
 		Billing:               billing,

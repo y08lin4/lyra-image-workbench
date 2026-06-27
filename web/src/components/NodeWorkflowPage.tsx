@@ -1,11 +1,58 @@
-import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react'
-import type { CreateTaskRequest, Mode, ModelProvider, ReferenceUpload } from '../types'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import type {
+  ClipboardEvent as ReactClipboardEvent,
+  DragEvent as ReactDragEvent,
+  KeyboardEvent as ReactKeyboardEvent,
+  MouseEvent as ReactMouseEvent,
+  PointerEvent as ReactPointerEvent,
+} from 'react'
+import type { CreateTaskRequest, Mode, ModelProvider, ReferenceUpload, Task } from '../types'
+import { formatError } from '../api/client'
+import { getReferenceUploadBlob } from '../api/uploads'
+import { optimizeCanvasTextPrompt } from './creativeCanvas/promptOptimization'
+import type { CanvasConnection, CanvasContextMenu, CanvasHistoryImage, CanvasInteraction, CanvasItem, ReferenceRole } from './creativeCanvas/types'
+import { REFERENCE_ROLES } from './creativeCanvas/types'
+import {
+  canvasTextPointFromClient,
+  createCanvasTextItem,
+  isCanvasImageItem,
+  isCanvasTextItem,
+  updateCanvasTextItemText,
+} from './creativeCanvas/textItems'
+import {
+  buildReferencePromptLine,
+  clampNumber,
+  createCanvasItemFromHistory,
+  createCanvasItemFromUpload,
+  imageFilesFromClipboard,
+  imageSrcForCanvasItem,
+  isImageFile,
+  referenceIndexForItem,
+  roleMeta,
+  safeParseDragData,
+  unique,
+} from './creativeCanvas/data'
+import {
+  autoItemPosition,
+  canvasControlStyle,
+  canvasItemContentStyle,
+  canvasItemStyle,
+  canvasPointFromClient,
+  dropPointFromEvent,
+  itemCenter,
+  nearestConnectableItem,
+  normalizeRotation,
+  pointerAngleForItem,
+  spreadPoint,
+  updateCanvasItemsForInteraction,
+} from './creativeCanvas/geometry'
+import { aspectRatioValue, canvasImageSizeFromSrc, extensionLabel, modeLabel } from './creativeCanvas/imageSizing'
 import {
   BANANA_MODEL_OPTIONS,
   BANANA_PROVIDER,
   DEFAULT_BANANA_MODEL,
   DEFAULT_IMAGE2_MODEL,
-  getBananaModelForRatio,
+  IMAGE2_PROVIDER,
   getBananaModelOption,
   providerLabel,
 } from '../lib/models'
@@ -19,55 +66,22 @@ import {
   getQualityLabel,
   getResolutionLabel,
 } from '../lib/ratios'
-
-type FlowNodeId = 'input' | 'prompt' | 'model' | 'spec' | 'run' | 'result'
-type FlowStatus = 'ready' | 'todo' | 'active'
-
-type FlowNode = {
-  id: FlowNodeId
-  index: number
-  eyebrow: string
-  title: string
-  purpose: string
-  value: string
-  meta: string[]
-  status: FlowStatus
-  x: number
-  y: number
-  width: number
-  height: number
-  tone: string
-  input?: string
-  output?: string
-}
-
-type FlowEdge = {
-  id: string
-  from: FlowNodeId
-  to: FlowNodeId
-  fromOffsetY?: number
-  toOffsetY?: number
-  label?: string
-}
-
-type WorkflowPreset = {
-  id: string
-  title: string
-  description: string
-  mode: Mode
-  provider: ModelProvider
-  ratio: string
-  resolution: string
-  quality: string
-  outputFormat: string
-  prompt: string
-}
+import {
+  DEFAULT_CONNECTION_LABEL,
+  appendCanvasContextPrompt,
+  appendPromptLine,
+  connectionLabel,
+  normalizeConnectionLabel,
+} from './creativeCanvas/connectionPrompt'
+import './NodeWorkflowPage.css'
 
 export type NodeWorkflowUsePromptOptions = {
   provider: ModelProvider
   model: string
   ratio?: string
 }
+
+export type { CanvasHistoryImage } from './creativeCanvas/types'
 
 export type NodeWorkflowPageProps = {
   provider: ModelProvider
@@ -76,60 +90,16 @@ export type NodeWorkflowPageProps = {
   initialPrompt?: string
   onUsePrompt: (prompt: string, options: NodeWorkflowUsePromptOptions) => void
   onCreateTask?: (payload: CreateTaskRequest) => void | Promise<void>
+  onUploadReferences?: (files: File[]) => Promise<ReferenceUpload[]>
+  onDeleteReferenceUpload?: (id: string) => void | Promise<void>
+  onUseHistoryImageAsReference?: (src: string, index: number) => Promise<ReferenceUpload | undefined>
   referenceUploads?: ReferenceUpload[]
+  recentResults?: CanvasHistoryImage[]
+  latestTask?: Task
 }
 
-const DEFAULT_PROMPT = '一张电影感产品图：透明玻璃相机放在拉丝金属桌面上，柔和侧光，浅景深。'
-const CANVAS_WIDTH = 1168
-const CANVAS_HEIGHT = 536
-
-const WORKFLOW_PRESETS: WorkflowPreset[] = [
-  {
-    id: 'fast-text-to-image',
-    title: '最短文生图',
-    description: '一句提示词直接生成，适合普通用户最快跑通。',
-    mode: 'text-to-image',
-    provider: 'image-2',
-    ratio: '1:1',
-    resolution: 'standard',
-    quality: 'high',
-    outputFormat: 'png',
-    prompt: DEFAULT_PROMPT,
-  },
-  {
-    id: 'product-poster',
-    title: '产品海报',
-    description: '保留商业海报结构，默认竖版、高质量输出。',
-    mode: 'text-to-image',
-    provider: 'image-2',
-    ratio: '2:3',
-    resolution: '2k',
-    quality: 'high',
-    outputFormat: 'png',
-    prompt: '一张高级商业产品海报，主体居中，清晰标题区，干净背景，柔和棚拍光，画面有可读留白。',
-  },
-  {
-    id: 'reference-remix',
-    title: '参考图改写',
-    description: '为图生图准备的流程，先写保留点和变化目标。',
-    mode: 'image-to-image',
-    provider: BANANA_PROVIDER,
-    ratio: 'auto',
-    resolution: 'auto',
-    quality: 'auto',
-    outputFormat: 'auto',
-    prompt: '保留参考图的构图、主体姿态和光线方向，将主题改成未来感产品摄影，画面干净、真实、细节丰富。',
-  },
-]
-
-const FLOW_EDGES: FlowEdge[] = [
-  { id: 'input-prompt', from: 'input', to: 'prompt', label: '整理意图' },
-  { id: 'prompt-model', from: 'prompt', to: 'model', label: '选择模型', fromOffsetY: -28, toOffsetY: -16 },
-  { id: 'prompt-spec', from: 'prompt', to: 'spec', label: '约束规格', fromOffsetY: 30, toOffsetY: 16 },
-  { id: 'model-run', from: 'model', to: 'run', label: '模型' },
-  { id: 'spec-run', from: 'spec', to: 'run', label: '参数' },
-  { id: 'run-result', from: 'run', to: 'result', label: '生成' },
-]
+const HISTORY_DRAG_TYPE = 'application/x-lyra-history-result'
+const UPLOAD_DRAG_TYPE = 'application/x-lyra-reference-upload'
 
 export function NodeWorkflowPage({
   provider,
@@ -138,13 +108,16 @@ export function NodeWorkflowPage({
   initialPrompt,
   onUsePrompt,
   onCreateTask,
+  onUploadReferences,
+  onDeleteReferenceUpload,
+  onUseHistoryImageAsReference,
   referenceUploads = [],
+  recentResults = [],
+  latestTask,
 }: NodeWorkflowPageProps) {
-  const [selectedNodeId, setSelectedNodeId] = useState<FlowNodeId>('prompt')
-  const [selectedPresetId, setSelectedPresetId] = useState(WORKFLOW_PRESETS[0].id)
   const [mode, setMode] = useState<Mode>('text-to-image')
-  const [draftPrompt, setDraftPrompt] = useState(prompt ?? initialPrompt ?? DEFAULT_PROMPT)
-  const [localProvider, setLocalProvider] = useState<ModelProvider>(provider)
+  const [draftPrompt, setDraftPrompt] = useState(prompt ?? initialPrompt ?? '')
+  const [localProvider, setLocalProvider] = useState<ModelProvider>(provider || IMAGE2_PROVIDER)
   const [localBananaModel, setLocalBananaModel] = useState(bananaModel || DEFAULT_BANANA_MODEL)
   const [ratio, setRatio] = useState('1:1')
   const [resolution, setResolution] = useState('standard')
@@ -154,9 +127,31 @@ export function NodeWorkflowPage({
   const [concurrency, setConcurrency] = useState(1)
   const [message, setMessage] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [previewUrls, setPreviewUrls] = useState<Record<string, string>>({})
+  const [canvasItems, setCanvasItems] = useState<CanvasItem[]>([])
+  const [connections, setConnections] = useState<CanvasConnection[]>([])
+  const [selectedItemId, setSelectedItemId] = useState<string | null>(null)
+  const [connectionDraftFrom, setConnectionDraftFrom] = useState<string | null>(null)
+  const [editingConnectionId, setEditingConnectionId] = useState<string | null>(null)
+  const [connectionLabelDraft, setConnectionLabelDraft] = useState('')
+  const [contextMenu, setContextMenu] = useState<CanvasContextMenu | null>(null)
+  const [isDropActive, setIsDropActive] = useState(false)
+  const [interaction, setInteraction] = useState<CanvasInteraction | null>(null)
+  const [deletingUploadId, setDeletingUploadId] = useState<string | null>(null)
+  const [editingTextItemId, setEditingTextItemId] = useState<string | null>(null)
+  const [optimizingTextItemId, setOptimizingTextItemId] = useState<string | null>(null)
+
+  const stageRef = useRef<HTMLElement | null>(null)
+  const promptTextareaRef = useRef<HTMLTextAreaElement | null>(null)
+  const textEditorRefs = useRef<Record<string, HTMLTextAreaElement | null>>({})
+  const canvasItemsRef = useRef<CanvasItem[]>([])
+  const pastePointRef = useRef<{ x: number; y: number }>(autoItemPosition(0))
+  const localPreviewUrlsRef = useRef<string[]>([])
+  const autofocusedTextItemIdRef = useRef<string | null>(null)
+  const canvasDropDepthRef = useRef(0)
 
   useEffect(() => {
-    setLocalProvider(provider)
+    setLocalProvider(provider || IMAGE2_PROVIDER)
   }, [provider])
 
   useEffect(() => {
@@ -167,6 +162,126 @@ export function NodeWorkflowPage({
     if (prompt !== undefined) setDraftPrompt(prompt)
   }, [prompt])
 
+
+  useEffect(() => {
+    let disposed = false
+    const created: string[] = []
+
+    async function loadPreviews() {
+      const entries = await Promise.all(referenceUploads.map(async (item) => {
+        try {
+          const blob = await getReferenceUploadBlob(item.id)
+          const url = URL.createObjectURL(blob)
+          created.push(url)
+          return [item.id, url] as const
+        } catch {
+          return [item.id, ''] as const
+        }
+      }))
+      if (disposed) {
+        created.forEach((url) => URL.revokeObjectURL(url))
+        return
+      }
+      setPreviewUrls(Object.fromEntries(entries))
+    }
+
+    void loadPreviews()
+    return () => {
+      disposed = true
+      created.forEach((url) => URL.revokeObjectURL(url))
+    }
+  }, [referenceUploads])
+
+  useEffect(() => {
+    if (!referenceUploads.length) return
+    const firstUpload = referenceUploads[0]
+    if (!(firstUpload.id in previewUrls)) return
+    let disposed = false
+
+    async function addInitialReference() {
+      const size = await canvasImageSizeFromSrc(previewUrls[firstUpload.id])
+      if (disposed) return
+      setCanvasItems((items) => {
+        if (items.length) return items
+        return [createCanvasItemFromUpload(firstUpload, { x: 88, y: 82 }, 0, undefined, size)]
+      })
+    }
+
+    void addInitialReference()
+    return () => {
+      disposed = true
+    }
+  }, [previewUrls, referenceUploads])
+
+  useEffect(() => () => {
+    localPreviewUrlsRef.current.forEach((url) => URL.revokeObjectURL(url))
+  }, [])
+
+  useEffect(() => {
+    canvasItemsRef.current = canvasItems
+  }, [canvasItems])
+
+  useEffect(() => {
+    if (!interaction) return
+    const handlePointerMove = (event: PointerEvent) => {
+      const nextItems = updateCanvasItemsForInteraction(canvasItemsRef.current, interaction, event, stageRef.current)
+      canvasItemsRef.current = nextItems
+      setCanvasItems(nextItems)
+    }
+    const handlePointerUp = (event: PointerEvent) => {
+      const nextItems = updateCanvasItemsForInteraction(canvasItemsRef.current, interaction, event, stageRef.current)
+      const wasDragged = Math.hypot(event.clientX - interaction.startClientX, event.clientY - interaction.startClientY) > 2
+      canvasItemsRef.current = nextItems
+      setCanvasItems(nextItems)
+      if (interaction.type === 'move' && wasDragged) {
+        const nearest = nearestConnectableItem(nextItems, interaction.itemId)
+        if (nearest) addConnection(interaction.itemId, nearest.id)
+      }
+      setInteraction(null)
+    }
+    const handlePointerCancel = () => setInteraction(null)
+    window.addEventListener('pointermove', handlePointerMove)
+    window.addEventListener('pointerup', handlePointerUp)
+    window.addEventListener('pointercancel', handlePointerCancel)
+    return () => {
+      window.removeEventListener('pointermove', handlePointerMove)
+      window.removeEventListener('pointerup', handlePointerUp)
+      window.removeEventListener('pointercancel', handlePointerCancel)
+    }
+  }, [interaction])
+
+  useEffect(() => {
+    if (!contextMenu) return
+    const close = () => setContextMenu(null)
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') close()
+    }
+    window.addEventListener('click', close)
+    window.addEventListener('keydown', closeOnEscape)
+    return () => {
+      window.removeEventListener('click', close)
+      window.removeEventListener('keydown', closeOnEscape)
+    }
+  }, [contextMenu])
+
+  useEffect(() => {
+    if (!editingTextItemId || typeof window === 'undefined') {
+      autofocusedTextItemIdRef.current = null
+      return
+    }
+    if (autofocusedTextItemIdRef.current === editingTextItemId) return
+    autofocusedTextItemIdRef.current = editingTextItemId
+
+    const frame = window.requestAnimationFrame(() => {
+      const editor = textEditorRefs.current[editingTextItemId]
+      if (!editor || document.activeElement === editor) return
+      editor.focus({ preventScroll: true })
+      const end = editor.value.length
+      editor.setSelectionRange(end, end)
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [editingTextItemId])
+
   const bananaOption = useMemo(() => getBananaModelOption(localBananaModel), [localBananaModel])
   const selectedModel = localProvider === BANANA_PROVIDER ? bananaOption.id : DEFAULT_IMAGE2_MODEL
   const effectiveRatio = localProvider === BANANA_PROVIDER ? bananaOption.ratio : ratio
@@ -175,23 +290,40 @@ export function NodeWorkflowPage({
   const effectiveOutputFormat = localProvider === BANANA_PROVIDER ? 'auto' : outputFormat
   const imageSize = localProvider === BANANA_PROVIDER ? bananaOption.size : getImageSize(ratio, resolution)
   const trimmedPrompt = draftPrompt.trim()
-  const canUsePrompt = trimmedPrompt.length > 0
-  const selectedPreset = WORKFLOW_PRESETS.find((item) => item.id === selectedPresetId) ?? WORKFLOW_PRESETS[0]
-  const referenceUploadIds = useMemo(() => referenceUploads.map((item) => item.id), [referenceUploads])
-  const hasReferenceUploads = referenceUploadIds.length > 0
+  const selectedItem = useMemo(() => canvasItems.find((item) => item.id === selectedItemId), [canvasItems, selectedItemId])
+  const selectedImageItem = useMemo(() => (isCanvasImageItem(selectedItem) ? selectedItem : null), [selectedItem])
+  const selectedTextItem = useMemo(() => (isCanvasTextItem(selectedItem) ? selectedItem : null), [selectedItem])
+  const referenceCanvasItems = useMemo(() => canvasItems.filter(isCanvasImageItem).filter((item) => item.isReference), [canvasItems])
+  const canvasTextPromptItems = useMemo(() => canvasItems.filter(isCanvasTextItem).filter((item) => item.text.trim().length > 0), [canvasItems])
+  const markedUploadIds = useMemo(() => unique(referenceCanvasItems.map((item) => item.uploadId).filter((id): id is string => Boolean(id))), [referenceCanvasItems])
+  const taskUploadIds = mode === 'image-to-image' ? markedUploadIds : []
+  const hasCanvasPromptContent = trimmedPrompt.length > 0 || canvasTextPromptItems.length > 0 || connections.length > 0
+  const submissionPrompt = useMemo(() => appendCanvasContextPrompt(trimmedPrompt, canvasItems, connections), [canvasItems, connections, trimmedPrompt])
+  const trimmedSubmissionPrompt = submissionPrompt.trim()
+
+  const canCreateTask = hasCanvasPromptContent && (mode === 'text-to-image' || taskUploadIds.length > 0)
+  const latestOkResult = useMemo(() => {
+    const okResults = latestTask?.results.filter((item) => item.ok && item.imageUrl) || []
+    return okResults[okResults.length - 1]
+  }, [latestTask])
+  const selectedItemPreview = selectedImageItem ? imageSrcForCanvasItem(selectedImageItem, previewUrls) : ''
+  const renderPreviewSrc = latestOkResult?.imageUrl || selectedItemPreview
+  const visibleReferences = referenceUploads.slice(0, 10)
+  const visibleHistory = recentResults.slice(0, 12)
+  const contextMenuItem = contextMenu?.target === 'item' ? canvasItems.find((item) => item.id === contextMenu.itemId) : null
 
   const taskPayload = useMemo<CreateTaskRequest>(() => ({
     provider: localProvider,
     model: selectedModel,
     mode,
-    prompt: trimmedPrompt,
+    prompt: trimmedSubmissionPrompt,
     ratio: effectiveRatio,
     resolution: effectiveResolution,
     quality: effectiveQuality,
     outputFormat: effectiveOutputFormat,
     count,
     concurrency,
-    uploadIds: mode === 'image-to-image' ? referenceUploadIds : [],
+    uploadIds: taskUploadIds,
   }), [
     concurrency,
     count,
@@ -201,520 +333,834 @@ export function NodeWorkflowPage({
     effectiveResolution,
     localProvider,
     mode,
-    referenceUploadIds,
     selectedModel,
-    trimmedPrompt,
+    trimmedSubmissionPrompt,
+    taskUploadIds,
   ])
 
-  const flowNodes = useMemo<FlowNode[]>(() => [
-    {
-      id: 'input',
-      index: 1,
-      eyebrow: 'INPUT',
-      title: mode === 'image-to-image' ? '参考图与目标' : '创作目标',
-      purpose: mode === 'image-to-image' ? '准备参考图，并说明保留什么、改变什么。' : '先把用户真实想做的图说清楚。',
-      value: mode === 'image-to-image' ? (hasReferenceUploads ? `已接入 ${referenceUploadIds.length} 张参考图` : '需要先在生成页上传参考图') : '纯文本生成，不需要素材',
-      meta: [mode === 'image-to-image' ? (hasReferenceUploads ? `${referenceUploadIds.length} 张参考图` : '需要参考图') : '最快路径', '用户输入'],
-      status: mode === 'image-to-image' ? (hasReferenceUploads ? 'ready' : 'todo') : 'ready',
-      x: 34,
-      y: 214,
-      width: 176,
-      height: 150,
-      tone: '#64748b',
-      output: 'intent',
-    },
-    {
-      id: 'prompt',
-      index: 2,
-      eyebrow: 'PROMPT',
-      title: '提示词整理',
-      purpose: '把一句话变成可直接提交的生成描述。',
-      value: trimmedPrompt || '还没有提示词',
-      meta: [`${trimmedPrompt.length} 字符`, canUsePrompt ? '可提交' : '缺失'],
-      status: canUsePrompt ? 'ready' : 'todo',
-      x: 248,
-      y: 150,
-      width: 220,
-      height: 226,
-      tone: '#2563eb',
-      input: 'intent',
-      output: 'prompt',
-    },
-    {
-      id: 'model',
-      index: 3,
-      eyebrow: 'MODEL',
-      title: '模型路由',
-      purpose: '决定走 Image-2 还是 Banana。',
-      value: providerLabel(localProvider),
-      meta: [compactModelId(selectedModel), localProvider],
-      status: 'ready',
-      x: 512,
-      y: 70,
-      width: 190,
-      height: 160,
-      tone: '#7c3aed',
-      input: 'prompt',
-      output: 'model',
-    },
-    {
-      id: 'spec',
-      index: 4,
-      eyebrow: 'SPEC',
-      title: '图片规格',
-      purpose: '把比例、清晰度、质量和格式固定下来。',
-      value: imageSize,
-      meta: [effectiveRatio, effectiveResolution, effectiveQuality],
-      status: 'ready',
-      x: 512,
-      y: 306,
-      width: 190,
-      height: 164,
-      tone: '#0891b2',
-      input: 'prompt',
-      output: 'spec',
-    },
-    {
-      id: 'run',
-      index: 5,
-      eyebrow: 'RUN',
-      title: '创建任务',
-      purpose: '把所有节点参数合并成一次后台任务。',
-      value: `${count} 张图 / 并发 ${concurrency}`,
-      meta: [onCreateTask ? '已接入任务队列' : '仅预览 payload', effectiveOutputFormat],
-      status: canUsePrompt ? 'active' : 'todo',
-      x: 744,
-      y: 192,
-      width: 196,
-      height: 184,
-      tone: '#ea580c',
-      input: 'model + spec',
-      output: 'task',
-    },
-    {
-      id: 'result',
-      index: 6,
-      eyebrow: 'RESULT',
-      title: '结果页查看',
-      purpose: '任务创建后进入结果页，看状态、任务 ID 和生成图。',
-      value: '提交后自动跳转结果页',
-      meta: ['任务历史', '可复用'],
-      status: 'todo',
-      x: 982,
-      y: 214,
-      width: 154,
-      height: 150,
-      tone: '#16a34a',
-      input: 'task',
-    },
-  ], [
-    canUsePrompt,
-    concurrency,
-    count,
-    effectiveOutputFormat,
-    effectiveQuality,
-    effectiveRatio,
-    effectiveResolution,
-    hasReferenceUploads,
-    imageSize,
-    localProvider,
-    mode,
-    referenceUploadIds,
-    onCreateTask,
-    referenceUploadIds.length,
-    selectedModel,
-    trimmedPrompt,
-  ])
-
-  const nodesById = useMemo(() => new Map(flowNodes.map((node) => [node.id, node])), [flowNodes])
-  const selectedNode = nodesById.get(selectedNodeId) ?? flowNodes[1]
-  const readyCount = flowNodes.filter((node) => node.status === 'ready' || node.status === 'active').length
-
-  function applyPreset(preset: WorkflowPreset) {
-    setSelectedPresetId(preset.id)
-    setMode(preset.mode)
-    setLocalProvider(preset.provider)
-    if (preset.provider === BANANA_PROVIDER) {
-      setLocalBananaModel(getBananaModelForRatio(preset.ratio, preset.resolution).id)
-    } else {
-      setRatio(preset.ratio)
-      setResolution(preset.resolution)
-      setQuality(preset.quality)
-      setOutputFormat(preset.outputFormat)
-    }
-    setDraftPrompt(preset.prompt)
-    setSelectedNodeId('prompt')
-    setMessage(`已切换到：${preset.title}`)
-  }
-
-  function useWorkflowPrompt() {
-    if (!canUsePrompt) {
-      setMessage('请先填写提示词，再应用到生成页。')
+  function useCanvasPrompt() {
+    if (!hasCanvasPromptContent || !trimmedSubmissionPrompt) {
+      setMessage('先写一句提示词，或在画布里添加文字块/连线。')
       return
     }
-    onUsePrompt(trimmedPrompt, {
-      provider: localProvider,
-      model: selectedModel,
-      ratio: effectiveRatio || undefined,
-    })
-    setMessage(`已应用到生成页：${providerLabel(localProvider)}`)
+    onUsePrompt(trimmedSubmissionPrompt, { provider: localProvider, model: selectedModel, ratio: effectiveRatio || undefined })
+    setMessage('已同步到快捷生成页。')
   }
 
-  async function createWorkflowTask() {
-    if (!canUsePrompt) {
-      setMessage('请先填写提示词，再创建任务。')
-      setSelectedNodeId('prompt')
+  async function createCanvasTask() {
+    if (!hasCanvasPromptContent || !trimmedSubmissionPrompt) {
+      setMessage('先写一句提示词，或在画布里添加文字块/连线。')
       return
     }
-    if (mode === 'image-to-image' && !hasReferenceUploads) {
-      setMessage('图生图节点会使用生成页已上传的参考图，请先到生成页上传参考图。')
-      setSelectedNodeId('input')
+    if (mode === 'image-to-image' && taskUploadIds.length === 0) {
+      setMessage('参考图生成需要先上传图片，或从历史结果选择至少一张参考图。')
       return
     }
     if (!onCreateTask) {
-      setMessage('任务创建回调尚未接入；下方可查看 payload 摘要。')
-      setSelectedNodeId('run')
+      setMessage('当前页面还没有接入任务创建回调。')
       return
     }
 
     setIsSubmitting(true)
-    setSelectedNodeId('run')
     setMessage('')
     try {
       await onCreateTask(taskPayload)
-      setMessage('任务已创建，正在进入结果页。')
+      setMessage('任务已创建，右侧预览会跟随当前结果更新。')
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : '节点工作流任务创建失败。')
+      setMessage(error instanceof Error ? error.message : '创建任务失败。')
     } finally {
       setIsSubmitting(false)
     }
   }
 
+  async function resolveUploadPreviewUrl(uploadId: string) {
+    const current = previewUrls[uploadId]
+    if (current) return { src: current, localPreviewUrl: undefined }
+    try {
+      const blob = await getReferenceUploadBlob(uploadId)
+      const url = URL.createObjectURL(blob)
+      localPreviewUrlsRef.current.push(url)
+      setPreviewUrls((items) => ({ ...items, [uploadId]: url }))
+      return { src: url, localPreviewUrl: url }
+    } catch {
+      return { src: '', localPreviewUrl: undefined }
+    }
+  }
+
+  async function addUploadToCanvas(upload: ReferenceUpload, point?: { x: number; y: number }) {
+    const index = canvasItems.length
+    const preview = await resolveUploadPreviewUrl(upload.id)
+    const size = await canvasImageSizeFromSrc(preview.src)
+    const item = createCanvasItemFromUpload(upload, point || autoItemPosition(index), index, preview.localPreviewUrl, size)
+    setCanvasItems((items) => [...items, item])
+    setSelectedItemId(item.id)
+    setMode('image-to-image')
+    setMessage('已加入画布参考。')
+  }
+
+  async function addFilesToCanvas(files: File[], point: { x: number; y: number }) {
+    const imageFiles = files.filter(isImageFile)
+    if (!imageFiles.length) {
+      setMessage('只能拖入 PNG、JPG 或 WEBP 图片。')
+      return
+    }
+    if (!onUploadReferences) {
+      setMessage('当前页面还没有接入参考图上传。')
+      return
+    }
+    try {
+      const localUrls = imageFiles.map((file) => {
+        const url = URL.createObjectURL(file)
+        localPreviewUrlsRef.current.push(url)
+        return url
+      })
+      const sizePromises = localUrls.map((url) => canvasImageSizeFromSrc(url))
+      const [created, sizes] = await Promise.all([onUploadReferences(imageFiles), Promise.all(sizePromises)])
+      if (!created.length) return
+      const nextItems = created.map((upload, index) => createCanvasItemFromUpload(upload, spreadPoint(point, index), canvasItems.length + index, localUrls[index], sizes[index]))
+      setCanvasItems((items) => [...items, ...nextItems])
+      setSelectedItemId(nextItems[0].id)
+      setMode('image-to-image')
+      setMessage(`已加入 ${created.length} 张参考图。`)
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : '参考图上传失败。')
+    }
+  }
+
+  async function addHistoryImageToCanvas(image: CanvasHistoryImage, point: { x: number; y: number }) {
+    try {
+      const uploadPromise = onUseHistoryImageAsReference
+        ? onUseHistoryImageAsReference(image.src, image.index)
+        : Promise.resolve(undefined)
+      const [upload, size] = await Promise.all([uploadPromise, canvasImageSizeFromSrc(image.src)])
+      const item = createCanvasItemFromHistory(image, point, canvasItems.length, upload, size)
+      setCanvasItems((items) => [...items, item])
+      setSelectedItemId(item.id)
+      setMode('image-to-image')
+      setMessage('历史结果已加入画布参考。')
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : '加入历史结果失败。')
+    }
+  }
+
+  async function deleteReferenceUploadFromStrip(event: ReactMouseEvent<HTMLButtonElement>, upload: ReferenceUpload) {
+    event.preventDefault()
+    event.stopPropagation()
+    if (!onDeleteReferenceUpload || deletingUploadId) return
+    setDeletingUploadId(upload.id)
+    try {
+      await onDeleteReferenceUpload(upload.id)
+      const removedIds = new Set(canvasItems.filter(isCanvasImageItem).filter((item) => item.uploadId === upload.id).map((item) => item.id))
+      setCanvasItems((items) => items.filter((item) => !isCanvasImageItem(item) || item.uploadId !== upload.id))
+      setConnections((items) => items.filter((item) => !removedIds.has(item.fromId) && !removedIds.has(item.toId)))
+      setSelectedItemId((current) => (current && removedIds.has(current) ? null : current))
+      setConnectionDraftFrom((current) => (current && removedIds.has(current) ? null : current))
+      setMessage('参考图已删除。')
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : '删除参考图失败。')
+    } finally {
+      setDeletingUploadId(null)
+    }
+  }
+
+  function shouldHandleCanvasDrop(event: ReactDragEvent<HTMLElement>) {
+    const types = Array.from(event.dataTransfer.types || [])
+    if (types.includes('Files') || types.includes(UPLOAD_DRAG_TYPE) || types.includes(HISTORY_DRAG_TYPE) || types.includes('text/uri-list')) return true
+    if (!types.includes('text/plain')) return false
+    const target = event.target as HTMLElement | null
+    return !target?.closest('textarea,input,[contenteditable="true"]')
+  }
+
+  function handleCanvasDragEnter(event: ReactDragEvent<HTMLElement>) {
+    if (!shouldHandleCanvasDrop(event)) return
+    event.preventDefault()
+    canvasDropDepthRef.current += 1
+    setIsDropActive(true)
+  }
+
+  function handleCanvasDragOver(event: ReactDragEvent<HTMLElement>) {
+    if (!shouldHandleCanvasDrop(event)) return
+    event.preventDefault()
+    event.dataTransfer.dropEffect = 'copy'
+    setIsDropActive(true)
+  }
+
+  function handleCanvasDragLeave(event: ReactDragEvent<HTMLElement>) {
+    if (!shouldHandleCanvasDrop(event)) return
+    event.preventDefault()
+    canvasDropDepthRef.current = Math.max(0, canvasDropDepthRef.current - 1)
+    if (canvasDropDepthRef.current === 0) setIsDropActive(false)
+  }
+
+  function handleCanvasDrop(event: ReactDragEvent<HTMLElement>) {
+    if (!shouldHandleCanvasDrop(event)) return
+    event.preventDefault()
+    event.stopPropagation()
+    canvasDropDepthRef.current = 0
+    setIsDropActive(false)
+    const point = dropPointFromEvent(event, stageRef.current)
+    const files = Array.from(event.dataTransfer.files || [])
+    if (files.length) {
+      void addFilesToCanvas(files, point)
+      return
+    }
+
+    const uploadPayload = event.dataTransfer.getData(UPLOAD_DRAG_TYPE)
+    if (uploadPayload) {
+      const uploadId = safeParseDragData<{ uploadId: string }>(uploadPayload)?.uploadId
+      const upload = referenceUploads.find((item) => item.id === uploadId)
+      if (upload) void addUploadToCanvas(upload, point)
+      return
+    }
+
+    const historyPayload = event.dataTransfer.getData(HISTORY_DRAG_TYPE)
+    if (historyPayload) {
+      const image = safeParseDragData<CanvasHistoryImage>(historyPayload)
+      if (image?.src) void addHistoryImageToCanvas(image, point)
+      return
+    }
+
+    const uri = draggedUri(event.dataTransfer)
+    if (uri) {
+      void addHistoryImageToCanvas({ id: `external-${Date.now()}`, src: uri, title: '外部图片', subtitle: '拖入图片', index: 0 }, point)
+    }
+  }
+
+  function draggedUri(dataTransfer: DataTransfer) {
+    const value = dataTransfer.getData('text/uri-list') || dataTransfer.getData('text/plain')
+    return value.split(/\r?\n/).map((line) => line.trim()).find((line) => /^https?:\/\//i.test(line)) || ''
+  }
+
+  function handleStagePointerDown(event: ReactPointerEvent<HTMLElement>) {
+    if (event.target !== event.currentTarget) return
+    pastePointRef.current = canvasPointFromClient(event.clientX, event.clientY, stageRef.current)
+    stageRef.current?.focus({ preventScroll: true })
+  }
+
+  function handleStagePaste(event: ReactClipboardEvent<HTMLElement>) {
+    const imageFiles = imageFilesFromClipboard(event.clipboardData)
+    if (!imageFiles.length) return
+    event.preventDefault()
+    void addFilesToCanvas(imageFiles, pastePointRef.current)
+  }
+
+  function handleStageContextMenu(event: ReactMouseEvent<HTMLElement>) {
+    const target = event.target as HTMLElement
+    if (event.target !== event.currentTarget && !target.closest('.creative-canvas-empty')) return
+    event.preventDefault()
+    event.stopPropagation()
+    const point = canvasTextPointFromClient(event.clientX, event.clientY, stageRef.current)
+    setSelectedItemId(null)
+    setContextMenu({ target: 'stage', point, x: event.clientX, y: event.clientY })
+  }
+
+  function addTextItemToCanvas(point: { x: number; y: number }) {
+    const item = createCanvasTextItem(point, canvasItems.length)
+    setCanvasItems((items) => [...items, item])
+    setSelectedItemId(item.id)
+    setEditingTextItemId(item.id)
+    setContextMenu(null)
+    setMessage('已新建文字块。')
+  }
+
+  function setTextEditorRef(itemId: string, node: HTMLTextAreaElement | null) {
+    if (node) textEditorRefs.current[itemId] = node
+    else delete textEditorRefs.current[itemId]
+  }
+
+  function updateTextItem(itemId: string, text: string) {
+    setCanvasItems((items) => updateCanvasTextItemText(items, itemId, text))
+  }
+
+  async function optimizeTextItem(itemId: string) {
+    const item = canvasItems.find((entry) => entry.id === itemId)
+    if (!isCanvasTextItem(item)) return
+    if (!item.text.trim()) {
+      setMessage('文字块为空，无法优化提示词。')
+      return
+    }
+    setOptimizingTextItemId(itemId)
+    setMessage('正在优化文字提示词...')
+    try {
+      const optimizedPrompt = await optimizeCanvasTextPrompt(item.text, { ratio: effectiveRatio })
+      setCanvasItems((items) => updateCanvasTextItemText(items, itemId, optimizedPrompt))
+      setEditingTextItemId(null)
+      setMessage('文字提示词已优化。')
+    } catch (error) {
+      setMessage(formatError(error, '优化提示词失败。'))
+    } finally {
+      setOptimizingTextItemId(null)
+    }
+  }
+
+  function handleItemPointerDown(event: ReactPointerEvent<HTMLElement>, item: CanvasItem, type: CanvasInteraction['type']) {
+    event.preventDefault()
+    event.stopPropagation()
+    setSelectedItemId(item.id)
+    setContextMenu(null)
+    canvasItemsRef.current = canvasItems
+    const origin = { x: item.x, y: item.y, width: item.width, height: item.height, rotation: item.rotation }
+    setInteraction({
+      itemId: item.id,
+      type,
+      startClientX: event.clientX,
+      startClientY: event.clientY,
+      startAngle: type === 'rotate' ? pointerAngleForItem(item, event.clientX, event.clientY, stageRef.current) : undefined,
+      origin,
+    })
+  }
+
+  function handleItemClick(event: ReactMouseEvent<HTMLElement>, item: CanvasItem) {
+    event.stopPropagation()
+    if (connectionDraftFrom && connectionDraftFrom !== item.id) {
+      if (isCanvasImageItem(item)) addConnection(connectionDraftFrom, item.id)
+      setConnectionDraftFrom(null)
+      return
+    }
+    setSelectedItemId(item.id)
+  }
+
+  function handleItemContextMenu(event: ReactMouseEvent<HTMLElement>, itemId: string) {
+    event.preventDefault()
+    event.stopPropagation()
+    setSelectedItemId(itemId)
+    setContextMenu({ target: 'item', itemId, x: event.clientX, y: event.clientY })
+  }
+
+  function focusPromptTextarea() {
+    if (typeof window === 'undefined') return
+    window.requestAnimationFrame(() => {
+      const textarea = promptTextareaRef.current
+      if (!textarea) return
+      textarea.focus()
+      const end = textarea.value.length
+      textarea.setSelectionRange(end, end)
+    })
+  }
+
+  function appendReferenceLineToPrompt(itemId: string) {
+    const item = canvasItems.find((entry) => entry.id === itemId)
+    if (!isCanvasImageItem(item)) return
+    const index = referenceIndexForItem(canvasItems, itemId)
+    const line = buildReferencePromptLine(index)
+    setDraftPrompt((current) => appendPromptLine(current, line))
+    focusPromptTextarea()
+    setMessage(`已写入提示词：@${index}`)
+  }
+
+  function markItemAsReference(itemId: string, role?: ReferenceRole, options?: { appendPrompt?: boolean }) {
+    setCanvasItems((items) => items.map((item) => (
+      isCanvasImageItem(item) && item.id === itemId ? { ...item, isReference: true, role: role || item.role } : item
+    )))
+    setMode('image-to-image')
+    if (options?.appendPrompt) appendReferenceLineToPrompt(itemId)
+  }
+
+  function setItemRole(itemId: string, role: ReferenceRole) {
+    setCanvasItems((items) => items.map((item) => (
+      isCanvasImageItem(item) && item.id === itemId ? { ...item, role, isReference: true } : item
+    )))
+    setMode('image-to-image')
+  }
+
+  function toggleItemReference(itemId: string) {
+    setCanvasItems((items) => items.map((item) => (
+      isCanvasImageItem(item) && item.id === itemId ? { ...item, isReference: !item.isReference } : item
+    )))
+  }
+
+  function rotateSelected(delta: number) {
+    if (!selectedItemId) return
+    setCanvasItems((items) => items.map((item) => (
+      item.id === selectedItemId ? { ...item, rotation: normalizeRotation(item.rotation + delta) } : item
+    )))
+  }
+
+  function removeItem(itemId: string) {
+    setCanvasItems((items) => items.filter((item) => item.id !== itemId))
+    setConnections((items) => items.filter((item) => item.fromId !== itemId && item.toId !== itemId))
+    setSelectedItemId((current) => (current === itemId ? null : current))
+    setConnectionDraftFrom((current) => (current === itemId ? null : current))
+    setEditingTextItemId((current) => (current === itemId ? null : current))
+    setOptimizingTextItemId((current) => (current === itemId ? null : current))
+    setEditingConnectionId((current) => {
+      const editingConnection = connections.find((item) => item.id === current)
+      return editingConnection?.fromId === itemId || editingConnection?.toId === itemId ? null : current
+    })
+    setContextMenu(null)
+  }
+
+  function addConnection(fromId: string, toId: string) {
+    setConnections((items) => {
+      const exists = items.some((item) => (
+        (item.fromId === fromId && item.toId === toId) || (item.fromId === toId && item.toId === fromId)
+      ))
+      if (exists) return items
+      return [...items, { id: `${fromId}-${toId}-${Date.now()}`, fromId, toId, label: DEFAULT_CONNECTION_LABEL, text: DEFAULT_CONNECTION_LABEL }]
+    })
+  }
+
+  function beginConnectionLabelEdit(event: ReactMouseEvent<HTMLButtonElement>, connection: CanvasConnection) {
+    event.preventDefault()
+    event.stopPropagation()
+    setEditingConnectionId(connection.id)
+    setConnectionLabelDraft(connectionLabel(connection))
+  }
+
+  function saveConnectionLabel(connectionId: string) {
+    const label = normalizeConnectionLabel(connectionLabelDraft)
+    setConnections((items) => items.map((item) => (
+      item.id === connectionId ? { ...item, label, text: label } : item
+    )))
+    setEditingConnectionId(null)
+    setConnectionLabelDraft('')
+  }
+
+  function handleConnectionLabelKeyDown(event: ReactKeyboardEvent<HTMLInputElement>, _connectionId: string) {
+    if (event.key !== 'Enter') return
+    event.preventDefault()
+    event.currentTarget.blur()
+  }
+
+  function clearCanvas() {
+    setCanvasItems([])
+    setConnections([])
+    setSelectedItemId(null)
+    setConnectionDraftFrom(null)
+    setEditingTextItemId(null)
+    setOptimizingTextItemId(null)
+    setEditingConnectionId(null)
+    setConnectionLabelDraft('')
+  }
+
+  function handleHistoryDragStart(event: ReactDragEvent<HTMLElement>, image: CanvasHistoryImage) {
+    event.dataTransfer.effectAllowed = 'copy'
+    event.dataTransfer.setData(HISTORY_DRAG_TYPE, JSON.stringify(image))
+    event.dataTransfer.setData('text/plain', image.src)
+  }
+
+  function handleUploadDragStart(event: ReactDragEvent<HTMLElement>, upload: ReferenceUpload) {
+    event.dataTransfer.effectAllowed = 'copy'
+    event.dataTransfer.setData(UPLOAD_DRAG_TYPE, JSON.stringify({ uploadId: upload.id }))
+  }
+
   return (
-    <main className="node-flow-page" aria-label="节点工作流">
-      <header className="node-flow-header">
-        <div className="node-flow-heading">
-          <span>节点工作流</span>
-          <h2>从想法到生成任务</h2>
-          <p>{selectedPreset.title} / {providerLabel(localProvider)} / {imageSize}</p>
+    <main
+      className={isDropActive ? 'creative-canvas-page is-page-drop-active' : 'creative-canvas-page'}
+      aria-label="创作画布"
+      onDragEnter={handleCanvasDragEnter}
+      onDragOver={handleCanvasDragOver}
+      onDragLeave={handleCanvasDragLeave}
+      onDrop={handleCanvasDrop}
+    >
+      <header className="creative-canvas-topbar">
+        <div className="creative-canvas-title">
+          <span>主入口</span>
+          <h2>创作画布</h2>
+          <p>{providerLabel(localProvider)} / {imageSize} / {modeLabel(mode)} / {referenceCanvasItems.length || taskUploadIds.length} 张参考</p>
         </div>
-        <div className="node-flow-header-actions">
-          <span className={canUsePrompt ? 'node-flow-status ready' : 'node-flow-status missing'}>{readyCount}/6 就绪</span>
-          <button type="button" onClick={useWorkflowPrompt} disabled={!canUsePrompt}>应用到生成页</button>
-          <button type="button" className="primary" onClick={() => void createWorkflowTask()} disabled={!canUsePrompt || isSubmitting}>
-            {isSubmitting ? '创建中...' : '创建任务'}
-          </button>
+        <div className="creative-canvas-top-actions">
+          <button type="button" onClick={useCanvasPrompt} disabled={!hasCanvasPromptContent}>同步到快捷生成</button>
+          <button type="button" onClick={clearCanvas} disabled={!canvasItems.length}>清空画布</button>
+          <button type="button" className="primary" onClick={() => void createCanvasTask()} disabled={!canCreateTask || isSubmitting}>{isSubmitting ? '生成中' : '生成'}</button>
         </div>
       </header>
 
-      {message ? <div className="node-flow-message" role="status">{message}</div> : null}
+      {message ? <div className="creative-canvas-message" role="status">{message}</div> : null}
 
-      <section className="node-flow-shell">
-        <aside className="node-flow-left" aria-label="工作流路径">
-          <section className="node-flow-panel">
-            <div className="node-flow-panel-title">
-              <strong>最短路径</strong>
-              <span>按这个顺序走</span>
-            </div>
-            <div className="node-flow-step-list">
-              {flowNodes.map((node) => (
-                <button
-                  key={node.id}
-                  type="button"
-                  className={`node-flow-step ${selectedNodeId === node.id ? 'active' : ''} ${node.status}`}
-                  onClick={() => setSelectedNodeId(node.id)}
+      <section className="creative-canvas-workspace">
+        <section
+          ref={stageRef}
+          className={`creative-canvas-stage ${isDropActive ? 'is-drop-active' : ''}`}
+          aria-label="图片创作画布"
+          tabIndex={0}
+          onPointerDown={handleStagePointerDown}
+          onContextMenu={handleStageContextMenu}
+          onClick={(event) => {
+            if (event.target === event.currentTarget) setSelectedItemId(null)
+          }}
+          onPaste={handleStagePaste}
+        >
+          {canvasItems.length ? (
+            <svg className="creative-connection-layer" aria-hidden="true">
+              {connections.map((connection) => {
+                const from = canvasItems.find((item) => item.id === connection.fromId)
+                const to = canvasItems.find((item) => item.id === connection.toId)
+                if (!from || !to) return null
+                const start = itemCenter(from)
+                const end = itemCenter(to)
+                return (
+                  <g key={connection.id}>
+                    <line x1={start.x} y1={start.y} x2={end.x} y2={end.y} />
+                    <circle cx={end.x} cy={end.y} r="4" />
+                  </g>
+                )
+              })}
+            </svg>
+          ) : null}
+
+          {connections.map((connection) => {
+            const from = canvasItems.find((item) => item.id === connection.fromId)
+            const to = canvasItems.find((item) => item.id === connection.toId)
+            if (!from || !to) return null
+            const start = itemCenter(from)
+            const end = itemCenter(to)
+            const label = connectionLabel(connection)
+            const isEditing = editingConnectionId === connection.id
+            return (
+              <div
+                key={`label-${connection.id}`}
+                className="creative-connection-label"
+                style={{ left: (start.x + end.x) / 2, top: (start.y + end.y) / 2 }}
+                onPointerDown={(event) => event.stopPropagation()}
+                onClick={(event) => event.stopPropagation()}
+              >
+                {isEditing ? (
+                  <input
+                    value={connectionLabelDraft}
+                    autoFocus
+                    aria-label="编辑连接关系"
+                    onFocus={(event) => event.currentTarget.select()}
+                    onChange={(event) => setConnectionLabelDraft(event.target.value)}
+                    onBlur={() => saveConnectionLabel(connection.id)}
+                    onKeyDown={(event) => handleConnectionLabelKeyDown(event, connection.id)}
+                  />
+                ) : (
+                  <button
+                    type="button"
+                    title="编辑连接关系"
+                    aria-label={`编辑连接关系：${label}`}
+                    onClick={(event) => beginConnectionLabelEdit(event, connection)}
+                  >
+                    {label}
+                  </button>
+                )}
+              </div>
+            )
+          })}
+
+          {canvasItems.map((item) => {
+            const imageItem = isCanvasImageItem(item) ? item : null
+            const textItem = isCanvasTextItem(item) ? item : null
+            const src = imageItem ? imageSrcForCanvasItem(imageItem, previewUrls) : ''
+            const selected = selectedItemId === item.id
+            const role = imageItem ? roleMeta(imageItem.role) : null
+            const isEditingText = editingTextItemId === item.id
+            return (
+              <article
+                key={item.id}
+                className={`creative-canvas-item ${selected ? 'selected' : ''} ${imageItem?.isReference ? 'is-reference' : ''} ${textItem ? 'is-text' : ''}`}
+                style={canvasItemStyle(item)}
+                aria-label={`${item.name}，${role?.label || '文字块'}`}
+                onClick={(event) => handleItemClick(event, item)}
+                onContextMenu={(event) => handleItemContextMenu(event, item.id)}
+              >
+                <div
+                  className={`creative-canvas-item-content ${textItem ? 'creative-canvas-text-content' : ''}`}
+                  style={canvasItemContentStyle(item)}
+                  onPointerDown={(event) => handleItemPointerDown(event, item, 'move')}
+                  onDoubleClick={(event) => {
+                    if (!textItem) return
+                    event.stopPropagation()
+                    setEditingTextItemId(item.id)
+                  }}
                 >
-                  <b>{node.index}</b>
-                  <span>
-                    <strong>{node.title}</strong>
-                    <small>{node.value}</small>
-                  </span>
-                </button>
-              ))}
-            </div>
-          </section>
+                  {textItem ? (
+                    <>
+                      {isEditingText ? (
+                        <textarea
+                          ref={(node) => setTextEditorRef(item.id, node)}
+                          className="creative-canvas-text-editor is-editing"
+                          value={textItem.text}
+                          aria-label="编辑文字提示词"
+                          spellCheck={false}
+                          placeholder="在这里输入提示词"
+                          onFocus={() => setSelectedItemId(item.id)}
+                          onChange={(event) => updateTextItem(item.id, event.currentTarget.value)}
+                          onBlur={() => setEditingTextItemId((current) => (current === item.id ? null : current))}
+                          onPointerDown={(event) => event.stopPropagation()}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Escape' || ((event.ctrlKey || event.metaKey) && event.key === 'Enter')) event.currentTarget.blur()
+                          }}
+                        />
+                      ) : (
+                        <div
+                          className="creative-canvas-text-editor"
+                          data-placeholder="在这里输入提示词"
+                        >
+                          {textItem.text}
+                        </div>
+                      )}
+                      <div className="creative-canvas-item-badge">
+                        <span>文字</span>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      {src ? <img src={src} alt={item.name} draggable={false} /> : <span>{extensionLabel('image/png')}</span>}
+                      <div className="creative-canvas-item-badge">
+                        <span>{imageItem?.isReference ? '@' : '画布'} {role?.label}</span>
+                      </div>
+                    </>
+                  )}
+                </div>
+                {selected ? (
+                  <div className="creative-canvas-controls" style={canvasControlStyle(item)} aria-hidden="false">
+                    <button
+                      type="button"
+                      className="creative-rotate-handle"
+                      aria-label={textItem ? '旋转文字' : '旋转图片'}
+                      onPointerDown={(event) => handleItemPointerDown(event, item, 'rotate')}
+                    />
+                    <button
+                      type="button"
+                      className="creative-resize-handle"
+                      aria-label={textItem ? '调整文字大小' : '调整图片大小'}
+                      onPointerDown={(event) => handleItemPointerDown(event, item, 'resize')}
+                    />
+                  </div>
+                ) : null}
+              </article>
+            )
+          })}
 
-          <section className="node-flow-panel">
-            <div className="node-flow-panel-title">
-              <strong>场景模板</strong>
-              <span>一键换参数</span>
+          {!canvasItems.length ? (
+            <div className="creative-canvas-empty">
+              <strong>拖入图片开始</strong>
+              <span>PNG / JPG / WEBP</span>
             </div>
-            <div className="node-flow-preset-list">
-              {WORKFLOW_PRESETS.map((preset) => (
-                <button
-                  key={preset.id}
-                  type="button"
-                  className={selectedPresetId === preset.id ? 'active' : ''}
-                  onClick={() => applyPreset(preset)}
-                >
-                  <strong>{preset.title}</strong>
-                  <span>{preset.description}</span>
-                </button>
-              ))}
-            </div>
-          </section>
-        </aside>
+          ) : null}
 
-        <section className="node-flow-canvas-card" aria-label="节点画布">
-          <div className="node-flow-canvas-toolbar">
-            <div>
-              <strong>生成请求流</strong>
-              <span>点击节点后在下方编辑参数</span>
-            </div>
-            <div className="node-flow-mini-status">
-              <span>{mode === 'image-to-image' ? '图生图' : '文生图'}</span>
-              <span>{effectiveRatio}</span>
-              <span>{effectiveResolution}</span>
-            </div>
-          </div>
-          <div className="node-flow-canvas">
-            <div className="node-flow-board" style={{ width: CANVAS_WIDTH, height: CANVAS_HEIGHT }}>
-              <svg className="node-flow-wires" width={CANVAS_WIDTH} height={CANVAS_HEIGHT} viewBox={`0 0 ${CANVAS_WIDTH} ${CANVAS_HEIGHT}`} aria-hidden="true">
-                <defs>
-                  <marker id="node-flow-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
-                    <path d="M 0 0 L 10 5 L 0 10 z" />
-                  </marker>
-                </defs>
-                {FLOW_EDGES.map((edge) => {
-                  const from = nodesById.get(edge.from)
-                  const to = nodesById.get(edge.to)
-                  if (!from || !to) return null
-                  const active = selectedNodeId === edge.from || selectedNodeId === edge.to
-                  const path = buildEdgePath(from, to, edge)
-                  const labelPoint = edgeLabelPoint(from, to, edge)
-                  return (
-                    <g key={edge.id} className={active ? 'active' : ''}>
-                      <path d={path} />
-                      {edge.label ? <text x={labelPoint.x} y={labelPoint.y}>{edge.label}</text> : null}
-                    </g>
-                  )
-                })}
-              </svg>
-
-              {flowNodes.map((node) => (
-                <FlowNodeCard
-                  key={node.id}
-                  node={node}
-                  selected={selectedNodeId === node.id}
-                  onSelect={() => setSelectedNodeId(node.id)}
-                />
-              ))}
-            </div>
+          <div className="creative-canvas-floating-meta" aria-label="当前参数">
+            <span>{modeLabel(mode)}</span>
+            <span>{effectiveRatio}</span>
+            <span>{effectiveResolution}</span>
+            <span>{count} 张</span>
+            {connectionDraftFrom ? <span>连接中</span> : null}
           </div>
         </section>
 
-        <aside className="node-flow-inspector" aria-label="节点参数">
-          <div className="node-flow-inspector-title">
-            <span>{selectedNode.eyebrow}</span>
-            <h3>{selectedNode.title}</h3>
-            <p>{selectedNode.purpose}</p>
-          </div>
-          {renderInspector(selectedNode.id)}
-        </aside>
-      </section>
-    </main>
-  )
-
-  function renderInspector(nodeId: FlowNodeId) {
-    if (nodeId === 'input') {
-      return (
-        <div className="node-flow-form">
-          <Field label="生成模式">
-            <div className="node-flow-segmented" role="group" aria-label="生成模式">
-              <button type="button" className={mode === 'text-to-image' ? 'active' : ''} onClick={() => setMode('text-to-image')}>文生图</button>
-              <button type="button" className={mode === 'image-to-image' ? 'active' : ''} onClick={() => setMode('image-to-image')}>图生图</button>
+        <aside className="creative-render-panel" aria-label="实时预览">
+          <section className="creative-render-preview">
+            <header>
+              <strong>实时预览</strong>
+              <span>{latestTask ? `${latestTask.statusText} / ${latestTask.progress}%` : selectedImageItem ? roleMeta(selectedImageItem.role).label : selectedTextItem ? '文字块' : '待生成'}</span>
+            </header>
+            <div className="creative-render-frame" style={{ aspectRatio: aspectRatioValue(effectiveRatio) }}>
+              {renderPreviewSrc ? (
+                <img src={renderPreviewSrc} alt={latestOkResult ? '最新生成结果' : selectedItem?.name || '画布预览'} />
+              ) : (
+                <span>等待画布内容</span>
+              )}
             </div>
-          </Field>
-          <InfoRow label="参考图" value={mode === 'image-to-image' ? (hasReferenceUploads ? `${referenceUploadIds.length} 张已上传` : '请先在生成页上传') : '不需要'} />
-          <p className="node-flow-note">图生图节点会直接使用生成页当前已上传的参考图；没有参考图时不会创建任务。</p>
-        </div>
-      )
-    }
+          </section>
 
-    if (nodeId === 'prompt') {
-      return (
-        <div className="node-flow-form">
-          <Field label="主提示词">
-            <textarea value={draftPrompt} onChange={(event) => setDraftPrompt(event.target.value)} rows={10} />
-          </Field>
-          <div className="node-flow-inline-actions">
-            <span>{trimmedPrompt.length} 字符</span>
-            <button type="button" onClick={useWorkflowPrompt} disabled={!canUsePrompt}>应用到生成页</button>
-          </div>
-        </div>
-      )
-    }
-
-    if (nodeId === 'model') {
-      return (
-        <div className="node-flow-form">
-          <Field label="模型供应商">
-            <div className="node-flow-segmented" role="group" aria-label="模型供应商">
-              <button type="button" className={localProvider === 'image-2' ? 'active' : ''} onClick={() => setLocalProvider('image-2')}>Image-2</button>
-              <button type="button" className={localProvider === BANANA_PROVIDER ? 'active' : ''} onClick={() => setLocalProvider(BANANA_PROVIDER)}>Banana</button>
-            </div>
-          </Field>
-          {localProvider === BANANA_PROVIDER ? (
-            <Field label="Banana 模型">
-              <select value={localBananaModel} onChange={(event) => setLocalBananaModel(event.target.value)}>
-                {BANANA_MODEL_OPTIONS.map((option) => <option key={option.id} value={option.id}>{option.label} / {option.size}</option>)}
-              </select>
-            </Field>
-          ) : null}
-          <InfoRow label="模型 ID" value={selectedModel} />
-        </div>
-      )
-    }
-
-    if (nodeId === 'spec') {
-      return (
-        <div className="node-flow-form">
-          {localProvider === BANANA_PROVIDER ? (
-            <>
-              <InfoRow label="比例" value={bananaOption.ratio} />
-              <InfoRow label="清晰度" value={bananaOption.resolution} />
-              <InfoRow label="尺寸" value={bananaOption.size} />
-              <p className="node-flow-note">Banana 的比例和尺寸由模型规格决定。</p>
-            </>
-          ) : (
-            <>
-              <Field label="比例">
-                <select value={ratio} onChange={(event) => setRatio(event.target.value)}>
-                  {RATIOS.map((item) => <option key={item} value={item}>{ratioLabel(item)}</option>)}
-                </select>
-              </Field>
-              <div className="node-flow-two-fields">
-                <Field label="清晰度">
-                  <select value={resolution} onChange={(event) => setResolution(event.target.value)}>
-                    {RESOLUTION_TIERS.map((item) => <option key={item} value={item}>{getResolutionLabel(item)}</option>)}
-                  </select>
-                </Field>
-                <Field label="质量">
-                  <select value={quality} onChange={(event) => setQuality(event.target.value)}>
-                    {QUALITY_LEVELS.map((item) => <option key={item} value={item}>{getQualityLabel(item)}</option>)}
-                  </select>
-                </Field>
+          <section className="creative-inspector" aria-label="参考语义">
+            <header>
+              <strong>{selectedItem ? selectedItem.name : '参考语义'}</strong>
+              <span>{selectedImageItem ? roleMeta(selectedImageItem.role).note : selectedTextItem ? '可编辑提示词文字' : `${referenceCanvasItems.length} 张参考`}</span>
+            </header>
+            {selectedImageItem ? (
+              <>
+                <div className="creative-role-grid" role="group" aria-label="参考图角色">
+                  {REFERENCE_ROLES.map((role) => (
+                    <button
+                      key={role.value}
+                      type="button"
+                      className={selectedImageItem.role === role.value ? 'active' : ''}
+                      onClick={() => setItemRole(selectedImageItem.id, role.value)}
+                    >
+                      {role.label}
+                    </button>
+                  ))}
+                </div>
+                <div className="creative-inspector-actions">
+                  <button type="button" onClick={() => markItemAsReference(selectedImageItem.id, undefined, { appendPrompt: true })}>@ 作为参考图</button>
+                  <button type="button" onClick={() => toggleItemReference(selectedImageItem.id)}>{selectedImageItem.isReference ? '取消引用' : '加入引用'}</button>
+                  <button type="button" onClick={() => setConnectionDraftFrom(selectedImageItem.id)}>连接到...</button>
+                  <button type="button" onClick={() => rotateSelected(-90)}>左转 90°</button>
+                  <button type="button" onClick={() => rotateSelected(90)}>右转 90°</button>
+                  <button type="button" className="danger-text" onClick={() => removeItem(selectedImageItem.id)}>移除</button>
+                </div>
+              </>
+            ) : selectedTextItem ? (
+              <div className="creative-inspector-actions">
+                <button type="button" onClick={() => setEditingTextItemId(selectedTextItem.id)}>编辑文字</button>
+                <button type="button" onClick={() => void optimizeTextItem(selectedTextItem.id)} disabled={optimizingTextItemId === selectedTextItem.id}>{optimizingTextItemId === selectedTextItem.id ? '优化中' : '优化提示词'}</button>
+                <button type="button" onClick={() => rotateSelected(-90)}>左转 90°</button>
+                <button type="button" onClick={() => rotateSelected(90)}>右转 90°</button>
+                <button type="button" className="danger-text" onClick={() => removeItem(selectedTextItem.id)}>移除</button>
               </div>
-              <Field label="输出格式">
-                <select value={outputFormat} onChange={(event) => setOutputFormat(event.target.value)}>
+            ) : (
+              <div className="creative-reference-summary">
+                {referenceCanvasItems.length ? referenceCanvasItems.map((item) => (
+                  <span key={item.id}>@ {roleMeta(item.role).label}</span>
+                )) : <span>无引用</span>}
+              </div>
+            )}
+          </section>
+
+          <section className="creative-history-panel" aria-label="历史结果">
+            <header>
+              <strong>历史结果</strong>
+              <span>{visibleHistory.length ? `${visibleHistory.length} 张` : '暂无'}</span>
+            </header>
+            <div className="creative-history-list">
+              {visibleHistory.length ? visibleHistory.map((image) => (
+                <button
+                  key={image.id}
+                  type="button"
+                  draggable
+                  onDragStart={(event) => handleHistoryDragStart(event, image)}
+                  onClick={() => void addHistoryImageToCanvas(image, autoItemPosition(canvasItems.length))}
+                  title={image.title}
+                >
+                  <img src={image.src} alt={image.title} draggable={false} />
+                  <span>{image.subtitle}</span>
+                </button>
+              )) : <span className="creative-reference-empty">生成后会显示在这里</span>}
+            </div>
+          </section>
+        </aside>
+
+        <section className="creative-reference-strip" aria-label="素材与参考">
+          <div className="creative-reference-heading">
+            <strong>素材与参考</strong>
+            <span>{referenceUploads.length ? `${referenceUploads.length} 张可用` : '无素材'}</span>
+          </div>
+          <div className="creative-reference-list">
+            {visibleReferences.length ? visibleReferences.map((item) => (
+              <div className="creative-reference-thumb-wrap" key={item.id}>
+                <button
+                  className="creative-reference-thumb"
+                  type="button"
+                  title={item.originalName}
+                  aria-label={`加入画布：${item.originalName}`}
+                  draggable
+                  onDragStart={(event) => handleUploadDragStart(event, item)}
+                  onClick={() => void addUploadToCanvas(item)}
+                >
+                  {previewUrls[item.id] ? <img src={previewUrls[item.id]} alt={item.originalName} draggable={false} /> : <span>{extensionLabel(item.mime)}</span>}
+                </button>
+                {onDeleteReferenceUpload ? (
+                  <button
+                    className="creative-reference-remove"
+                    type="button"
+                    aria-label={`删除参考图：${item.originalName}`}
+                    title="删除参考图"
+                    disabled={deletingUploadId === item.id}
+                    onClick={(event) => void deleteReferenceUploadFromStrip(event, item)}
+                  >
+                    ×
+                  </button>
+                ) : null}
+              </div>
+            )) : (
+              <span className="creative-reference-empty">拖入图片或使用历史结果</span>
+            )}
+          </div>
+        </section>
+
+        <form className="creative-canvas-composer" onSubmit={(event) => { event.preventDefault(); void createCanvasTask() }}>
+          <textarea
+            ref={promptTextareaRef}
+            value={draftPrompt}
+            onChange={(event) => setDraftPrompt(event.target.value)}
+            placeholder="描述你想生成的图片，可输入 @ 来指定参考图..."
+            rows={2}
+          />
+
+          <div className="creative-composer-controls">
+            <div className="creative-composer-tools" aria-label="生成参数">
+              <label>
+                <span>模型</span>
+                <select value={localProvider} onChange={(event) => setLocalProvider(event.target.value as ModelProvider)}>
+                  <option value={IMAGE2_PROVIDER}>Image-2</option>
+                  <option value={BANANA_PROVIDER}>Banana</option>
+                </select>
+              </label>
+
+              {localProvider === BANANA_PROVIDER ? (
+                <label className="creative-tool-wide">
+                  <span>规格</span>
+                  <select value={localBananaModel} onChange={(event) => setLocalBananaModel(event.target.value)}>
+                    {BANANA_MODEL_OPTIONS.map((option) => <option key={option.id} value={option.id}>{option.label} / {option.size}</option>)}
+                  </select>
+                </label>
+              ) : (
+                <>
+                  <label>
+                    <span>比例</span>
+                    <select value={ratio} onChange={(event) => setRatio(event.target.value)}>
+                      {RATIOS.map((item) => <option key={item} value={item}>{item}</option>)}
+                    </select>
+                  </label>
+                  <label>
+                    <span>清晰度</span>
+                    <select value={resolution} onChange={(event) => setResolution(event.target.value)}>
+                      {RESOLUTION_TIERS.map((item) => <option key={item} value={item}>{getResolutionLabel(item)}</option>)}
+                    </select>
+                  </label>
+                </>
+              )}
+
+              <label>
+                <span>质量</span>
+                <select value={quality} onChange={(event) => setQuality(event.target.value)} disabled={localProvider === BANANA_PROVIDER}>
+                  {QUALITY_LEVELS.map((item) => <option key={item} value={item}>{getQualityLabel(item)}</option>)}
+                </select>
+              </label>
+              <label>
+                <span>格式</span>
+                <select value={outputFormat} onChange={(event) => setOutputFormat(event.target.value)} disabled={localProvider === BANANA_PROVIDER}>
                   {OUTPUT_FORMATS.map((item) => <option key={item} value={item}>{getOutputFormatLabel(item)}</option>)}
                 </select>
-              </Field>
-              <InfoRow label="计算尺寸" value={imageSize} />
-            </>
-          )}
-        </div>
-      )
-    }
+              </label>
+              <label>
+                <span>数量</span>
+                <input type="number" min={1} max={8} value={count} onChange={(event) => setCount(clampNumber(event.target.value, 1, 8))} />
+              </label>
+            </div>
 
-    if (nodeId === 'run') {
-      return (
-        <div className="node-flow-form">
-          <div className="node-flow-two-fields">
-            <Field label="数量">
-              <input type="number" min={1} max={12} value={count} onChange={(event) => setCount(readBoundedInteger(event.target.value, count, 1, 12))} />
-            </Field>
-            <Field label="并发">
-              <input type="number" min={1} max={12} value={concurrency} onChange={(event) => setConcurrency(readBoundedInteger(event.target.value, concurrency, 1, 12))} />
-            </Field>
+            <div className="creative-composer-actions">
+              <div className="creative-segmented" role="group" aria-label="生成模式">
+                <button type="button" className={mode === 'text-to-image' ? 'active' : ''} onClick={() => setMode('text-to-image')}>文生图</button>
+                <button type="button" className={mode === 'image-to-image' ? 'active' : ''} onClick={() => setMode('image-to-image')}>图生图</button>
+              </div>
+              <button type="button" className="creative-icon-action" onClick={useCanvasPrompt} disabled={!hasCanvasPromptContent} title="同步到快捷生成" aria-label="同步到快捷生成">↗</button>
+              <button type="submit" className="creative-submit-action" disabled={!canCreateTask || isSubmitting} aria-label="生成">{isSubmitting ? '...' : '→'}</button>
+            </div>
           </div>
-          <button type="button" className="node-flow-run-button" onClick={() => void createWorkflowTask()} disabled={!canUsePrompt || isSubmitting}>
-            {isSubmitting ? '创建中...' : '创建任务'}
-          </button>
-          <details className="node-flow-payload">
-            <summary>查看请求摘要</summary>
-            <pre>{JSON.stringify(taskPayload, null, 2)}</pre>
-          </details>
+        </form>
+      </section>
+
+      {contextMenu ? (
+        <div
+          className="creative-context-menu"
+          role="menu"
+          style={{ left: contextMenu.x, top: contextMenu.y }}
+          onClick={(event) => event.stopPropagation()}
+        >
+          {contextMenu.target === 'stage' ? (
+            <button type="button" role="menuitem" onClick={() => addTextItemToCanvas(contextMenu.point)}>新建文字</button>
+          ) : isCanvasTextItem(contextMenuItem) ? (
+            <>
+              <button type="button" role="menuitem" onClick={() => { setEditingTextItemId(contextMenuItem.id); setContextMenu(null) }}>编辑文字</button>
+              <button type="button" role="menuitem" onClick={() => { void optimizeTextItem(contextMenuItem.id); setContextMenu(null) }} disabled={optimizingTextItemId === contextMenuItem.id}>{optimizingTextItemId === contextMenuItem.id ? '优化中' : '优化提示词'}</button>
+              <button type="button" role="menuitem" className="danger-text" onClick={() => removeItem(contextMenuItem.id)}>移除</button>
+            </>
+          ) : isCanvasImageItem(contextMenuItem) ? (
+            <>
+              <button type="button" role="menuitem" onClick={() => { markItemAsReference(contextMenuItem.id, undefined, { appendPrompt: true }); setContextMenu(null) }}>@ 作为参考图</button>
+              {REFERENCE_ROLES.map((role) => (
+                <button key={role.value} type="button" role="menuitem" onClick={() => { setItemRole(contextMenuItem.id, role.value); setContextMenu(null) }}>{role.label}</button>
+              ))}
+              <button type="button" role="menuitem" onClick={() => { setConnectionDraftFrom(contextMenuItem.id); setContextMenu(null) }}>连接到...</button>
+              <button type="button" role="menuitem" className="danger-text" onClick={() => removeItem(contextMenuItem.id)}>移除</button>
+            </>
+          ) : null}
         </div>
-      )
-    }
-
-    return (
-      <div className="node-flow-form">
-        <div className="node-flow-result-preview">
-          <span>任务创建后在结果页查看实时状态和图片</span>
-        </div>
-        <InfoRow label="状态" value="等待任务提交" />
-        <InfoRow label="结果入口" value="结果页 / 任务历史" />
-        <button type="button" onClick={useWorkflowPrompt} disabled={!canUsePrompt}>复用提示词</button>
-      </div>
-    )
-  }
-}
-
-function FlowNodeCard({ node, selected, onSelect }: { node: FlowNode; selected: boolean; onSelect: () => void }) {
-  const style = {
-    '--node-x': `${node.x}px`,
-    '--node-y': `${node.y}px`,
-    '--node-width': `${node.width}px`,
-    '--node-height': `${node.height}px`,
-    '--node-tone': node.tone,
-  } as CSSProperties
-
-  return (
-    <button type="button" className={`node-flow-node ${selected ? 'selected' : ''} ${node.status}`} style={style} onClick={onSelect} aria-pressed={selected}>
-      {node.input ? <span className="node-flow-port input"><i />{node.input}</span> : null}
-      <span className="node-flow-node-head">
-        <small>{node.eyebrow}</small>
-        <strong>{node.title}</strong>
-        <em>{node.index}</em>
-      </span>
-      <span className="node-flow-node-body">
-        <span>{node.purpose}</span>
-        <b>{node.value}</b>
-      </span>
-      <span className="node-flow-node-meta">
-        {node.meta.map((item) => <i key={item}>{item}</i>)}
-      </span>
-      {node.output ? <span className="node-flow-port output">{node.output}<i /></span> : null}
-    </button>
+      ) : null}
+    </main>
   )
 }
-
-function Field({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <label className="node-flow-field">
-      <span>{label}</span>
-      {children}
-    </label>
-  )
-}
-
-function InfoRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="node-flow-info-row">
-      <span>{label}</span>
-      <strong title={value}>{value}</strong>
-    </div>
-  )
-}
-
-function buildEdgePath(from: FlowNode, to: FlowNode, edge: FlowEdge) {
-  const start = { x: from.x + from.width, y: from.y + from.height / 2 + (edge.fromOffsetY ?? 0) }
-  const end = { x: to.x, y: to.y + to.height / 2 + (edge.toOffsetY ?? 0) }
-  const distance = Math.max(110, Math.abs(end.x - start.x) * 0.52)
-  return `M ${start.x} ${start.y} C ${start.x + distance} ${start.y}, ${end.x - distance} ${end.y}, ${end.x} ${end.y}`
-}
-
-function edgeLabelPoint(from: FlowNode, to: FlowNode, edge: FlowEdge) {
-  return {
-    x: (from.x + from.width + to.x) / 2 - 18,
-    y: (from.y + from.height / 2 + (edge.fromOffsetY ?? 0) + to.y + to.height / 2 + (edge.toOffsetY ?? 0)) / 2 - 8,
-  }
-}
-
-function readBoundedInteger(value: string, fallback: number, min: number, max: number) {
-  const parsed = Number(value)
-  if (!Number.isFinite(parsed)) return fallback
-  return Math.min(max, Math.max(min, Math.round(parsed)))
-}
-
-function compactModelId(id: string) {
-  if (id.length <= 32) return id
-  return `${id.slice(0, 16)}...${id.slice(-12)}`
-}
-
-function ratioLabel(value: string) {
-  return value === 'auto' ? '自动' : value
-}
-

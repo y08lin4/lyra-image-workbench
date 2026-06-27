@@ -1,0 +1,288 @@
+.admin-page-shell {
+  place-items: start center;
+  align-content: start;
+  padding: 80px 20px 32px;
+}
+
+.admin-console.admin-panel-wide {
+  width: min(1160px, 100%);
+}
+
+.admin-console {
+  align-content: start;
+  gap: 16px;
+  border-radius: 16px;
+  padding: 18px;
+}
+
+.admin-console-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.admin-console-actions,
+.admin-overview-actions,
+.admin-panel-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.admin-console-actions a,
+.admin-console-actions button,
+.admin-overview-actions button,
+.admin-panel-actions button {
+  min-height: 40px;
+}
+
+.admin-auth-status {
+  margin-top: 0;
+}
+
+.admin-tabs {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-soft);
+}
+
+.admin-tabs button {
+  min-width: 0;
+  min-height: 58px;
+  display: grid;
+  align-content: center;
+  justify-items: start;
+  gap: 3px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  padding: 9px 10px;
+  text-align: left;
+}
+
+.admin-tabs button:hover,
+.admin-tabs button:focus-visible {
+  background: var(--surface);
+  color: var(--text);
+}
+
+.admin-tabs button.active {
+  background: var(--primary);
+  color: #ffffff;
+}
+
+.admin-tabs button span {
+  color: inherit;
+  font-size: 14px;
+  font-weight: 900;
+  line-height: 1.2;
+}
+
+.admin-tabs button small {
+  max-width: 100%;
+  color: inherit;
+  font-size: 12px;
+  font-weight: 750;
+  line-height: 1.25;
+  opacity: .76;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-tab-intro {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 14px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.admin-tab-intro h2 {
+  margin: 0;
+  color: var(--text);
+  font-size: 18px;
+  line-height: 1.2;
+}
+
+.admin-tab-intro p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.admin-tab-panel {
+  min-width: 0;
+  display: grid;
+  gap: 14px;
+}
+
+.admin-overview-summary,
+.admin-inline-notes {
+  display: grid;
+  gap: 10px;
+}
+
+.admin-overview-actions {
+  justify-content: flex-start;
+  padding-top: 2px;
+}
+
+.admin-overview-actions button {
+  min-width: 128px;
+}
+
+.admin-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.admin-debug-row {
+  min-height: 44px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-soft);
+  padding: 10px 12px;
+  color: #334155;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.45;
+}
+
+.admin-billing-panel .admin-billing-box,
+.admin-email-panel .admin-email-box {
+  padding: 14px;
+}
+
+.admin-email-grid .wide {
+  grid-column: 1 / -1;
+}
+
+.admin-users-panel.admin-users-section {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+}
+
+.admin-ledger-panel.admin-ledger-section {
+  padding-top: 0;
+}
+
+.admin-ledger-heading {
+  align-items: center;
+}
+
+.admin-ledger-tools {
+  flex: 0 1 460px;
+}
+
+.admin-ledger-tools select {
+  min-height: 36px;
+  border-radius: 10px;
+  padding: 8px 10px;
+  font-size: 13px;
+}
+
+:root[data-theme] .admin-console {
+  border-color: var(--border) !important;
+  background: var(--surface) !important;
+  color: var(--text) !important;
+}
+
+:root[data-theme] .admin-tabs,
+:root[data-theme] .admin-debug-row {
+  border-color: var(--border) !important;
+  background: var(--surface-soft) !important;
+  color: var(--muted) !important;
+}
+
+:root[data-theme] .admin-tabs button:not(.active) {
+  color: var(--muted) !important;
+}
+
+:root[data-theme] .admin-tabs button:not(.active):hover,
+:root[data-theme] .admin-tabs button:not(.active):focus-visible {
+  background: var(--surface) !important;
+  color: var(--text) !important;
+}
+
+:root[data-theme] .admin-tabs button.active {
+  background: var(--primary) !important;
+  color: var(--primary-contrast, #ffffff) !important;
+}
+
+:root[data-theme] .admin-tab-intro h2 {
+  color: var(--text) !important;
+}
+
+:root[data-theme] .admin-tab-intro p {
+  color: var(--muted) !important;
+}
+
+@media (max-width: 860px) {
+  .admin-page-shell {
+    padding: 72px 12px 22px;
+  }
+
+  .admin-console {
+    padding: 14px;
+  }
+
+  .admin-console-head,
+  .admin-tab-intro,
+  .admin-ledger-heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .admin-console-actions,
+  .admin-panel-actions {
+    justify-content: flex-start;
+  }
+
+  .admin-tabs {
+    display: flex;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .admin-tabs::-webkit-scrollbar {
+    display: none;
+  }
+
+  .admin-tabs button {
+    flex: 0 0 148px;
+  }
+
+  .admin-form-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 560px) {
+  .admin-page-shell {
+    padding-inline: 10px;
+  }
+
+  .admin-console-actions a,
+  .admin-console-actions button,
+  .admin-overview-actions button,
+  .admin-panel-actions button {
+    width: 100%;
+  }
+
+  .admin-tabs button {
+    flex-basis: 136px;
+  }
+}

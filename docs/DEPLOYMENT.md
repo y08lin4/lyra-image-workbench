@@ -49,6 +49,8 @@ Release 一键安装也可以跳过本地构建步骤，直接运行：
 curl -fsSL https://raw.githubusercontent.com/y08lin4/lyra-image-workbench/master/scripts/install.sh | sudo bash
 ```
 
+脚本结束时会输出“安装令牌”，首次打开 `/admin` 初始化站点时必须填写；请立即保存该令牌。
+
 ## 推荐生产结构
 
 ```text

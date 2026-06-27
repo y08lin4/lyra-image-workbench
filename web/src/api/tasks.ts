@@ -1,8 +1,15 @@
 import { requestJson } from './client'
-import type { CreateTaskRequest, Task, TaskEvent } from '../types'
+import type {
+  CreateTaskRequest,
+  Task,
+  TaskEvent,
+  TaskImageUploadResponse,
+  TaskJobResponse,
+  TaskListResponse,
+  TaskMutationResponse,
+  TaskResponse,
+} from './contracts/tasks'
 import { withLocalApiKeyHeaders } from '../lib/localApiKeys'
-
-type TaskMutationResponse = { ok: boolean; job: Task; taskId?: string; consumedCredits?: number }
 
 export async function createTask(payload: CreateTaskRequest) {
   const data = await requestJson<TaskMutationResponse>('/api/background-tasks', {
@@ -14,22 +21,22 @@ export async function createTask(payload: CreateTaskRequest) {
 }
 
 export async function listTasks() {
-  const data = await requestJson<{ ok: boolean; tasks: Task[] }>('/api/background-tasks?limit=50')
+  const data = await requestJson<TaskListResponse>('/api/background-tasks?limit=50')
   return data.tasks
 }
 
 export async function getTask(id: string) {
-  const data = await requestJson<{ ok: boolean; task: Task }>(`/api/background-tasks/${encodeURIComponent(id)}`)
+  const data = await requestJson<TaskResponse>(`/api/background-tasks/${encodeURIComponent(id)}`)
   return data.task
 }
 
 export async function cancelTask(id: string) {
-  const data = await requestJson<{ ok: boolean; job: Task }>(`/api/background-tasks/${encodeURIComponent(id)}/cancel`, { method: 'POST' })
+  const data = await requestJson<TaskJobResponse>(`/api/background-tasks/${encodeURIComponent(id)}/cancel`, { method: 'POST' })
   return data.job
 }
 
 export async function deleteTask(id: string) {
-  const data = await requestJson<{ ok: boolean; job: Task }>(`/api/background-tasks/${encodeURIComponent(id)}`, { method: 'DELETE' })
+  const data = await requestJson<TaskJobResponse>(`/api/background-tasks/${encodeURIComponent(id)}`, { method: 'DELETE' })
   return data.job
 }
 
@@ -42,7 +49,7 @@ export async function retryTask(id: string) {
 }
 
 export async function setTaskFavorite(id: string, favorite: boolean) {
-  const data = await requestJson<{ ok: boolean; job: Task }>(`/api/background-tasks/${encodeURIComponent(id)}/favorite`, {
+  const data = await requestJson<TaskJobResponse>(`/api/background-tasks/${encodeURIComponent(id)}/favorite`, {
     method: 'POST',
     body: JSON.stringify({ favorite }),
   })
@@ -50,7 +57,7 @@ export async function setTaskFavorite(id: string, favorite: boolean) {
 }
 
 export async function uploadTaskImageToPixhost(id: string, index: number) {
-  const data = await requestJson<{ ok: boolean; job: Task; result: Task['results'][number] }>(`/api/background-tasks/${encodeURIComponent(id)}/images/${index}/pixhost`, { method: 'POST' })
+  const data = await requestJson<TaskImageUploadResponse>(`/api/background-tasks/${encodeURIComponent(id)}/images/${index}/pixhost`, { method: 'POST' })
   return data
 }
 
@@ -83,7 +90,7 @@ export async function streamTaskEvents(id: string, onEvent: (event: TaskEvent) =
   }
 }
 
-function taskFromMutationResponse(data: TaskMutationResponse) {
+function taskFromMutationResponse(data: TaskMutationResponse): Task {
   if (typeof data.consumedCredits === 'number' && typeof data.job.consumedCredits !== 'number') {
     return { ...data.job, consumedCredits: data.consumedCredits }
   }

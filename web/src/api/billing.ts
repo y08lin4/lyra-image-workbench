@@ -1,9 +1,7 @@
 import { requestJson } from './client'
-import type { BillingTopUp, BillingTopUpOptions, CreateEpayOrderRequest, EpayMethod, EpayOrder, TopUpOption } from '../types'
+import type { BillingTopUpOptions, CreateEpayOrderRequest, EpayMethod, EpayOrderResponse, TopUpOptionsResponse, TopUpsResponse } from './contracts/billing'
 
-type TopUpOptionsResponse = { ok: boolean; enabled?: boolean; methods?: EpayMethod[]; options?: TopUpOption[]; topupOptions?: TopUpOption[] }
-type EpayOrderResponse = { ok: boolean; order?: EpayOrder; tradeNo?: string; payUrl?: string; credits?: number; amountCents?: number; status?: string }
-type TopUpsResponse = { ok: boolean; topups?: BillingTopUp[]; orders?: BillingTopUp[] }
+export type { BillingTopUp, BillingTopUpOptions, CreateEpayOrderRequest, EpayMethod, EpayOrder, TopUpOption } from './contracts/billing'
 
 export async function getTopUpOptions(): Promise<BillingTopUpOptions> {
   const data = await requestJson<TopUpOptionsResponse>('/api/billing/topup/options')

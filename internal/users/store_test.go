@@ -195,7 +195,8 @@ func TestPurchaseCreditsIdempotentAndReferralRewardOnce(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Register() inviter error = %v", err)
 	}
-	buyer, err := store.Register("Buyer_01", "buyer@example.com", testPassword, inviter.User.ReferralCode, "")
+	inviteLink := "https://image.example.com/?ref=" + inviter.User.ReferralCode
+	buyer, err := store.Register("Buyer_01", "buyer@example.com", testPassword, inviteLink, "")
 	if err != nil {
 		t.Fatalf("Register() buyer error = %v", err)
 	}

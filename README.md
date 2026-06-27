@@ -226,6 +226,8 @@ Vite 会把 `/api` 和 `/outputs` 代理到 `127.0.0.1:8787`。
 curl -fsSL https://raw.githubusercontent.com/y08lin4/lyra-image-workbench/master/scripts/install.sh | sudo bash
 ```
 
+安装完成后脚本会输出“安装令牌”，首次打开 `/admin` 初始化站点时必须填写；请立即保存该令牌。
+
 指定版本和 NewAPI 地址：
 
 ```bash
@@ -252,6 +254,7 @@ docker run -d \
   --name lyra-image-workbench \
   --restart unless-stopped \
   -p 8787:8787 \
+  -e LOCAL_IMAGE_ADMIN_SETUP_TOKEN=replace-with-random-install-token \
   -v lyra-image-workbench-data:/app/data \
   -v lyra-image-workbench-outputs:/app/outputs \
   ghcr.io/y08lin4/lyra-image-workbench:latest
@@ -265,6 +268,7 @@ docker run -d \
   --restart unless-stopped \
   --add-host=host.docker.internal:host-gateway \
   -p 8787:8787 \
+  -e LOCAL_IMAGE_ADMIN_SETUP_TOKEN=replace-with-random-install-token \
   -e NEWAPI_BASE_URL=http://host.docker.internal:3000/v1 \
   -v lyra-image-workbench-data:/app/data \
   -v lyra-image-workbench-outputs:/app/outputs \
@@ -286,6 +290,7 @@ services:
     environment:
       LOCAL_IMAGE_HOST: 0.0.0.0
       LOCAL_IMAGE_PORT: 8787
+      LOCAL_IMAGE_ADMIN_SETUP_TOKEN: replace-with-random-install-token
       NEWAPI_BASE_URL: http://host.docker.internal:3000/v1
       NEWAPI_TIMEOUT_SEC: 600
     extra_hosts:
