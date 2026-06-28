@@ -65,7 +65,11 @@ if ($BuildWeb) {
 }
 
 Write-Step 'Building latest Go backend'
-go build -o $Exe ./cmd/local-server
+go build -buildvcs=false -o $Exe ./cmd/local-server
+if ($LASTEXITCODE -ne 0) {
+  Write-Step "Go backend build failed with exit code $LASTEXITCODE"
+  exit $LASTEXITCODE
+}
 
 Write-Step "Starting backend: http://127.0.0.1:$Port"
 $proc = Start-Process -FilePath $Exe -WorkingDirectory $Root -WindowStyle Hidden -RedirectStandardOutput $OutLog -RedirectStandardError $ErrLog -PassThru
