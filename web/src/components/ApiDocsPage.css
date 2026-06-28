@@ -791,3 +791,53 @@
     padding-right: 9px;
   }
 }
+
+/* api docs theme closure 2026-06 */
+.api-docs-page.api-console-page,
+:root[data-theme] .api-docs-page.api-console-page {
+  --api-code-card-bg: var(--surface);
+  --api-code-toolbar-bg: var(--surface-soft);
+  --api-code-block-bg: var(--surface);
+  --api-code-border: var(--border);
+  --api-code-rule: var(--border);
+  --api-code-text: var(--text);
+  --api-code-muted: var(--muted);
+}
+
+.api-docs-page.api-console-page .api-console-grid {
+  grid-template-columns: minmax(300px, .78fr) minmax(520px, 1.22fr);
+}
+
+.api-docs-page.api-console-page .api-console-panel,
+:root[data-theme] .api-docs-page.api-console-page .api-console-panel {
+  background: var(--surface) !important;
+  color: var(--text) !important;
+  box-shadow: none !important;
+}
+
+.api-docs-page.api-console-page .api-console-code-card,
+:root[data-theme] .api-docs-page.api-console-page .api-console-code-card {
+  background: var(--surface) !important;
+  border-color: var(--border) !important;
+  box-shadow: none !important;
+}
+
+.api-docs-page.api-console-page .api-console-code-toolbar,
+.api-docs-page.api-console-page .api-console-code-card .api-console-code-meta,
+:root[data-theme] .api-docs-page.api-console-page .api-console-code-toolbar,
+:root[data-theme] .api-docs-page.api-console-page .api-console-code-card .api-console-code-meta {
+  background: var(--surface-soft) !important;
+  border-color: var(--border) !important;
+}
+
+.api-docs-page.api-console-page .api-console-code-card .api-console-code-block,
+:root[data-theme] .api-docs-page.api-console-page .api-console-code-card .api-console-code-block {
+  background: var(--surface) !important;
+  color: var(--text) !important;
+}
+
+@media (max-width: 1040px) {
+  .api-docs-page.api-console-page .api-console-grid {
+    grid-template-columns: 1fr;
+  }
+}

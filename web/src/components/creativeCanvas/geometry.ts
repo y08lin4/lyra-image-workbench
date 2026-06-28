@@ -15,14 +15,9 @@ export function updateCanvasItemsForInteraction(items: CanvasItem[], interaction
       }
     }
     if (interaction.type === 'resize') {
-      const dx = event.clientX - interaction.startClientX
-      const dy = event.clientY - interaction.startClientY
-      const radians = -interaction.origin.rotation * Math.PI / 180
-      const localDx = dx * Math.cos(radians) - dy * Math.sin(radians)
-      const localDy = dx * Math.sin(radians) + dy * Math.cos(radians)
-      const nextWidth = clamp(interaction.origin.width + localDx, 92, 520)
-      const nextHeight = clamp(interaction.origin.height + localDy, 72, 420)
-      return { ...item, width: nextWidth, height: nextHeight }
+      return item.type === 'image'
+        ? resizeImageItemByPointer(item, interaction, event, rect)
+        : resizeFreeformItemByPointer(item, interaction, event)
     }
     const nextAngle = pointerAngleForItem(item, event.clientX, event.clientY, stage)
     const startAngle = interaction.startAngle ?? nextAngle
@@ -66,8 +61,14 @@ export function scaleCanvasItemByWheel(item: CanvasItem, deltaY: number, stage: 
   const minScale = Math.max(minWidth / item.width, minHeight / item.height)
   const maxScale = Math.min(maxWidth / item.width, maxHeight / item.height)
   const scale = clamp(requestedScale, minScale, maxScale)
-  const nextWidth = roundCanvasMetric(item.width * scale)
-  const nextHeight = roundCanvasMetric(item.height * scale)
+  const nextSize = item.type === 'image'
+    ? imageSizeForScale(item, scale, maxWidth, maxHeight, minWidth, minHeight)
+    : {
+        width: roundCanvasMetric(item.width * scale),
+        height: roundCanvasMetric(item.height * scale),
+      }
+  const nextWidth = nextSize.width
+  const nextHeight = nextSize.height
   const centerX = item.x + item.width / 2
   const centerY = item.y + item.height / 2
   const nextX = centerX - nextWidth / 2
@@ -80,6 +81,72 @@ export function scaleCanvasItemByWheel(item: CanvasItem, deltaY: number, stage: 
     width: nextWidth,
     height: nextHeight,
   }
+}
+
+function resizeFreeformItemByPointer(item: CanvasItem, interaction: CanvasInteraction, event: PointerEvent): CanvasItem {
+  const dx = event.clientX - interaction.startClientX
+  const dy = event.clientY - interaction.startClientY
+  const radians = -interaction.origin.rotation * Math.PI / 180
+  const localDx = dx * Math.cos(radians) - dy * Math.sin(radians)
+  const localDy = dx * Math.sin(radians) + dy * Math.cos(radians)
+  const nextWidth = clamp(interaction.origin.width + localDx, 92, 520)
+  const nextHeight = clamp(interaction.origin.height + localDy, 72, 420)
+  return { ...item, width: nextWidth, height: nextHeight }
+}
+
+function resizeImageItemByPointer(item: CanvasItem, interaction: CanvasInteraction, event: PointerEvent, rect?: DOMRect): CanvasItem {
+  const maxWidth = rect ? Math.max(160, rect.width - 24) : 900
+  const maxHeight = rect ? Math.max(120, rect.height - 24) : 720
+  const minWidth = 64
+  const minHeight = 48
+  const centerX = (rect?.left || 0) + interaction.origin.x + interaction.origin.width / 2
+  const centerY = (rect?.top || 0) + interaction.origin.y + interaction.origin.height / 2
+  const startDistance = Math.max(1, Math.hypot(interaction.startClientX - centerX, interaction.startClientY - centerY))
+  const currentDistance = Math.max(1, Math.hypot(event.clientX - centerX, event.clientY - centerY))
+  const scale = clamp(currentDistance / startDistance, 0.05, 20)
+  const { width, height } = imageSizeForScale(item, scale, maxWidth, maxHeight, minWidth, minHeight, interaction.origin)
+
+  const nextX = interaction.origin.x + (interaction.origin.width - width) / 2
+  const nextY = interaction.origin.y + (interaction.origin.height - height) / 2
+
+  return {
+    ...item,
+    x: rect ? clamp(nextX, 8, Math.max(8, rect.width - width - 8)) : nextX,
+    y: rect ? clamp(nextY, 8, Math.max(8, rect.height - height - 8)) : nextY,
+    width,
+    height,
+  }
+}
+
+function imageSizeForScale(
+  item: CanvasItem,
+  scale: number,
+  maxWidth: number,
+  maxHeight: number,
+  minWidth: number,
+  minHeight: number,
+  origin: Pick<CanvasItem, 'width' | 'height'> = item,
+) {
+  const aspectRatio = imageAspectRatio(item)
+  let width = origin.width * scale
+  let height = width / aspectRatio
+  const growScale = Math.max(1, minWidth / Math.max(width, 1), minHeight / Math.max(height, 1))
+  width *= growScale
+  height *= growScale
+  const shrinkScale = Math.min(1, maxWidth / Math.max(width, 1), maxHeight / Math.max(height, 1))
+  width *= shrinkScale
+  height *= shrinkScale
+
+  return {
+    width: roundCanvasMetric(width),
+    height: roundCanvasMetric(height),
+  }
+}
+
+function imageAspectRatio(item: CanvasItem) {
+  if (item.type !== 'image') return Math.max(0.1, item.width / Math.max(1, item.height))
+  const ratio = item.aspectRatio || (item.naturalWidth && item.naturalHeight ? item.naturalWidth / item.naturalHeight : 0) || item.width / Math.max(1, item.height)
+  return clamp(ratio, 0.05, 20)
 }
 
 export function rotatedItemBounds(item: CanvasItem): { x: number; y: number; width: number; height: number } {

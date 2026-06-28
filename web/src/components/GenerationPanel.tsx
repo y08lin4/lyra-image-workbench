@@ -134,7 +134,7 @@ export function GenerationPanel({
         </section>
 
         <section className="generate-step execute-step">
-          <StepTitle index={executeStep} title="数量与执行" note="提交后会自动切到结果页，后端继续跑，前端断开不影响任务。" />
+          <StepTitle index={executeStep} title="数量与执行" note="提交后会自动切到结果页，生成会在后台继续进行，关闭当前页面也不会影响。" />
           <div className="execute-grid">
             <label className="composer-mini-field">
               <span>数量</span>

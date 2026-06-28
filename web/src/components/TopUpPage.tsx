@@ -228,7 +228,7 @@ export function TopUpPage({ session, onSessionChange }: TopUpPageProps) {
               <div className="topup-current-order">
                 <span className={`status-pill ${createdOrder.status}`}>{topUpStatusLabel(createdOrder.status)}</span>
                 <p>{createdOrder.tradeNo} · {formatCredits(createdOrder.credits)} 次 · {formatMoney(createdOrder.amountCents)}</p>
-                {createdOrder.payUrl ? <a href={createdOrder.payUrl} target="_blank" rel="noreferrer">打开支付链接</a> : <small>后端未返回支付链接</small>}
+                {createdOrder.payUrl ? <a href={createdOrder.payUrl} target="_blank" rel="noreferrer">打开支付链接</a> : <small>暂未获得支付链接</small>}
               </div>
             ) : (
               <div className="prompt-empty">创建订单后会在这里显示支付链接</div>

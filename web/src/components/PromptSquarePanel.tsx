@@ -23,7 +23,7 @@ const viewOptions: Array<{ value: PromptSquareView; label: string; description: 
     label: '最新',
     description: '按发布时间查看公开作品',
     emptyTitle: '还没有公开投稿',
-    emptyBody: '生成结果投稿入口会出现在结果卡片里；后端准备好后这里会显示公开作品。',
+    emptyBody: '生成结果投稿入口会出现在结果卡片里；有公开作品后这里会自动展示。',
   },
   {
     value: 'daily',
@@ -110,7 +110,7 @@ export function PromptSquarePanel({ onUsePrompt }: PromptSquarePanelProps) {
     } catch (err) {
       setItems((prev) => prev.map((entry) => entry.id === item.id ? previous : entry))
       setSelectedItem((current) => current?.id === item.id ? previous : current)
-      setError(`点赞失败：${formatErrorMessage(err, '请确认后端点赞接口已完成')}`)
+      setError(`点赞失败：${formatErrorMessage(err, '请稍后再试')}`)
     } finally {
       setLikingIds((prev) => {
         const next = { ...prev }
@@ -231,7 +231,7 @@ export function PromptSquarePanel({ onUsePrompt }: PromptSquarePanelProps) {
         {loading ? (
           <PromptSquareSkeleton />
         ) : error && !items.length ? (
-          <PromptSquareState title={`${activeView.label}暂不可用`} body="后端广场接口可能还在接线中，请稍后刷新。" actionLabel="重试" onAction={() => void refresh(view)} />
+          <PromptSquareState title={`${activeView.label}暂不可用`} body="提示词广场暂时无法加载，请稍后刷新。" actionLabel="重试" onAction={() => void refresh(view)} />
         ) : filtered.length ? (
           <div className="prompt-square-grid">
             {filtered.map((item, index) => (

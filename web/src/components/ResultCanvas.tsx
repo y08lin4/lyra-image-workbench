@@ -85,7 +85,7 @@ export function ResultCanvas({ task, onUseAsReference, onUploadPixhost, onOpenGe
               )
             })}
           </div>
-          <DebugLogPanel task={task} />
+          <DiagnosticLogPanel task={task} />
         </>
       )}
     </section>
@@ -187,14 +187,14 @@ function ratioToCssAspect(value: string) {
   return `${width} / ${height}`
 }
 
-function DebugLogPanel({ task }: { task: Task }) {
+function DiagnosticLogPanel({ task }: { task: Task }) {
   const logs = task.debugLogs || []
   if (!task.debugEnabled && logs.length === 0) return null
   return (
-    <section className="debug-log-panel" aria-label="Debug 日志">
+    <section className="debug-log-panel" aria-label="诊断日志">
       <details open={logs.length > 0 && task.status !== 'succeeded'}>
         <summary>
-          <span>Debug 日志</span>
+          <span>诊断日志</span>
           <strong>{logs.length ? `${logs.length} 条` : '已开启，等待新日志'}</strong>
         </summary>
         {logs.length ? (
@@ -203,17 +203,17 @@ function DebugLogPanel({ task }: { task: Task }) {
               <article key={`${item.time}-${index}`} className={`debug-log-item ${item.level || 'info'}`}>
                 <header>
                   <b>{item.level || 'info'}</b>
-                  <span>{item.stage || 'debug'}</span>
-                  <time>{formatDebugTime(item.time)}</time>
+                  <span>{item.stage || '诊断'}</span>
+                  <time>{formatDiagnosticTime(item.time)}</time>
                   {item.imageIndex >= 0 ? <em>#{item.imageIndex + 1}</em> : null}
                 </header>
                 <p>{item.message}</p>
-                {item.fields ? <pre>{renderDebugFields(item.fields)}</pre> : null}
+                {item.fields ? <pre>{renderDiagnosticFields(item.fields)}</pre> : null}
               </article>
             ))}
           </div>
         ) : (
-          <p className="muted">Debug 只对开启后创建的新任务记录；不会显示 API Key 明文。</p>
+          <p className="muted">开启后创建的新任务会记录诊断信息；不会显示 API Key 明文。</p>
         )}
       </details>
     </section>
@@ -509,15 +509,15 @@ async function copyImage(src: string, setNotice: (value: string) => void) {
     }
     if (!window.isSecureContext) {
       if (copyImageAsHTML(absoluteURL)) {
-        flash(setNotice, '图片已复制（兼容模式）')
-        return '图片已复制（兼容模式）'
+        flash(setNotice, '图片已复制（备用方式）')
+        return '图片已复制（备用方式）'
       }
       throw new Error('复制图片需要 HTTPS 或 localhost 环境')
     }
     if (!navigator.clipboard?.write || typeof ClipboardItem === 'undefined') {
       if (copyImageAsHTML(absoluteURL)) {
-        flash(setNotice, '图片已复制（兼容模式）')
-        return '图片已复制（兼容模式）'
+        flash(setNotice, '图片已复制（备用方式）')
+        return '图片已复制（备用方式）'
       }
       throw new Error('当前浏览器不支持直接复制图片')
     }
@@ -528,8 +528,8 @@ async function copyImage(src: string, setNotice: (value: string) => void) {
     return '图片已复制'
   } catch (err) {
     if (copyImageAsHTML(absoluteURL)) {
-      flash(setNotice, '图片已复制（兼容模式）')
-      return '图片已复制（兼容模式）'
+      flash(setNotice, '图片已复制（备用方式）')
+      return '图片已复制（备用方式）'
     }
     const message = err instanceof Error ? err.message : '复制图片失败'
     flash(setNotice, message)
@@ -781,14 +781,14 @@ function outputFormatLabel(value?: string) {
   return labels[value] || value.toUpperCase()
 }
 
-function formatDebugTime(value?: string) {
+function formatDiagnosticTime(value?: string) {
   if (!value) return ''
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return value
   return date.toLocaleTimeString()
 }
 
-function renderDebugFields(fields: Record<string, unknown>) {
+function renderDiagnosticFields(fields: Record<string, unknown>) {
   return JSON.stringify(fields, null, 2)
 }
 

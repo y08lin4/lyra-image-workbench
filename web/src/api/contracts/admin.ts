@@ -127,6 +127,37 @@ export type AdminConfigResponse = { ok: boolean; config: AdminConfig }
 export type AdminUsersResponse = { ok: boolean; users: AdminUser[] }
 export type AdminUserLedgerResponse = { ok: boolean; ledger?: CreditLedgerEntry[]; entries?: CreditLedgerEntry[] }
 
+export type AdminActivityKind = 'registration' | 'recharge' | 'task_error' | 'credit_adjustment' | string
+
+export interface AdminActivityEvent {
+  id: string
+  kind: AdminActivityKind
+  username?: string
+  displayName?: string
+  email?: string
+  actor?: string
+  title?: string
+  description?: string
+  credits?: number
+  delta?: number
+  balanceAfter?: number
+  amountCents?: number
+  status?: string
+  sourceId?: string
+  taskId?: string
+  errorCode?: string
+  errorText?: string
+  occurredAt?: string
+  createdAt?: string
+  metadata?: Record<string, unknown>
+}
+
+export type AdminActivityResponse = {
+  ok: boolean
+  activities?: AdminActivityEvent[]
+  events?: AdminActivityEvent[]
+  logs?: AdminActivityEvent[]
+}
 export type GrantUserCreditsRequest = {
   username: string
   amount: number

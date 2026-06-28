@@ -21,15 +21,15 @@ const workflowTabs: WorkbenchTabItem[] = [
   { id: 'nodes', label: '创作画布', hint: 'Canvas' },
   { id: 'gif', label: 'GIF 动图', hint: '动效' },
   { id: 'agent', label: 'Agent 创作', hint: '多轮' },
-  { id: 'generate', label: '快捷生成', hint: '兼容' },
-  { id: 'assistant', label: '提示词助手', hint: '四栏' },
+  { id: 'generate', label: '快捷生成', hint: '快速' },
+  { id: 'assistant', label: '提示词助手', hint: '润色' },
   { id: 'library', label: '提示词库', hint: '灵感' },
-  { id: 'square', label: '广场', hint: 'Prompt' },
-  { id: 'result', label: '结果', hint: '队列' },
+  { id: 'square', label: '广场', hint: '社区' },
+  { id: 'result', label: '结果', hint: '历史' },
   { id: 'profile', label: '我的', hint: '账号' },
-  { id: 'topup', label: '充值', hint: '充值' },
-  { id: 'apiDocs', label: 'API 文档', hint: 'Bearer' },
-  { id: 'settings', label: '设置', hint: 'Key' },
+  { id: 'topup', label: '充值', hint: '次数' },
+  { id: 'apiDocs', label: 'API 文档', hint: '接入' },
+  { id: 'settings', label: '设置', hint: '偏好' },
 ]
 
 const desktopNavGroupDefinitions: WorkbenchNavGroupDefinition[] = [
@@ -69,9 +69,9 @@ export function buildWorkbenchTabItems({
     if (tab.id === 'generate') return { ...tab, hint: currentKeyReady ? '可提交' : '缺 Key', tone: currentKeyReady ? 'normal' : 'danger' }
     if (tab.id === 'gif') return { ...tab, hint: '单图动效' }
     if (tab.id === 'agent') return { ...tab, hint: '多轮' }
-    if (tab.id === 'assistant') return { ...tab, hint: '四栏' }
-    if (tab.id === 'library') return { ...tab, hint: '自动同步', tone: 'normal' }
-    if (tab.id === 'square') return { ...tab, hint: '试验版' }
+    if (tab.id === 'assistant') return { ...tab, hint: '润色' }
+    if (tab.id === 'library') return { ...tab, hint: '收藏', tone: 'normal' }
+    if (tab.id === 'square') return { ...tab, hint: '社区' }
     if (tab.id === 'result') {
       return {
         ...tab,
@@ -81,12 +81,12 @@ export function buildWorkbenchTabItems({
       }
     }
     if (tab.id === 'profile') return { ...tab, hint: creditsBalance != null ? `${creditsBalance} 次` : '账号' }
-    if (tab.id === 'apiDocs') return { ...tab, hint: 'Bearer' }
-    if (tab.id === 'settings') return { ...tab, hint: missingKeyCount ? `${missingKeyCount} 个未设` : '已配置', badge: missingKeyCount ? '!' : undefined, tone: missingKeyCount ? 'danger' : 'normal' }
+    if (tab.id === 'apiDocs') return { ...tab, hint: '接入' }
+    if (tab.id === 'settings') return { ...tab, hint: missingKeyCount ? `${missingKeyCount} 个待设` : '已配置', badge: missingKeyCount ? '!' : undefined, tone: missingKeyCount ? 'danger' : 'normal' }
     return tab
   })
   if (isAdmin) {
-    items.push({ id: 'admin', label: '管理员后台', hint: '管理', tone: 'admin' })
+    items.push({ id: 'admin', label: '站点管理', hint: '运营', tone: 'admin' })
   }
   return items
 }
@@ -113,7 +113,7 @@ export function buildWorkbenchMobileMoreSummary(mobileMoreTabs: WorkbenchTabItem
   const hiddenActive = mobileMoreTabs.find((tab) => tab.tone === 'active' || tab.badge)
   if (hiddenActive) return { id: 'more', label: '更多', hint: hiddenActive.label, badge: hiddenActive.badge, tone: hiddenActive.tone }
   const adminTab = mobileMoreTabs.find((tab) => tab.id === 'admin')
-  if (adminTab) return { id: 'more', label: '更多', hint: '含后台', badge: adminTab.badge, tone: adminTab.tone }
+  if (adminTab) return { id: 'more', label: '更多', hint: '含管理', badge: adminTab.badge, tone: adminTab.tone }
   return { id: 'more', label: '更多', hint: '菜单' }
 }
 

@@ -1,5 +1,7 @@
 import { requestJson } from './client'
 import type {
+  AdminActivityEvent,
+  AdminActivityResponse,
   AdminAuthStatusResponse,
   AdminBillingConfigPatch,
   AdminConfigPatch,
@@ -17,6 +19,7 @@ import type {
 } from './contracts/admin'
 
 export type {
+  AdminActivityEvent,
   AdminBillingConfigPatch,
   AdminConfigPatch,
   AdminEmailConfigPatch,
@@ -129,6 +132,15 @@ export async function listAdminUsers() {
   return data.users || []
 }
 
+export async function listAdminActivity(limit = 100) {
+  const params = new URLSearchParams()
+  if (limit > 0) params.set('limit', String(limit))
+  const path = `/api/admin/activity${params.toString() ? `?${params.toString()}` : ''}`
+  const data = await requestJson<AdminActivityResponse>(path, {
+    headers: adminHeaders(),
+  }, '')
+  return data.activities || data.events || data.logs || []
+}
 export async function grantUserCredits(username: string, amount: number, reason: string) {
   const body: GrantUserCreditsRequest = { username, amount, reason }
   const data = await requestJson<GrantCreditsResponse>('/api/admin/users/credits/add', {

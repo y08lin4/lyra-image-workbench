@@ -13,6 +13,8 @@ export type {
   AdminEmailConfig,
   AdminConfig,
   AdminAuthStatus,
+  AdminActivityEvent,
+  AdminActivityKind,
   AdminSession,
   AdminSetupRequest,
   AdminSetupResponse,

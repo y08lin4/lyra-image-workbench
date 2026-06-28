@@ -113,9 +113,9 @@ export function SettingsPanel({ onReady, onConfig }: { onReady?: (ready: boolean
       const result = await createDeveloperApiKey(developerKeyName)
       setDeveloperKeys(await listDeveloperApiKeys())
       setDeveloperSecret(result.secret)
-      setMessage('开发者 API Key 已生成，请保存 Secret')
+      setMessage('API 访问密钥已生成，请保存密钥内容')
     } catch (err) {
-      handleActionError(err, '生成开发者 API Key 失败')
+      handleActionError(err, '生成 API 访问密钥失败')
     }
   }
 
@@ -124,9 +124,9 @@ export function SettingsPanel({ onReady, onConfig }: { onReady?: (ready: boolean
       setError('')
       await deleteDeveloperApiKey(id)
       setDeveloperKeys((items) => items.filter((item) => item.id !== id))
-      setMessage('开发者 API Key 已删除')
+      setMessage('API 访问密钥已删除')
     } catch (err) {
-      handleActionError(err, '删除开发者 API Key 失败')
+      handleActionError(err, '删除 API 访问密钥失败')
     }
   }
 
@@ -175,7 +175,7 @@ export function SettingsPanel({ onReady, onConfig }: { onReady?: (ready: boolean
   const saveCue = hasPendingUpstreamKey
     ? pendingCloudKey
       ? '会先确认云端风险；确认后保存 Key 路径和默认生成设置。'
-      : '会保存到当前浏览器；开发者 Bearer Key 仍需云端或系统托管上游 Key。'
+      : '会保存到当前浏览器；API 调用仍需云端或系统托管上游 Key。'
     : '会保存默认数量、并发和图床偏好。'
 
   return (
@@ -233,11 +233,11 @@ export function SettingsPanel({ onReady, onConfig }: { onReady?: (ready: boolean
           <input type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="填写 codex-key" spellCheck={false} autoComplete="off" />
           <label className="check-row cloud-key-check">
             <input type="checkbox" checked={saveApiKeyToCloud} onChange={(e) => setSaveApiKeyToCloud(e.target.checked)} />
-            <span>同时上传到云端，用于多设备和开发者 Key</span>
+            <span>同时上传到云端，用于多设备和 API 访问密钥</span>
           </label>
           <div className={`settings-path-note ${saveApiKeyToCloud ? 'ready' : ''}`}>
             <strong>保存路径：{saveApiKeyToCloud ? '当前浏览器 + 云端账号' : '仅当前浏览器'}</strong>
-            <span>{saveApiKeyToCloud ? '点击底部“保存设置”后才会上传；云端 Key 可供 Bearer/SDK 请求使用。' : '点击底部“保存设置”后只写入本机浏览器；换设备或生成开发者 Key 需要云端 Key。'}</span>
+            <span>{saveApiKeyToCloud ? '点击底部“保存设置”后才会上传；云端 Key 可供外部应用调用。' : '点击底部“保存设置”后只写入本机浏览器；换设备或生成 API 访问密钥需要云端 Key。'}</span>
           </div>
         </section>
 
@@ -257,31 +257,31 @@ export function SettingsPanel({ onReady, onConfig }: { onReady?: (ready: boolean
           <input type="password" value={bananaApiKey} onChange={(e) => setBananaApiKey(e.target.value)} placeholder="填写 banana 分组 API Key" spellCheck={false} autoComplete="off" />
           <label className="check-row cloud-key-check">
             <input type="checkbox" checked={saveBananaKeyToCloud} onChange={(e) => setSaveBananaKeyToCloud(e.target.checked)} />
-            <span>同时上传到云端，用于多设备和开发者 Key</span>
+            <span>同时上传到云端，用于多设备和 API 访问密钥</span>
           </label>
           <div className={`settings-path-note ${saveBananaKeyToCloud ? 'ready' : ''}`}>
             <strong>保存路径：{saveBananaKeyToCloud ? '当前浏览器 + 云端账号' : '仅当前浏览器'}</strong>
-            <span>{saveBananaKeyToCloud ? '点击底部“保存设置”后才会上传；云端 Key 可供 Bearer/SDK 请求使用。' : '点击底部“保存设置”后只写入本机浏览器；开发者 Key 无法读取本地浏览器 Key。'}</span>
+            <span>{saveBananaKeyToCloud ? '点击底部“保存设置”后才会上传；云端 Key 可供外部应用调用。' : '点击底部“保存设置”后只写入本机浏览器；API 访问密钥无法读取本地浏览器 Key。'}</span>
           </div>
         </section>
 
         <section className="settings-card developer-key-card">
           <div className="section-title">
-            <span>开发者 API Key</span>
-            <small>Bearer / SDK</small>
+            <span>API 访问密钥</span>
+            <small>外部应用</small>
           </div>
-          <p className="muted">Bearer/SDK 请求由云端 worker 执行，需先保存云端上游 Key，或由管理员配置系统托管 Key；浏览器本地 Key 云端拿不到。</p>
+          <p className="muted">外部应用调用需要云端上游 Key，或由管理员配置系统托管 Key；仅保存在本机浏览器的 Key 不会用于外部调用。</p>
           <div className={`settings-path-note ${hostedKeyReady ? 'ready' : 'missing'}`}>
-            <strong>{hostedKeyReady ? '服务端上游 Key 已就绪' : '生成前先准备服务端上游 Key'}</strong>
-            <span>{hostedKeyReady ? '云端账号或系统托管 Key 可供 Bearer/SDK 请求使用；新 Secret 只显示一次。' : '在上方上传云端 Key，或由管理员配置系统托管 Key 后再生成。'}</span>
+            <strong>{hostedKeyReady ? '云端上游 Key 已就绪' : '生成前先准备云端上游 Key'}</strong>
+            <span>{hostedKeyReady ? '云端账号或系统托管 Key 可供外部应用调用；新密钥内容只显示一次。' : '在上方上传云端 Key，或由管理员配置系统托管 Key 后再生成。'}</span>
           </div>
           <div className="developer-key-create">
             <input value={developerKeyName} onChange={(e) => setDeveloperKeyName(e.target.value)} placeholder="API Key 名称" />
-            <button type="button" className="primary" disabled={!hostedKeyReady} onClick={() => void createDeveloperKey()}>生成 Bearer Key</button>
+            <button type="button" className="primary" disabled={!hostedKeyReady} onClick={() => void createDeveloperKey()}>生成访问密钥</button>
           </div>
           {developerSecret ? (
             <div className="developer-secret-box">
-              <span>Secret</span>
+              <span>密钥内容</span>
               <code>{developerSecret}</code>
             </div>
           ) : null}
@@ -294,7 +294,7 @@ export function SettingsPanel({ onReady, onConfig }: { onReady?: (ready: boolean
                 </div>
                 <button type="button" onClick={() => void removeDeveloperKey(item.id)}>删除</button>
               </div>
-            )) : <small className="muted">暂无开发者 API Key</small>}
+            )) : <small className="muted">暂无 API 访问密钥</small>}
           </div>
         </section>
 

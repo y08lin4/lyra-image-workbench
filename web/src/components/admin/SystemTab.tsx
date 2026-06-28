@@ -21,7 +21,7 @@ type SystemTabProps = {
   onClearSystemApiKeyChange: (value: boolean) => void
   onClearSystemBananaApiKeyChange: (value: boolean) => void
   onTimeoutChange: (value: NumericInputValue) => void
-  onDebugEnabledChange: (value: boolean) => void
+  onDiagnosticsEnabledChange: (value: boolean) => void
   onSubmit: (event: FormEvent) => void
 }
 
@@ -44,7 +44,7 @@ export function SystemTab({
   onClearSystemApiKeyChange,
   onClearSystemBananaApiKeyChange,
   onTimeoutChange,
-  onDebugEnabledChange,
+  onDiagnosticsEnabledChange,
   onSubmit,
 }: SystemTabProps) {
   return (
@@ -52,7 +52,7 @@ export function SystemTab({
       <div className="admin-section-heading">
         <div>
           <h2>系统配置</h2>
-          <p className="muted">站点展示、NewAPI 上游、公开域名和调试日志。</p>
+          <p className="muted">站点展示、NewAPI 上游、公开域名和诊断日志。</p>
         </div>
       </div>
       <div className="admin-form-grid">
@@ -74,11 +74,11 @@ export function SystemTab({
         </label>
       </div>
       <label className="check-row admin-debug-toggle admin-debug-row">
-        <input type="checkbox" checked={debugEnabled} onChange={(e) => onDebugEnabledChange(e.target.checked)} />
-        <span>开启 Debug 日志：新任务会在前端结果页显示脱敏后的请求 URL、参数、上游状态和错误详情</span>
+        <input type="checkbox" checked={debugEnabled} onChange={(e) => onDiagnosticsEnabledChange(e.target.checked)} />
+        <span>开启诊断日志：新任务会在结果页显示脱敏后的请求参数、上游状态和错误详情</span>
       </label>
       <div className="admin-inline-notes">
-        <div className="status-line">当前对外域名：{config?.publicBaseUrl || '未设置'}。用于记录部署域名，反代仍在宝塔/Nginx 里配置。</div>
+        <div className="status-line">当前对外域名：{config?.publicBaseUrl || '未设置'}。用于记录站点访问域名，请和服务器或反向代理配置保持一致。</div>
         <div className="status-line">系统 Image-2 Key：{config?.systemApiKeySet ? `已设置 ${config.systemApiKeyPreview || ''}` : '未设置'}；系统 Banana Key：{config?.systemBananaApiKeySet ? `已设置 ${config.systemBananaApiKeyPreview || ''}` : '未设置'}。</div>
         <div className="status-line">默认 Image-2 模型：{config?.model || 'gpt-image-2'}；Banana Nano 在工作台按规格路由到独立模型 ID。</div>
       </div>

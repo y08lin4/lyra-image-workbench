@@ -155,6 +155,6 @@ function previewSizeLabel(ratio: string, resolution: string) {
 function previewSizeNote(ratio: string, resolution: string) {
   if (ratio === 'auto' && resolution === 'auto') return '不传具体 size，由模型或上游自动决定'
   if (ratio === 'auto') return `分辨率记录为${resolutionTitle(resolution)}，但比例自动时不传具体 size`
-  if (resolution === 'auto') return '分辨率自动时沿用当前后端逻辑，按标准尺寸提交'
+  if (resolution === 'auto') return '分辨率自动时按标准尺寸提交'
   return `${resolutionTitle(resolution)} + ${ratio}`
 }

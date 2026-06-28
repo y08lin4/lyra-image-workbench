@@ -5,6 +5,7 @@ import {
   getAdminConfig,
   getAdminToken,
   grantUserCredits,
+  listAdminActivity,
   listAdminUserLedger,
   listAdminUsers,
   loginAdmin,
@@ -15,10 +16,11 @@ import {
   setAdminUserRole,
   setupAdminSite,
 } from '../api/admin'
-import type { AdminAuthStatus, AdminConfig, AdminUser, CreditLedgerEntry } from '../types'
+import type { AdminActivityEvent, AdminAuthStatus, AdminConfig, AdminUser, CreditLedgerEntry } from '../types'
 import { ThemeToggle, type ThemeMode } from './ThemeToggle'
 import { GitHubLink } from './GitHubLink'
 import { AdminTabs, ADMIN_TABS, type AdminTab } from './admin/AdminTabs'
+import { ActivityTab } from './admin/ActivityTab'
 import { BillingTab } from './admin/BillingTab'
 import { EmailTab } from './admin/EmailTab'
 import { LedgerTab } from './admin/LedgerTab'
@@ -53,7 +55,7 @@ export function AdminPage({ theme, onToggleTheme, embedded = false }: AdminPageP
   const [systemBananaApiKey, setSystemBananaApiKey] = useState('')
   const [clearSystemApiKey, setClearSystemApiKey] = useState(false)
   const [clearSystemBananaApiKey, setClearSystemBananaApiKey] = useState(false)
-  const [debugEnabled, setDebugEnabled] = useState(false)
+  const [debugEnabled, setDiagnosticsEnabled] = useState(false)
   const [timeout, setTimeoutSec] = useState<NumericInputValue>(600)
   const [epayEnabled, setEpayEnabled] = useState(false)
   const [epayApiUrl, setEpayApiUrl] = useState('')
@@ -86,6 +88,11 @@ export function AdminPage({ theme, onToggleTheme, embedded = false }: AdminPageP
   const [selectedLedgerUser, setSelectedLedgerUser] = useState('')
   const [ledger, setLedger] = useState<CreditLedgerEntry[]>([])
   const [ledgerLoading, setLedgerLoading] = useState(false)
+  const [activity, setActivity] = useState<AdminActivityEvent[]>([])
+  const [activityLoading, setActivityLoading] = useState(false)
+  const [activityLoaded, setActivityLoaded] = useState(false)
+  const [activityError, setActivityError] = useState('')
+  const [activitySource, setActivitySource] = useState<'api' | 'derived' | 'none'>('none')
   const [grantUsername, setGrantUsername] = useState('')
   const [grantAmount, setGrantAmount] = useState<NumericInputValue>(10)
   const [grantReason, setGrantReason] = useState('')
@@ -95,6 +102,12 @@ export function AdminPage({ theme, onToggleTheme, embedded = false }: AdminPageP
   useEffect(() => {
     void boot()
   }, [])
+
+  useEffect(() => {
+    if (mode === 'config' && activeTab === 'activity' && !activityLoaded && !activityLoading) {
+      void loadActivity()
+    }
+  }, [mode, activeTab, activityLoaded, activityLoading])
 
   async function boot() {
     setError('')
@@ -111,7 +124,7 @@ export function AdminPage({ theme, onToggleTheme, embedded = false }: AdminPageP
       }
       await loadConfig()
     } catch (err) {
-      setError(err instanceof Error ? err.message : '读取 Admin 状态失败')
+      setError(err instanceof Error ? err.message : '读取管理状态失败')
       setMode('login')
     }
   }
@@ -127,7 +140,7 @@ export function AdminPage({ theme, onToggleTheme, embedded = false }: AdminPageP
       setSystemBananaApiKey('')
       setClearSystemApiKey(false)
       setClearSystemBananaApiKey(false)
-      setDebugEnabled(Boolean(cfg.debugEnabled))
+      setDiagnosticsEnabled(Boolean(cfg.debugEnabled))
       setTimeoutSec(cfg.timeoutSec)
       applyBillingConfig(cfg)
       applyEmailConfig(cfg)
@@ -135,7 +148,7 @@ export function AdminPage({ theme, onToggleTheme, embedded = false }: AdminPageP
       await loadUsers()
     } catch (err) {
       clearAdminToken()
-      setError(err instanceof Error ? err.message : 'Admin 登录已失效')
+      setError(err instanceof Error ? err.message : '管理登录已失效')
       setMode('login')
     }
   }
@@ -152,8 +165,10 @@ export function AdminPage({ theme, onToggleTheme, embedded = false }: AdminPageP
         setSelectedLedgerUser('')
         setLedger([])
       }
+      return nextUsers
     } catch (err) {
       setError(err instanceof Error ? err.message : '读取用户列表失败')
+      return []
     } finally {
       setUsersLoading(false)
     }
@@ -203,7 +218,7 @@ export function AdminPage({ theme, onToggleTheme, embedded = false }: AdminPageP
           setSystemBananaApiKey('')
           setClearSystemApiKey(false)
           setClearSystemBananaApiKey(false)
-          setDebugEnabled(Boolean(next.config.debugEnabled))
+          setDiagnosticsEnabled(Boolean(next.config.debugEnabled))
           setTimeoutSec(next.config.timeoutSec)
           applyBillingConfig(next.config)
           applyEmailConfig(next.config)
@@ -212,13 +227,13 @@ export function AdminPage({ theme, onToggleTheme, embedded = false }: AdminPageP
       } else {
         const next = await loginAdmin(password)
         setAuth(next.auth)
-        setMessage('Admin 登录成功')
+        setMessage('管理登录成功')
       }
       setPassword('')
       setSetupToken('')
       await loadConfig()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Admin 鉴权失败')
+      setError(err instanceof Error ? err.message : '管理验证失败')
     }
   }
   async function submit(event: FormEvent) {
@@ -238,7 +253,7 @@ export function AdminPage({ theme, onToggleTheme, embedded = false }: AdminPageP
       setSystemBananaApiKey('')
       setClearSystemApiKey(false)
       setClearSystemBananaApiKey(false)
-      setDebugEnabled(Boolean(cfg.debugEnabled))
+      setDiagnosticsEnabled(Boolean(cfg.debugEnabled))
       applyBillingConfig(cfg)
       applyEmailConfig(cfg)
       setMessage('管理配置已保存')
@@ -341,7 +356,7 @@ export function AdminPage({ theme, onToggleTheme, embedded = false }: AdminPageP
       setLedger([])
       setSelectedLedgerUser('')
       setMode('login')
-      setMessage('已退出 Admin')
+      setMessage('已退出管理')
     }
   }
 
@@ -399,6 +414,28 @@ export function AdminPage({ theme, onToggleTheme, embedded = false }: AdminPageP
     }
   }
 
+
+  async function loadActivity() {
+    setActivityLoading(true)
+    setActivityError('')
+    try {
+      const nextActivity = await listAdminActivity(120)
+      setActivity(normalizeActivity(nextActivity))
+      setActivitySource('api')
+      setActivityLoaded(true)
+    } catch (err) {
+      const sourceUsers = users.length ? users : await loadUsers()
+      const derived = await buildDerivedActivity(sourceUsers)
+      setActivity(derived.events)
+      setActivitySource('derived')
+      setActivityLoaded(true)
+      const fallback = '暂时只显示可由用户列表和额度流水推导的动态，完整记录稍后会继续同步。'
+      const ledgerNote = derived.failedLedgerCount ? ` 有 ${derived.failedLedgerCount} 个用户流水读取失败。` : ''
+      setActivityError(`${fallback}${ledgerNote}${err instanceof Error ? ` 原因：${err.message}` : ''}`)
+    } finally {
+      setActivityLoading(false)
+    }
+  }
   async function toggleAdminRole(user: AdminUser) {
     setError('')
     setMessage('')
@@ -438,8 +475,8 @@ export function AdminPage({ theme, onToggleTheme, embedded = false }: AdminPageP
           </div>
         ) : null}
         <section className="admin-panel">
-          <AdminBrand title="后台管理" />
-          <div className="info">正在检查 Admin 鉴权状态...</div>
+          <AdminBrand title="站点管理" />
+          <div className="info">正在检查管理权限...</div>
           {error ? <div className="error">{error}</div> : null}
         </section>
       </Shell>
@@ -456,22 +493,22 @@ export function AdminPage({ theme, onToggleTheme, embedded = false }: AdminPageP
           </div>
         ) : null}
         <form className={mode === 'setup' ? 'admin-panel admin-setup-panel' : 'admin-panel'} onSubmit={submitPassword}>
-          <AdminBrand title={mode === 'setup' ? '初始化站点' : '输入 Admin 密码'} />
+          <AdminBrand title={mode === 'setup' ? '初始化站点' : '输入管理密码'} />
           {mode === 'setup' ? (
             <>
-              <p className="muted">首次部署需要完成站点名称、管理员账号和基础配置。初始化完成后，只有管理员才能看到后台设置入口。</p>
+              <p className="muted">首次部署需要完成站点名称、管理员账号和基础配置。初始化完成后，只有管理员才能看到站点管理入口。</p>
               <div className="identity-help">
                 <strong>初始化说明</strong>
                 <ul>
-                  <li>安装令牌来自服务端环境变量 LOCAL_IMAGE_ADMIN_SETUP_TOKEN。</li>
-                  <li>服务端未设置 LOCAL_IMAGE_ADMIN_SETUP_TOKEN 时会拒绝初始化。</li>
-                  <li>生产部署必须先设置 LOCAL_IMAGE_ADMIN_SETUP_TOKEN，再打开初始化页面。</li>
+                  <li>安装令牌来自部署时配置的安全口令。</li>
+                  <li>未配置安装令牌时，系统会拒绝初始化。</li>
+                  <li>正式部署请先配置安装令牌，再打开初始化页面。</li>
                   <li>管理员密码至少 10 位，建议包含大小写字母、数字和符号。</li>
-                  <li>后端只保存不可逆哈希，不保存明文密码。</li>
+                  <li>系统只保存不可逆哈希，不保存明文密码。</li>
                 </ul>
               </div>
               <div className="admin-setup-grid">
-                <label className="wide">安装令牌<input type="password" value={setupToken} onChange={(e) => setSetupToken(e.target.value)} placeholder="LOCAL_IMAGE_ADMIN_SETUP_TOKEN" autoComplete="one-time-code" /></label>
+                <label className="wide">安装令牌<input type="password" value={setupToken} onChange={(e) => setSetupToken(e.target.value)} placeholder="输入部署安装令牌" autoComplete="one-time-code" /></label>
                 <label>站点名称<input value={siteName} onChange={(e) => setSiteName(e.target.value)} placeholder="Lyra Image Workbench" /></label>
                 <label>管理员用户名<input value={adminUsername} onChange={(e) => setAdminUsername(e.target.value)} placeholder="admin" autoComplete="username" /></label>
                 <label>管理员邮箱<input type="email" value={adminEmail} onChange={(e) => setAdminEmail(e.target.value)} placeholder="admin@example.com，可留空" autoComplete="email" /></label>
@@ -482,24 +519,24 @@ export function AdminPage({ theme, onToggleTheme, embedded = false }: AdminPageP
                 <label>新用户初始免费次数<input type="number" min={0} value={newUserInitialCredits} onChange={(e) => setNewUserInitialCredits(readNumberInput(e.target.value))} /></label>
                 <label>每日免费次数<input type="number" min={0} value={dailyFreeCredits} onChange={(e) => setDailyFreeCredits(readNumberInput(e.target.value))} /></label>
                 <label className="check-row admin-debug-toggle wide">
-                  <input type="checkbox" checked={debugEnabled} onChange={(e) => setDebugEnabled(e.target.checked)} />
-                  <span>开启 Debug 日志：任务结果页会显示脱敏后的请求参数、上游状态和错误详情</span>
+                  <input type="checkbox" checked={debugEnabled} onChange={(e) => setDiagnosticsEnabled(e.target.checked)} />
+                  <span>开启诊断日志：任务结果页会显示脱敏后的请求参数、上游状态和错误详情</span>
                 </label>
               </div>
-              <button className="primary" type="submit">初始化站点并进入 Admin</button>
+              <button className="primary" type="submit">初始化站点并进入管理</button>
             </>
           ) : (
             <>
-              <p className="muted">后续访问 Admin 页面需要先输入管理密码。</p>
+              <p className="muted">进入站点管理前需要先输入管理密码。</p>
               <div className="identity-help">
                 <strong>管理密码说明</strong>
                 <ul>
                   <li>用于保护 NewAPI URL、额度、用户、支付等站点管理配置。</li>
-                  <li>后端只保存不可逆哈希，不保存明文密码。</li>
+                  <li>系统只保存不可逆哈希，不保存明文密码。</li>
                 </ul>
               </div>
-              <label>Admin 密码<input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="输入管理密码" autoFocus /></label>
-              <button className="primary" type="submit">登录 Admin</button>
+              <label>管理密码<input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="输入管理密码" autoFocus /></label>
+              <button className="primary" type="submit">进入管理</button>
             </>
           )}
           {!embedded ? <a href="/">返回工作台</a> : null}
@@ -520,14 +557,14 @@ export function AdminPage({ theme, onToggleTheme, embedded = false }: AdminPageP
       ) : null}
       <section className="admin-panel admin-panel-wide admin-console" aria-labelledby="admin-console-title">
         <header className="admin-console-head">
-          <AdminBrand title="后台管理" />
+          <AdminBrand title="站点管理" />
           <div className="admin-console-actions">
             {!embedded ? <a href="/">返回工作台</a> : null}
-            <button type="button" onClick={handleLogout}>退出 Admin</button>
+            <button type="button" onClick={handleLogout}>退出管理</button>
           </div>
         </header>
 
-        <div className="status-line admin-auth-status">Admin 已登录 · 密码状态：{auth?.passwordSet ? '已设置' : '未设置'}</div>
+        <div className="status-line admin-auth-status">管理已登录 · 密码状态：{auth?.passwordSet ? '已设置' : '未设置'}</div>
 
         <AdminTabs activeTab={activeTab} onSelectTab={setActiveTab} />
 
@@ -554,6 +591,16 @@ export function AdminPage({ theme, onToggleTheme, embedded = false }: AdminPageP
           />
         ) : null}
 
+
+        {activeTab === 'activity' ? (
+          <ActivityTab
+            events={activity}
+            loading={activityLoading}
+            error={activityError}
+            source={activitySource}
+            onRefresh={() => void loadActivity()}
+          />
+        ) : null}
         {activeTab === 'system' ? (
           <SystemTab
             config={config}
@@ -574,7 +621,7 @@ export function AdminPage({ theme, onToggleTheme, embedded = false }: AdminPageP
             onClearSystemApiKeyChange={setClearSystemApiKey}
             onClearSystemBananaApiKeyChange={setClearSystemBananaApiKey}
             onTimeoutChange={setTimeoutSec}
-            onDebugEnabledChange={setDebugEnabled}
+            onDiagnosticsEnabledChange={setDiagnosticsEnabled}
             onSubmit={submit}
           />
         ) : null}
@@ -682,9 +729,89 @@ function AdminBrand({ title }: { title: string }) {
     <div className="brand login-brand">
       <div className="brand-mark">Ly</div>
       <div>
-        <p className="eyebrow">Admin</p>
+        <p className="eyebrow">管理</p>
         <h1>{title}</h1>
       </div>
     </div>
   )
+}
+
+function normalizeActivity(events: AdminActivityEvent[]) {
+  return events
+    .map((event, index) => ({
+      ...event,
+      id: event.id || `${event.kind || 'activity'}:${event.username || 'unknown'}:${activityTime(event) || index}`,
+      occurredAt: activityTime(event),
+    }))
+    .sort((a, b) => eventTimestamp(b) - eventTimestamp(a))
+}
+
+async function buildDerivedActivity(users: AdminUser[]) {
+  const registrationEvents: AdminActivityEvent[] = users.map((user) => ({
+    id: `registration:${user.username}`,
+    kind: 'registration',
+    username: user.username,
+    displayName: user.displayName,
+    email: user.email,
+    title: '用户完成注册',
+    description: user.referredByCode ? `邀请码：${user.referredByCode}` : undefined,
+    occurredAt: user.createdAt,
+  }))
+  const ledgerResults = await Promise.allSettled(users.map((user) => listAdminUserLedger(user.username)))
+  const ledgerEvents: AdminActivityEvent[] = []
+  let failedLedgerCount = 0
+
+  ledgerResults.forEach((result, index) => {
+    if (result.status !== 'fulfilled') {
+      failedLedgerCount += 1
+      return
+    }
+    const user = users[index]
+    result.value.forEach((entry) => {
+      if (entry.type === 'purchase') {
+        ledgerEvents.push({
+          id: `recharge:${entry.id}`,
+          kind: 'recharge',
+          username: entry.username || user.username,
+          displayName: user.displayName,
+          email: user.email,
+          credits: Math.max(0, entry.delta),
+          delta: entry.delta,
+          balanceAfter: entry.balanceAfter,
+          sourceId: entry.sourceId,
+          occurredAt: entry.createdAt,
+        })
+        return
+      }
+      if (entry.type === 'admin_add') {
+        ledgerEvents.push({
+          id: `credit-adjustment:${entry.id}`,
+          kind: 'credit_adjustment',
+          username: entry.username || user.username,
+          displayName: user.displayName,
+          email: user.email,
+          actor: entry.adminActor,
+          delta: entry.delta,
+          balanceAfter: entry.balanceAfter,
+          sourceId: entry.sourceId,
+          description: entry.reason,
+          occurredAt: entry.createdAt,
+        })
+      }
+    })
+  })
+
+  return {
+    events: normalizeActivity([...registrationEvents, ...ledgerEvents]),
+    failedLedgerCount,
+  }
+}
+
+function activityTime(event: AdminActivityEvent) {
+  return event.occurredAt || event.createdAt || ''
+}
+
+function eventTimestamp(event: AdminActivityEvent) {
+  const timestamp = Date.parse(activityTime(event))
+  return Number.isNaN(timestamp) ? 0 : timestamp
 }

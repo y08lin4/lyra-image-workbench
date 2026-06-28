@@ -59,7 +59,7 @@ const QUICK_STEPS = [
 
 const ENDPOINTS = [
   ['POST', '/v1/images/generations', 'OpenAI 兼容创建端点，推荐 SDK 默认使用。'],
-  ['POST', '/v1/image-tasks', 'Lyra 原生创建任务，当前外部 API 仅支持 text-to-image。'],
+  ['POST', '/v1/image-tasks', 'Lyra 原生创建端点，适合需要完整任务字段的接入。'],
   ['GET', '/v1/image-tasks/{taskId}', '轮询状态、进度、results 和错误信息。'],
   ['GET', '/v1/image-tasks/{taskId}/images/{index}', '下载 results 中 ok=true 的图片二进制。'],
   ['POST', '/v1/image-tasks/{taskId}/cancel', '取消排队任务；运行中任务为尽力取消。'],
@@ -356,7 +356,7 @@ const ORDERED_API_EXAMPLES = ['curl', 'typescript', 'python', 'go', 'java']
   .filter((example): example is ApiExample => Boolean(example))
 
 const AI_INTEGRATION_PROMPT = [
-  '你要接入 LyAi Image Generation API。不要要求用户再查仓库、外部网页或其它文档；下面的信息已经足够完成接入。',
+  '请根据以下信息接入 LyAi Image Generation API。',
   '',
   `Base URL: ${API_BASE_URL}`,
   `环境变量: ${ENV_VAR_NAME}=lyra_sk_xxx`,
@@ -387,7 +387,7 @@ const AI_INTEGRATION_PROMPT = [
   '错误码:',
   ...ERROR_CODES.map((item) => `- ${item}`),
   '',
-  '请按目标语言生成完整 SDK/脚本：读取 LYRA_API_KEY，创建任务，打印 taskId，按上述终态规则轮询，succeeded/partial_failed 时下载第一个 ok=true 结果，failed/cancelled/interrupted 时抛错，并处理 HTTP 错误、超时和 429 AUTH_RATE_LIMITED。',
+  '实现要求：读取 LYRA_API_KEY，创建任务，打印 taskId，按上述终态规则轮询，succeeded/partial_failed 时下载第一个 ok=true 结果，failed/cancelled/interrupted 时抛错，并处理 HTTP 错误、超时和 429 AUTH_RATE_LIMITED。',
 ].join('\n')
 
 export function ApiDocsPage() {
@@ -427,7 +427,7 @@ export function ApiDocsPage() {
         <div className="api-console-actions">
           <a href={REGISTER_URL} target="_blank" rel="noreferrer">注册和配置</a>
           <a href={DOCS_REPO_URL} target="_blank" rel="noreferrer">GitHub 参考</a>
-          <button type="button" onClick={() => void copyText('AI 提示词', AI_INTEGRATION_PROMPT)}>复制 AI 提示词</button>
+          <button type="button" onClick={() => void copyText('接入清单', AI_INTEGRATION_PROMPT)}>复制接入清单</button>
         </div>
       </header>
 
@@ -524,15 +524,15 @@ export function ApiDocsPage() {
           <section className="api-console-panel api-console-ai-prompt" aria-labelledby="ai-prompt-title">
             <div className="api-console-panel-head">
               <div>
-                <h3 id="ai-prompt-title">给 AI 的完整提示词</h3>
-                <p>直接贴给编码 AI，无需再查外部文档。</p>
+                <h3 id="ai-prompt-title">接入清单</h3>
+                <p>包含认证、创建、轮询、下载和错误处理规则。</p>
               </div>
             </div>
             <CodeBlockFrame
               title="integration-prompt"
-              fileName="复制给编码 AI"
+              fileName="可复制到项目说明或实现任务"
               code={AI_INTEGRATION_PROMPT}
-              copyLabel="AI 提示词"
+              copyLabel="接入清单"
               wrap
               onCopy={(label, value) => void copyText(label, value)}
             />

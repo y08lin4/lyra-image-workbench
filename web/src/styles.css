@@ -13682,3 +13682,31 @@ button:not(.primary):not(.active):hover,
   border: 1px solid var(--api-key-mask-border);
   color: var(--api-key-mask-text) !important;
 }
+
+/* settings closure pass 2026-06 */
+:root[data-theme] .settings-page-inline {
+  width: 100%;
+  max-width: none;
+  margin-inline: 0;
+}
+
+:root[data-theme] .settings-inline-grid.settings-only-grid,
+:root[data-theme] .settings-flow-form {
+  width: 100%;
+  max-width: none;
+  margin-inline: 0;
+}
+
+.settings-submit-row {
+  justify-content: center;
+}
+
+.settings-submit-row button,
+.developer-key-create button,
+.settings-key-actions button,
+.cloud-warning-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}

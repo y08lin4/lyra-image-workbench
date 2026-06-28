@@ -273,8 +273,8 @@ export function PromptLibraryPage({ provider, bananaModel, onUsePrompt }: Props)
               <span>{visibleItems.length}/{library.total} 条</span>
               <span>更新：{formatLibraryTime(library.fetchedAt)}</span>
               {autoCheckedAt ? <span>最近检查：{formatLibraryTime(autoCheckedAt)}</span> : null}
-              {query.trim() || category ? <strong>已先本地筛选，后台同步更新中</strong> : null}
-              {library.stale ? <strong>当前显示缓存，后台更新暂不可用</strong> : null}
+              {query.trim() || category ? <strong>已先本地筛选，正在同步最新内容</strong> : null}
+              {library.stale ? <strong>当前显示缓存，稍后会继续检查更新</strong> : null}
             </div>
           ) : null}
           {loading && !library ? <div className="prompt-empty">正在加载提示词库...</div> : null}

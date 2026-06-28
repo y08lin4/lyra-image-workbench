@@ -91,6 +91,8 @@ export type NodeWorkflowPageProps = {
   provider: ModelProvider
   bananaModel: string
   prompt?: string
+  injectedPrompt?: string
+  injectedPromptRevision?: number
   initialPrompt?: string
   onUsePrompt: (prompt: string, options: NodeWorkflowUsePromptOptions) => void
   onCreateTask?: (payload: CreateTaskRequest) => void | Promise<void>
@@ -109,6 +111,8 @@ export function NodeWorkflowPage({
   provider,
   bananaModel,
   prompt,
+  injectedPrompt,
+  injectedPromptRevision = 0,
   initialPrompt,
   onUsePrompt,
   onCreateTask,
@@ -120,7 +124,7 @@ export function NodeWorkflowPage({
   latestTask,
 }: NodeWorkflowPageProps) {
   const [initialCanvasDraft] = useState(loadCreativeCanvasDraft)
-  const initialDraftPrompt = initialCanvasDraft.hasStoredDraft ? initialCanvasDraft.prompt : prompt || initialPrompt || ''
+  const initialDraftPrompt = injectedPromptRevision > 0 && injectedPrompt ? injectedPrompt : initialCanvasDraft.hasStoredDraft ? initialCanvasDraft.prompt : prompt || initialPrompt || ''
   const [mode, setMode] = useState<Mode>(initialCanvasDraft.mode)
   const [draftPrompt, setDraftPrompt] = useState(initialDraftPrompt)
   const [localProvider, setLocalProvider] = useState<ModelProvider>(provider || IMAGE2_PROVIDER)
@@ -162,6 +166,7 @@ export function NodeWorkflowPage({
   const autofocusedTextItemIdRef = useRef<string | null>(null)
   const canvasDropDepthRef = useRef(0)
   const hadStoredCanvasDraftRef = useRef(initialCanvasDraft.hasStoredDraft)
+  const appliedPromptInjectionRevisionRef = useRef(0)
 
   useEffect(() => {
     setLocalProvider(provider || IMAGE2_PROVIDER)
@@ -170,6 +175,17 @@ export function NodeWorkflowPage({
   useEffect(() => {
     setLocalBananaModel(bananaModel || DEFAULT_BANANA_MODEL)
   }, [bananaModel])
+
+  useEffect(() => {
+    if (!injectedPrompt || injectedPromptRevision <= 0 || appliedPromptInjectionRevisionRef.current === injectedPromptRevision) return
+    appliedPromptInjectionRevisionRef.current = injectedPromptRevision
+    setDraftPrompt(injectedPrompt)
+    setGeneratedPromptOverride('')
+    window.setTimeout(() => {
+      promptTextareaRef.current?.focus()
+      promptTextareaRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }, 0)
+  }, [injectedPrompt, injectedPromptRevision])
 
   useEffect(() => {
     if (!prompt || hadStoredCanvasDraftRef.current) return
@@ -407,7 +423,7 @@ export function NodeWorkflowPage({
       return
     }
     if (!onCreateTask) {
-      setMessage('当前页面还没有接入任务创建回调。')
+      setMessage('任务创建暂不可用，请稍后再试。')
       return
     }
 
@@ -467,7 +483,7 @@ export function NodeWorkflowPage({
       return
     }
     if (!onUploadReferences) {
-      setMessage('当前页面还没有接入参考图上传。')
+      setMessage('参考图上传暂不可用，请稍后再试。')
       return
     }
     try {
@@ -482,6 +498,7 @@ export function NodeWorkflowPage({
       const nextItems = created.map((upload, index) => createCanvasItemFromUpload(upload, spreadPoint(point, index), canvasItems.length + index, localUrls[index], sizes[index]))
       setCanvasItems((items) => [...items, ...nextItems])
       setSelectedItemId(nextItems[0].id)
+      setSelectedConnectionId(null)
       setMode('image-to-image')
       setMessage(`已加入 ${created.length} 张参考图。`)
     } catch (error) {
@@ -613,24 +630,40 @@ export function NodeWorkflowPage({
     return value.split(/\r?\n/).map((line) => line.trim()).find((line) => /^https?:\/\//i.test(line)) || ''
   }
 
+  function isCanvasStageSurfaceTarget(target: EventTarget, currentTarget: EventTarget) {
+    if (target === currentTarget) return true
+    return target instanceof Element && Boolean(target.closest('.creative-canvas-empty'))
+  }
+
   function handleStagePointerDown(event: ReactPointerEvent<HTMLElement>) {
-    if (event.target !== event.currentTarget) return
+    if (!isCanvasStageSurfaceTarget(event.target, event.currentTarget)) return
     pastePointRef.current = canvasPointFromClient(event.clientX, event.clientY, stageRef.current)
     setSelectedItemId(null)
     setSelectedConnectionId(null)
     stageRef.current?.focus({ preventScroll: true })
   }
 
-  function handleStagePaste(event: ReactClipboardEvent<HTMLElement>) {
-    const imageFiles = imageFilesFromClipboard(event.clipboardData)
-    if (!imageFiles.length) return
-    event.preventDefault()
+  function pasteImageFilesFromClipboard(clipboardData: DataTransfer, target: EventTarget | null) {
+    if (isEditableTarget(target)) return false
+    const imageFiles = imageFilesFromClipboard(clipboardData)
+    if (!imageFiles.length) return false
     void addFilesToCanvas(imageFiles, pastePointRef.current)
+    stageRef.current?.focus({ preventScroll: true })
+    return true
+  }
+
+  function handleStagePaste(event: ReactClipboardEvent<HTMLElement>) {
+    if (!pasteImageFilesFromClipboard(event.clipboardData, event.target)) return
+    event.preventDefault()
+  }
+
+  function handlePagePaste(event: ReactClipboardEvent<HTMLElement>) {
+    if (!pasteImageFilesFromClipboard(event.clipboardData, event.target)) return
+    event.preventDefault()
   }
 
   function handleStageContextMenu(event: ReactMouseEvent<HTMLElement>) {
-    const target = event.target as HTMLElement
-    if (event.target !== event.currentTarget && !target.closest('.creative-canvas-empty')) return
+    if (!isCanvasStageSurfaceTarget(event.target, event.currentTarget)) return
     event.preventDefault()
     event.stopPropagation()
     const point = canvasTextPointFromClient(event.clientX, event.clientY, stageRef.current)
@@ -823,12 +856,16 @@ export function NodeWorkflowPage({
     stageRef.current?.focus({ preventScroll: true })
   }
 
-  function beginConnectionLabelEdit(event: ReactMouseEvent<HTMLButtonElement>, connection: CanvasConnection) {
-    event.preventDefault()
-    event.stopPropagation()
+  function editConnectionLabel(connection: CanvasConnection) {
     selectConnection(connection.id)
     setEditingConnectionId(connection.id)
     setConnectionLabelDraft(connectionLabel(connection))
+  }
+
+  function beginConnectionLabelEdit(event: ReactMouseEvent<HTMLButtonElement>, connection: CanvasConnection) {
+    event.preventDefault()
+    event.stopPropagation()
+    editConnectionLabel(connection)
   }
 
   function handleConnectionLabelClick(event: ReactMouseEvent<HTMLButtonElement>, connection: CanvasConnection) {
@@ -858,8 +895,18 @@ export function NodeWorkflowPage({
 
   function handleCanvasKeyDown(event: ReactKeyboardEvent<HTMLElement>) {
     if (event.defaultPrevented || event.nativeEvent.isComposing || isEditableTarget(event.target)) return
-    if (event.key !== 'Delete' && event.key !== 'Backspace') return
     if (editingConnectionId || editingTextItemId) return
+
+    if ((event.key === 'Enter' || event.key === 'F2') && selectedConnectionId) {
+      const connection = connections.find((item) => item.id === selectedConnectionId)
+      if (!connection) return
+      event.preventDefault()
+      event.stopPropagation()
+      editConnectionLabel(connection)
+      return
+    }
+
+    if (event.key !== 'Delete' && event.key !== 'Backspace') return
 
     if (selectedConnectionId) {
       event.preventDefault()
@@ -929,6 +976,7 @@ export function NodeWorkflowPage({
       onDragOver={handleCanvasDragOver}
       onDragLeave={handleCanvasDragLeave}
       onDrop={handleCanvasDrop}
+      onPaste={handlePagePaste}
     >
       <header className="creative-canvas-topbar">
         <div className="creative-canvas-title">
@@ -949,9 +997,10 @@ export function NodeWorkflowPage({
           onPointerDown={handleStagePointerDown}
           onContextMenu={handleStageContextMenu}
           onClick={(event) => {
-            if (event.target !== event.currentTarget) return
+            if (!isCanvasStageSurfaceTarget(event.target, event.currentTarget)) return
             setSelectedItemId(null)
             setSelectedConnectionId(null)
+            stageRef.current?.focus({ preventScroll: true })
           }}
           onKeyDown={handleCanvasKeyDown}
           onPaste={handleStagePaste}
@@ -979,6 +1028,11 @@ export function NodeWorkflowPage({
                       selectConnection(connection.id)
                     }}
                     onClick={(event) => event.stopPropagation()}
+                    onDoubleClick={(event) => {
+                      event.preventDefault()
+                      event.stopPropagation()
+                      editConnectionLabel(connection)
+                    }}
                   >
                     <line className="creative-connection-hit" x1={start.x} y1={start.y} x2={end.x} y2={end.y} />
                     <line className="creative-connection-line" x1={start.x} y1={start.y} x2={end.x} y2={end.y} />

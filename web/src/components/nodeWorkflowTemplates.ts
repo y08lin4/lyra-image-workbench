@@ -105,7 +105,7 @@ export const defaultNodeWorkflowTemplates = [
       }),
       node('basic-model', 'model', '模型参数', 560, 120, {
         label: 'Image-2 默认生成',
-        description: '使用当前前端模型参数，不需要额外后端字段。',
+        description: '使用当前模型参数，无需额外配置。',
         provider: IMAGE2_PROVIDER,
         model: DEFAULT_IMAGE2_MODEL,
         ratio: 'auto',
@@ -221,7 +221,7 @@ export const defaultNodeWorkflowTemplates = [
       }),
       node('reference-model', 'model', '参考生成', 560, 200, {
         label: '图生图参数',
-        description: '保留前端任务结构，仅以节点数据表达上传引用。',
+        description: '保留当前生成设置，用节点表达上传引用。',
         provider: BANANA_PROVIDER,
         model: DEFAULT_BANANA_MODEL,
         ratio: 'auto',
@@ -280,7 +280,7 @@ export const defaultNodeWorkflowTemplates = [
       }),
       node('invoke-model', 'model', '画布生成', 560, 180, {
         label: '参考生成参数',
-        description: '把画布操作落到现有前端任务参数中，不要求新增后端协议。',
+        description: '把画布操作转为当前生成参数。',
         provider: BANANA_PROVIDER,
         model: DEFAULT_BANANA_MODEL,
         ratio: 'auto',
@@ -334,14 +334,14 @@ export const defaultNodeWorkflowTemplates = [
         },
       }),
       node('workbench-task', 'model', '提交任务', 300, 180, {
-        label: '任务队列',
-        description: '映射为当前前端已有的任务创建和进度展示。',
+        label: '进度跟踪',
+        description: '展示创建、进行中和完成状态。',
         provider: IMAGE2_PROVIDER,
         model: DEFAULT_IMAGE2_MODEL,
         ratio: '1:1',
         fields: {
           statusFlow: ['queued', 'running', 'succeeded'],
-          debugOptional: true,
+          diagnosticsOptional: true,
         },
       }),
       node('workbench-results', 'gallery', '结果图库', 560, 110, {
@@ -353,7 +353,7 @@ export const defaultNodeWorkflowTemplates = [
       }),
       node('workbench-reuse', 'template', '再次复用', 820, 110, {
         label: '回到创作',
-        description: '把结果作为参考图、把 revised prompt 填回生成页，或保存为模板。',
+        description: '把结果作为参考图、把修订提示词填回生成页，或保存为模板。',
         fields: {
           reuseAs: ['参考图', '提示词模板', '广场作品'],
         },
@@ -369,14 +369,14 @@ export const defaultNodeWorkflowTemplates = [
   },
   {
     id: 'api-task-flow',
-    title: 'API任务流',
-    description: '用节点描述一次开发者 API 调用：鉴权、请求体、任务队列和结果轮询。',
+    title: 'API 调用流',
+    description: '用节点描述一次 API 调用：鉴权、请求体、进度跟踪和结果读取。',
     category: 'api',
-    tags: ['API', '任务队列', '开发者'],
+    tags: ['API', '进度跟踪', '自动化'],
     nodes: [
       node('api-auth', 'api', '鉴权配置', 40, 80, {
         label: 'API Key',
-        description: '引用现有开发者密钥配置，不在节点中存储明文。',
+        description: '引用已保存的访问密钥配置，不在节点中存储明文。',
         fields: {
           header: 'Authorization',
           secretStorage: 'settings',
@@ -395,7 +395,7 @@ export const defaultNodeWorkflowTemplates = [
           concurrency: 1,
         },
       }),
-      node('api-queue', 'api', '任务队列', 560, 80, {
+      node('api-queue', 'api', '进度跟踪', 560, 80, {
         label: 'Task Status',
         description: '跟踪 queued、running、succeeded、failed 等状态。',
         fields: {
@@ -405,7 +405,7 @@ export const defaultNodeWorkflowTemplates = [
       }),
       node('api-result', 'output', '结果消费', 820, 80, {
         label: 'Image URLs',
-        description: '消费结果图、错误信息、耗时和 revised prompt。',
+        description: '读取结果图、错误信息、耗时和修订提示词。',
         fields: {
           outputFields: ['imageUrl', 'remoteUrl', 'statusText', 'elapsedMs'],
         },
@@ -495,7 +495,7 @@ export function createWorkflowSeedFromPromptIdea(idea: PromptWorkflowIdea, optio
       }),
       node(`${seedId}-output`, 'output', '生成结果', 880, 120, {
         label: '结果预览',
-        description: '输出图片和 revised prompt，后续可继续作为参考图或模板。',
+        description: '输出图片和修订提示词，后续可继续作为参考图或模板。',
         fields: {
           nextActions: ['应用到生成页', '保存为模板', '继续改写'],
         },

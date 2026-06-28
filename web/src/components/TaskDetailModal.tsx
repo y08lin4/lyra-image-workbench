@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import type { DebugLog, Task, TaskResult } from '../types'
+import type { Task, TaskResult } from '../types'
 import { providerLabel } from '../lib/models'
 
 type Props = {
@@ -32,7 +32,7 @@ export function TaskDetailModal({
   const errorSummary = taskErrorSummary(task)
   const parameterItems = taskParameterItems(task)
   const timeItems = taskTimeItems(task)
-  const debugItems = taskDebugItems(task)
+  const diagnosticItems = taskDiagnosticItems(task)
 
   return (
     <div className="task-detail-mask" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
@@ -98,10 +98,10 @@ export function TaskDetailModal({
             </div>
           </section>
 
-          <section className="task-detail-section" aria-label="时间和调试摘要">
+          <section className="task-detail-section" aria-label="时间和诊断摘要">
             <div className="task-detail-section-head">
-              <span>时间 / 调试摘要</span>
-              <strong>{task.debugEnabled ? 'Debug 已开启' : 'Debug 未开启'}</strong>
+              <span>时间 / 诊断摘要</span>
+              <strong>{task.debugEnabled ? '诊断已开启' : '诊断未开启'}</strong>
             </div>
             <div className="task-detail-two-column">
               <div className="task-detail-item-list">
@@ -110,7 +110,7 @@ export function TaskDetailModal({
                 ))}
               </div>
               <div className="task-detail-item-list">
-                {debugItems.map((item) => (
+                {diagnosticItems.map((item) => (
                   <DetailItem key={item.label} label={item.label} value={item.value} tone={item.tone} />
                 ))}
               </div>
@@ -183,24 +183,26 @@ function taskTimeItems(task: Task) {
   ]
 }
 
-function taskDebugItems(task: Task): Array<{ label: string; value: string; tone?: 'error' }> {
+function taskDiagnosticItems(task: Task): Array<{ label: string; value: string; tone?: 'error' }> {
   const logs = task.debugLogs || []
   const errorLogs = logs.filter(isErrorLog)
   const lastLog = logs.length ? logs[logs.length - 1] : undefined
   return [
-    { label: 'Debug 状态', value: task.debugEnabled ? '已开启' : '未开启' },
+    { label: '诊断状态', value: task.debugEnabled ? '已开启' : '未开启' },
     { label: '日志数量', value: `${logs.length} 条` },
     { label: '错误日志', value: `${errorLogs.length} 条`, tone: errorLogs.length ? 'error' : undefined },
-    { label: '最后日志', value: lastLog ? formatDebugLog(lastLog) : '无' },
+    { label: '最后日志', value: lastLog ? formatDiagnosticLog(lastLog) : '无' },
   ]
 }
 
-function isErrorLog(log: DebugLog) {
+type TaskLog = NonNullable<Task['debugLogs']>[number]
+
+function isErrorLog(log: TaskLog) {
   return (log.level || '').toLowerCase() === 'error'
 }
 
-function formatDebugLog(log: DebugLog) {
-  return compactText(`${formatDateTime(log.time)} · ${log.stage || 'debug'} · ${log.message}`, 120)
+function formatDiagnosticLog(log: TaskLog) {
+  return compactText(`${formatDateTime(log.time)} · ${log.stage || '诊断'} · ${log.message}`, 120)
 }
 
 function formatDateTime(value?: string) {

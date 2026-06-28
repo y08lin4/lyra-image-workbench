@@ -196,7 +196,6 @@ export function AgentPage({
             <button type="button" onClick={() => onSendToCanvas?.(promptPayload)} disabled={!canUsePrompt || !onSendToCanvas}>发送到创作画布</button>
             <button type="button" className="primary" onClick={() => onQuickGenerate?.(promptPayload)} disabled={!canUsePrompt || !onQuickGenerate}>快捷生成</button>
           </div>
-          <p className="agent-hook-note">画布与生成接线由调用方通过 callback prop 注入。</p>
         </aside>
       </div>
 

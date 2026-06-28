@@ -2,7 +2,7 @@
   position: fixed;
   inset: 0;
   z-index: 1000;
-  background: rgba(15, 23, 42, .9);
+  background: color-mix(in srgb, var(--color-surface) 82%, transparent);
   backdrop-filter: blur(10px);
 }
 
@@ -38,8 +38,8 @@
 .image-preview-meta span {
   flex: 0 0 auto;
   border-radius: 999px;
-  background: rgba(255, 255, 255, .94);
-  color: #0f172a;
+  background: var(--color-surface-elevated);
+  color: var(--color-text);
   padding: 8px 12px;
   font-size: 13px;
   line-height: 1.2;
@@ -92,8 +92,8 @@
   flex: 0 0 auto;
   border: 0;
   border-radius: 999px;
-  background: rgba(255, 255, 255, .95);
-  color: #0f172a;
+  background: var(--color-surface-elevated);
+  color: var(--color-text);
   padding: 10px 16px;
   font-size: 13px;
   line-height: 1.2;
@@ -103,7 +103,7 @@
 
 .image-preview-toolbar button:hover,
 .image-preview-close:hover {
-  background: #ffffff;
+  background: var(--color-surface);
   transform: translateY(-1px);
 }
 
@@ -118,8 +118,8 @@
   place-items: center;
   border: 0;
   border-radius: 999px;
-  background: rgba(255, 255, 255, .96);
-  color: #111827;
+  background: var(--color-surface-elevated);
+  color: var(--color-text);
   padding: 0;
   font-size: 28px;
   line-height: 1;
@@ -135,8 +135,8 @@
   transform: translateX(-50%);
   max-width: min(520px, calc(100vw - 24px));
   border-radius: 999px;
-  background: rgba(255, 255, 255, .96);
-  color: #0f172a;
+  background: var(--color-surface-elevated);
+  color: var(--color-text);
   padding: 7px 13px;
   font-size: 12px;
   line-height: 1.35;

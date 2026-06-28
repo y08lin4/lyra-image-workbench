@@ -77,7 +77,7 @@ export function EmailTab({
           <span>清空已保存的 SMTP 密码</span>
         </label>
         <div className="admin-inline-notes">
-          <div className="status-line">当前版本仅保存发件配置，不会发送测试邮件或触发真实邮件服务。</div>
+          <div className="status-line">保存后会用于后续账号通知和系统邮件。</div>
         </div>
         <div className="admin-billing-actions admin-email-actions">
           <button className="primary" type="button" onClick={onSave} disabled={savingEmail}>

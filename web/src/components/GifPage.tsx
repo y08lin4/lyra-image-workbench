@@ -1,9 +1,7 @@
 import { type FormEvent, useEffect, useMemo, useState } from 'react'
 import type { ReferenceUpload } from '../types'
-import { DEFAULT_IMAGE2_MODEL } from '../lib/models'
 import { formatBytes } from '../lib/format'
 import {
-  buildGifPrompt,
   buildGifTaskDraft,
   GIF_PRESETS,
   RHYTHM_LABELS,
@@ -123,38 +121,12 @@ export function GifPage({
     }
   }
 
-  const requestPreview = draft?.payload || (selectedReference ? buildGifTaskDraft({
-    preset: selectedPreset,
-    reference: selectedReference,
-    description,
-    strength,
-    rhythm,
-  }).payload : {
-    provider: 'image-2',
-    model: DEFAULT_IMAGE2_MODEL,
-    mode: 'gif',
-    prompt: buildGifPrompt(selectedPreset, description, strength, rhythm),
-    framePrompts: [
-      selectedPreset.prompt,
-      `motion strength: ${strength}`,
-      `loop rhythm: ${rhythm}`,
-      `user intent: ${description.trim() || selectedPreset.title}`,
-    ],
-    ratio: 'auto',
-    resolution: 'auto',
-    quality: 'auto',
-    outputFormat: 'gif',
-    count: 1,
-    concurrency: 1,
-    uploadIds: [],
-  })
-
   return (
     <section className="gif-page-shell" data-gif-composer>
       <div className="request-status-row gif-status-row">
         <div>
           <strong>当前模式</strong>
-          <span>GIF 动图 · 独立后端任务</span>
+          <span>GIF 动图任务</span>
         </div>
         <button type="button" className={keyReady ? 'key-ready' : 'key-missing'} onClick={onOpenSettings}>
           {keyReady ? `Image-2 Key ${keyPreview || '已设置'}` : '设置 Image-2 Key'}
@@ -267,7 +239,7 @@ export function GifPage({
           </section>
 
           <section className="generate-step gif-step gif-submit-step">
-            <StepTitle index="④" title="提交" note="创建后端 GIF 任务并进入结果历史。" />
+            <StepTitle index="④" title="提交" note="创建 GIF 动图并进入结果历史。" />
             <div className="gif-submit-row">
               <div className={`submit-readiness ${selectedReference ? 'ready' : 'missing'}`}>
                 <strong>{selectedReference ? '可以创建任务' : '需要参考图'}</strong>
@@ -277,27 +249,31 @@ export function GifPage({
                 {submitting ? '创建中...' : '创建 GIF 任务'}
               </button>
             </div>
-            <p className="gif-backend-note">会创建 /api/background-tasks GIF 任务并进入结果历史；后端会基于单张参考图生成循环动效。</p>
+            <p className="gif-backend-note">会把 GIF 动图加入结果历史；系统会基于单张参考图生成循环动效。</p>
             {draft ? <div className="ok">GIF 任务参数已提交：{draft.preset.title} · {draft.reference.originalName}</div> : null}
             {message ? <div className="ok">{message}</div> : null}
             {localError || error ? <div className="error">{localError || error}</div> : null}
           </section>
         </div>
 
-        <aside className="gif-draft-panel" aria-label="GIF 任务参数预览">
+        <aside className="gif-draft-panel" aria-label="GIF 动效摘要">
           <div>
-            <span>Task payload</span>
-            <strong>mode: gif</strong>
+            <span>动效摘要</span>
+            <strong>GIF 动图</strong>
           </div>
           <dl className="gif-draft-summary">
             <dt>参考图</dt>
             <dd>{selectedReference ? selectedReference.originalName : '未选择'}</dd>
             <dt>预设</dt>
             <dd>{selectedPreset.title}</dd>
+            <dt>幅度</dt>
+            <dd>{STRENGTH_LABELS[strength]}</dd>
+            <dt>节奏</dt>
+            <dd>{RHYTHM_LABELS[rhythm]}</dd>
             <dt>输出</dt>
-            <dd>GIF · 后端任务</dd>
+            <dd>GIF 动图</dd>
           </dl>
-          <pre>{JSON.stringify(requestPreview, null, 2)}</pre>
+          <p>{description.trim() || selectedPreset.summary}</p>
         </aside>
       </form>
     </section>
@@ -306,7 +282,7 @@ export function GifPage({
 
 
 function formatGifCreateError(message: string) {
-  if (message.includes('任务模式无效')) return `${message}；请确认后端服务已重启到包含 GIF 模式的最新版本。`
+  if (message.includes('任务模式无效')) return `${message}；请稍后重试，或联系管理员确认动图功能已开启。`
   if (message.includes('参考图不存在') || message.includes('参考图 ID 无效')) return `${message}；这张参考图可能已经被清理，请重新上传或重新从历史选择。`
   return message
 }

@@ -72,6 +72,7 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
   const [provider, setProvider] = useState<ModelProvider>('image-2')
   const [bananaModel, setBananaModel] = useState(DEFAULT_BANANA_MODEL)
   const [prompt, setPrompt] = useState('')
+  const [canvasPromptInjection, setCanvasPromptInjection] = useState<{ revision: number; prompt: string } | null>(null)
   const [ratio, setRatio] = useState('auto')
   const [resolution, setResolution] = useState('auto')
   const [quality, setQuality] = useState('high')
@@ -356,7 +357,7 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
       setPrompt('')
       goToTab('result')
       void refreshSession()
-      setMessage(submittedUploads.length ? '任务已提交，参考图已保留，可继续作为素材使用' : '任务已提交，后端会继续执行，前端可刷新或断开')
+      setMessage(submittedUploads.length ? '任务已提交，参考图已保留，可继续作为素材使用' : '任务已提交，可稍后回来查看结果')
     } catch (err) {
       setError(err instanceof Error ? err.message : '提交失败')
     }
@@ -393,7 +394,7 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
       throw new Error('GIF 动图请在 GIF 动图页面创建单图动效任务')
     }
     if (payload.mode === 'image-to-image' && payload.uploadIds.length === 0) {
-      throw new Error('参考图生成需要接入参考图后再提交')
+      throw new Error('参考图生成需要先选择参考图后再提交')
     }
 
     const job = await createTask(payload)
@@ -446,7 +447,7 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
     const file = new File([blob], `result-reference-${index + 1}.${extensionFromMime(blob.type)}`, { type: blob.type || 'image/png' })
     const created = await uploadReferenceImages([file])
     await refreshUploads()
-    if (!created[0]) throw new Error('参考图上传失败：接口未返回文件')
+    if (!created[0]) throw new Error('参考图上传失败：未收到文件信息')
     return created[0]
   }
 
@@ -523,7 +524,7 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
     if (validation) throw new Error(validation)
     const created = await uploadReferenceImages([file])
     await refreshUploads()
-    if (!created[0]) throw new Error('参考图上传失败：接口未返回文件')
+    if (!created[0]) throw new Error('参考图上传失败：未收到文件信息')
     return created[0]
   }
 
@@ -552,6 +553,7 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
 
   function handleUseAgentPromptToCanvas(nextPrompt: string, options: { provider: ModelProvider; model: string; ratio?: string }) {
     setPrompt(nextPrompt)
+    setCanvasPromptInjection((current) => ({ revision: (current?.revision || 0) + 1, prompt: nextPrompt }))
     setProvider(options.provider)
     if (options.provider === BANANA_PROVIDER) {
       const preferredResolution = getBananaModelOption(options.model).resolution
@@ -823,7 +825,7 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
       <main className={`workflow-content workflow-${activeTab}`}>
         {activeTab === 'generate' ? (
           <section className="workflow-page generate-page" data-generation-composer>
-            <PageHeader eyebrow="Quick Generate" title="快捷生成" description="保留兼容入口；完整参考图组织、预览和关系表达请在创作画布完成。" />
+            <PageHeader eyebrow="Quick Generate" title="快捷生成" description="适合快速输入提示词；复杂参考图组织、预览和关系表达请在创作画布完成。" />
             <div className="generate-combined-layout">
               <div className="generate-main-column">
                 {!currentKeyReady ? (
@@ -882,6 +884,8 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
             provider={provider}
             bananaModel={bananaModel}
             prompt={prompt}
+            injectedPrompt={canvasPromptInjection?.prompt}
+            injectedPromptRevision={canvasPromptInjection?.revision ?? 0}
             onUsePrompt={handleUseCanvasPrompt}
             onCreateTask={handleCreateNodeWorkflowTask}
             referenceUploads={uploads}
@@ -895,7 +899,7 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
 
         {activeTab === 'gif' ? (
           <section className="workflow-page gif-page">
-            <PageHeader eyebrow="GIF Motion" title="GIF 动图" description="上传或选择一张历史图片，创建独立 GIF 动图任务；本地生成，不调用视频或 FFmpeg。" />
+            <PageHeader eyebrow="GIF Motion" title="GIF 动图" description="上传或选择一张历史图片，创建循环动效并进入结果历史。" />
             <GifPage
               uploads={uploads}
               recentResults={recentResultImages}
@@ -1001,7 +1005,7 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
 
         {activeTab === 'settings' ? (
           <section className="workflow-page settings-page-inline">
-            <PageHeader eyebrow="Settings" title="设置" description="Key 保存在当前浏览器本地；默认数量、默认并发和图床设置随账号保存。" />
+            <PageHeader eyebrow="Settings" title="设置" description="管理账号安全、生成 Key、默认数量、默认并发和图床偏好。" />
             <div className="settings-inline-grid settings-only-grid">
               <SettingsPanel onConfig={applyUserConfig} />
             </div>
@@ -1086,10 +1090,7 @@ function buildSquareReferenceSubmitPayload(task: Task, referenceUsageNote?: stri
     ...item,
     usageNote: item.usageNote || note || undefined,
   }))
-
-  // TODO(prompt-square): Go /api/prompt-square/from-result currently ignores these
-  // reference fields. Keep the client contract ready so the backend can copy
-  // original reference images into the public gallery package without changing UI again.
+  // Preserve reference metadata so published works can keep their source context.
   return {
     referenceUploadIds: referenceUploadIds.length ? referenceUploadIds : undefined,
     references: referencesWithNotes.length ? referencesWithNotes : undefined,
@@ -1201,7 +1202,7 @@ function sanitizeReferenceFilePart(value: string) {
 function formatPromptLibraryReferenceError(err: unknown) {
   const message = formatReferenceUploadError(err)
   if (/failed to fetch|load failed|networkerror|fetch/i.test(message)) {
-    return '例图下载失败：当前图片源不允许浏览器跨域读取，需要后端代理下载后再上传为参考图'
+    return '例图下载失败：当前图片源不允许浏览器直接读取，请先保存后再上传为参考图'
   }
   return message
 }
