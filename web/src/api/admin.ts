@@ -155,4 +155,3 @@ export async function setAdminUserRole(username: string, role: string | boolean)
   }, '')
   return data
 }
-

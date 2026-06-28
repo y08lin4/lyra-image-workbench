@@ -1,7 +1,7 @@
 # Backend Module Review
 
-审查日期：2026-06-27  
-范围：`internal/api`、`internal/jobs`、`internal/promptsquare`、`internal/retention`  
+审查日期：2026-06-27
+范围：`internal/api`、`internal/jobs`、`internal/promptsquare`、`internal/retention`
 目标：只读优先检查后端模块边界、职责混杂、重复 DTO、接口/存储耦合；不触碰前端，不做大行为改动。
 
 ## 1. 本轮结论

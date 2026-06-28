@@ -1,6 +1,6 @@
 # 当前任务总账与子代理调度记录
 
-更新时间：2026-06-27  
+更新时间：2026-06-27
 适用分支：`dev`
 
 本文用于防止上下文压缩、并行 agent 和未提交改动导致任务遗失。当前页只记录本轮有效状态；上一轮残留的旧子代理编号不再视为“运行中”，需要查历史时看 `docs/current-round-task-report.md`、`docs/CURRENT_ROUND_AGENT_CONTROL.md` 和 Git 工作区实际改动。
@@ -339,5 +339,3 @@ rg -n "/api/billing|billing" internal/api internal/billing web/src/api
 5. 启动本地服务，完成浏览器手工验收清单。
 6. 更新 `docs/current-round-task-report.md` 和必要的需求状态。
 7. 整理简体中文提交说明，再由主线程决定提交和推送。
-
-

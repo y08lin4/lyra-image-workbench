@@ -610,4 +610,3 @@ function viewLabel(view: PromptSquareView) {
 function formatErrorMessage(err: unknown, fallback: string) {
   return err instanceof Error ? err.message : fallback
 }
-

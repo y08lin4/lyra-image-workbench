@@ -321,4 +321,3 @@ function StepTitle({ index, title, note }: { index: string; title: string; note:
     </div>
   )
 }
-

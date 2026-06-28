@@ -1261,4 +1261,3 @@ function formatReferenceUploadError(err: unknown) {
 function isFinal(task: Task) {
   return ['succeeded', 'partial_failed', 'failed', 'cancelled', 'interrupted'].includes(task.status)
 }
-

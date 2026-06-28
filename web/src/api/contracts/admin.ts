@@ -143,5 +143,3 @@ export type GrantCreditsResponse = {
 
 export type SetAdminUserRoleRequest = { isAdmin: boolean } | { role: string }
 export type SetAdminUserRoleResponse = { ok: boolean; user?: AdminUser; users?: AdminUser[] }
-
-

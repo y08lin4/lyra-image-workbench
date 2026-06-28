@@ -1,6 +1,6 @@
 # 项目结构与文档索引
 
-更新时间：2026-06-27  
+更新时间：2026-06-27
 适用分支：`dev`
 
 本文用于给新接手的人或子代理快速建立项目地图。它整理当前仓库功能、前后端模块、运行/测试命令、文档入口和本轮协作边界，不替代具体需求文档或最终验收报告。
@@ -307,4 +307,3 @@ rg -n "/api/billing|billing" internal/api internal/billing web/src/api
 - 同一文件同一时间只应有一个写入负责人；其他代理以只读审查或测试为主。
 - 共享高冲突文件包括 `internal/api/router.go`、`internal/jobs/*`、`internal/promptsquare/*`、`web/src/components/WorkbenchPage.tsx`、`web/src/styles.css`、`web/src/types.ts`、`web/src/api/*`。
 - 改动后必须报告改动文件、验证命令和未验证风险。
-
