@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/y08lin4/lyra-image-workbench/internal/activitylog"
 	"github.com/y08lin4/lyra-image-workbench/internal/billing"
 	"github.com/y08lin4/lyra-image-workbench/internal/settings"
 )
@@ -159,6 +160,13 @@ func TestEpayNotifyRejectsBadSignatureAndAmount(t *testing.T) {
 	tradeNo := createTestEpayOrder(t, env.Router, token, 10, "alipay")
 	order, ok := env.Billing.GetByTradeNo(tradeNo)
 	if !ok {
+		activity := env.Activity.Recent(activitylog.Query{Type: activitylog.TypeTopUpPaidSuccess, Limit: 10})
+		if len(activity) != 1 || activity[0].ResourceID != tradeNo || activity[0].Username != "buyer01" {
+			t.Fatalf("top-up paid success activity mismatch: %+v", activity)
+		}
+		if got := activity[0].Fields["credits"]; got != float64(10) && got != 10 {
+			t.Fatalf("top-up activity credits field = %v", got)
+		}
 		t.Fatalf("created order %s missing", tradeNo)
 	}
 

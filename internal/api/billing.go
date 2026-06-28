@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/y08lin4/lyra-image-workbench/internal/activitylog"
 	"github.com/y08lin4/lyra-image-workbench/internal/billing"
 	"github.com/y08lin4/lyra-image-workbench/internal/settings"
 	"github.com/y08lin4/lyra-image-workbench/internal/users"
@@ -17,6 +18,7 @@ type BillingHandler struct {
 	settings *settings.FileStore
 	topups   *billing.Store
 	users    *users.Store
+	activity activitylog.Recorder
 }
 
 type topUpOptionResponse struct {
@@ -44,8 +46,8 @@ type billingTopUpResponse struct {
 	ProviderTradeNo   string              `json:"providerTradeNo,omitempty"`
 }
 
-func NewBillingHandler(settingsStore *settings.FileStore, topups *billing.Store, userStore *users.Store) BillingHandler {
-	return BillingHandler{settings: settingsStore, topups: topups, users: userStore}
+func NewBillingHandler(settingsStore *settings.FileStore, topups *billing.Store, userStore *users.Store, activity activitylog.Recorder) BillingHandler {
+	return BillingHandler{settings: settingsStore, topups: topups, users: userStore, activity: activity}
 }
 
 func (h BillingHandler) Options(w http.ResponseWriter, r *http.Request) {
@@ -121,6 +123,20 @@ func (h BillingHandler) CreateEpayOrder(w http.ResponseWriter, r *http.Request) 
 		writeBillingStoreError(w, err)
 		return
 	}
+	recordActivity(h.activity, activitylog.EntryInput{
+		Type:         activitylog.TypeTopUpOrderCreated,
+		Level:        activitylog.LevelInfo,
+		Username:     order.Username,
+		ResourceType: "topup_order",
+		ResourceID:   order.TradeNo,
+		Message:      "创建充值订单",
+		Fields: map[string]any{
+			"credits":     order.Credits,
+			"amountCents": order.AmountCents,
+			"method":      order.Method,
+			"status":      order.Status,
+		},
+	})
 	response := topUpResponse(order)
 	response.PayURL = payURL
 	writeJSON(w, http.StatusOK, map[string]any{
@@ -208,11 +224,14 @@ func (h BillingHandler) Notify(w http.ResponseWriter, r *http.Request) {
 		writeEpayNotify(w, false)
 		return
 	}
+	updatedOrder := order
+	paidTransition := false
 	if order.Status != billing.TopUpStatusSuccess {
-		if _, _, err := h.topups.MarkSuccess(order.TradeNo, callback.ProviderTradeNo, time.Now()); err != nil {
+		updated, grant, err := h.topups.MarkSuccess(order.TradeNo, callback.ProviderTradeNo, time.Now())
+		if err != nil {
 			if errors.Is(err, billing.ErrOrderStatusInvalid) {
 				if latest, found := h.topups.GetByTradeNo(order.TradeNo); found && latest.Status == billing.TopUpStatusSuccess {
-					order = latest
+					updatedOrder = latest
 				} else {
 					writeEpayNotify(w, false)
 					return
@@ -221,11 +240,31 @@ func (h BillingHandler) Notify(w http.ResponseWriter, r *http.Request) {
 				writeEpayNotify(w, false)
 				return
 			}
+		} else {
+			updatedOrder = updated
+			paidTransition = grant != nil
 		}
 	}
-	if _, err := h.users.AddPurchaseCredits(order.Username, order.Credits, order.TradeNo, cfg.ReferralRewardCredits); err != nil {
+	purchase, err := h.users.AddPurchaseCredits(updatedOrder.Username, updatedOrder.Credits, updatedOrder.TradeNo, cfg.ReferralRewardCredits)
+	if err != nil {
 		writeEpayNotify(w, false)
 		return
+	}
+	if paidTransition || purchase.Created {
+		recordActivity(h.activity, activitylog.EntryInput{
+			Type:         activitylog.TypeTopUpPaidSuccess,
+			Level:        activitylog.LevelInfo,
+			Username:     updatedOrder.Username,
+			ResourceType: "topup_order",
+			ResourceID:   updatedOrder.TradeNo,
+			Message:      "充值订单支付成功",
+			Fields: map[string]any{
+				"credits":         updatedOrder.Credits,
+				"amountCents":     updatedOrder.AmountCents,
+				"method":          updatedOrder.Method,
+				"providerTradeNo": updatedOrder.ProviderTradeNo,
+			},
+		})
 	}
 	writeEpayNotify(w, true)
 }

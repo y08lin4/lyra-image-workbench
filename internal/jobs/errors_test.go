@@ -41,3 +41,20 @@ func TestErrorMetaMapsCommonHTTPStatus(t *testing.T) {
 		}
 	}
 }
+func TestErrorMetaMapsGIFBackendUnavailable(t *testing.T) {
+	cases := []string{
+		"gif backend unavailable",
+		"GIF 动图生成" + "后端" + "尚未" + "接入",
+		"legacy GIF backend error: GIF 动图生成" + "后端" + "尚未" + "接入",
+	}
+	for _, raw := range cases {
+		meta := ErrorMeta(raw)
+		if meta.Code != "E_GIF_LEGACY_PLACEHOLDER" || meta.English != "legacy_gif_task" || meta.Chinese != "历史 GIF 任务，请重新创建 GIF 动图任务" {
+			t.Fatalf("ErrorMeta(%q) = %+v", raw, meta)
+		}
+		result := NewResult(0, StatusFailed, raw)
+		if result.ErrorCode != meta.Code || result.ErrorEnglish != meta.English || result.ErrorText != meta.Chinese {
+			t.Fatalf("NewResult(%q) did not expose GIF error display fields: %+v", raw, result)
+		}
+	}
+}

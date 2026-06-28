@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/y08lin4/lyra-image-workbench/internal/activitylog"
 	"github.com/y08lin4/lyra-image-workbench/internal/adminauth"
 	"github.com/y08lin4/lyra-image-workbench/internal/apikeys"
 	"github.com/y08lin4/lyra-image-workbench/internal/billing"
@@ -950,6 +951,7 @@ type testAPIEnv struct {
 	Spaces   *spaces.FileStore
 	Jobs     *jobs.Store
 	Output   *output.Store
+	Activity *activitylog.Store
 }
 
 func newTestRouter(t *testing.T) http.Handler {
@@ -994,6 +996,10 @@ func newTestAPIEnv(t *testing.T) testAPIEnv {
 	if err != nil {
 		t.Fatalf("billing.NewStore() error = %v", err)
 	}
+	activityStore, err := activitylog.NewStore(filepath.Join(cfg.DataDir, "activity.json"))
+	if err != nil {
+		t.Fatalf("activitylog.NewStore() error = %v", err)
+	}
 	spaceStore, err := spaces.NewFileStore(cfg.DataDir)
 	if err != nil {
 		t.Fatalf("spaces.NewFileStore() error = %v", err)
@@ -1006,6 +1012,13 @@ func newTestAPIEnv(t *testing.T) testAPIEnv {
 	}
 	jobStore := jobs.NewStore(spaceStore)
 	jobManager := jobs.NewManager(jobStore, events.NewHub(), settingsStore, spaceConfigStore, uploadStore, outputStore, newapi.NewClient())
+	jobManager.SetActivityRecorder(activityStore, func(spaceToken string) string {
+		owner, ok := userStore.FindByStorageToken(spaceToken)
+		if !ok {
+			return ""
+		}
+		return owner.Username
+	})
 	llmClient := llm.NewClient()
 	promptStore := prompttools.NewStore(spaceStore)
 	promptService := prompttools.NewService(promptStore, settingsStore, spaceConfigStore, uploadStore, jobManager, outputStore, llmClient)
@@ -1030,8 +1043,9 @@ func newTestAPIEnv(t *testing.T) testAPIEnv {
 		PromptLibrary: promptLibraryService,
 		PromptSquare:  promptSquareStore,
 		PromptTools:   promptService,
-		LLM:           llmClient})
-	return testAPIEnv{Router: router, APIKeys: apiKeyStore, Billing: billingStore, Settings: settingsStore, Users: userStore, Spaces: spaceStore, Jobs: jobStore, Output: outputStore}
+		LLM:           llmClient,
+		Activity:      activityStore})
+	return testAPIEnv{Router: router, APIKeys: apiKeyStore, Billing: billingStore, Settings: settingsStore, Users: userStore, Spaces: spaceStore, Jobs: jobStore, Output: outputStore, Activity: activityStore}
 }
 
 func createV1BearerSecret(t *testing.T, router http.Handler, token string) string {

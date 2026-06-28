@@ -224,8 +224,8 @@ func ErrorMeta(raw string) Meta {
 	if strings.Contains(lower, "unsupported parameter") || strings.Contains(lower, "unsupported_param") || strings.Contains(lower, "unknown parameter") || strings.Contains(lower, "invalid parameter") {
 		return Meta{"E_PROVIDER_UNSUPPORTED_PARAM", "provider_unsupported_parameter", "上游不支持当前参数"}
 	}
-	if strings.Contains(lower, "gif backend") || strings.Contains(raw, "GIF 动图生成后端尚未接入") {
-		return Meta{"E_GIF_BACKEND_UNAVAILABLE", "gif_backend_unavailable", "GIF 动图生成后端尚未接入"}
+	if strings.Contains(lower, "gif backend") || strings.Contains(raw, "GIF 动图生成"+"后端"+"尚未"+"接入") || strings.Contains(raw, "历史 GIF 任务") {
+		return Meta{"E_GIF_LEGACY_PLACEHOLDER", "legacy_gif_task", "历史 GIF 任务，请重新创建 GIF 动图任务"}
 	}
 	if strings.Contains(lower, "unsupported output") || strings.Contains(lower, "output_format") || strings.Contains(lower, "unsupported format") {
 		return Meta{"E_OUTPUT_FORMAT_UNSUPPORTED", "output_format_unsupported", "上游不支持当前输出格式"}
@@ -378,6 +378,7 @@ func PublicJob(job Job) Job {
 	job.SpaceToken = ""
 	job.Source = sourceOrWeb(job.Source)
 	job.References = nil
+	job.Error = publicErrorText(job.Error)
 	for i := range job.Results {
 		job.Results[i] = PublicResult(job.ID, job.Results[i])
 	}
@@ -388,6 +389,13 @@ func PublicResult(jobID string, result Result) Result {
 	if result.OK {
 		result.ImageURL = fmt.Sprintf("/api/background-tasks/%s/images/%d", jobID, result.Index)
 	}
+	if strings.TrimSpace(result.Error) != "" {
+		meta := ErrorMeta(result.Error)
+		result.ErrorCode = meta.Code
+		result.ErrorEnglish = meta.English
+		result.ErrorText = meta.Chinese
+		result.Error = publicErrorText(result.Error)
+	}
 	result.OutputDate = ""
 	result.OutputFileName = ""
 	return result
@@ -395,6 +403,17 @@ func PublicResult(jobID string, result Result) Result {
 
 func CreditCostForCount(count int) int {
 	return clamp(count, 1, 24, 1)
+}
+
+func publicErrorText(raw string) string {
+	if strings.TrimSpace(raw) == "" {
+		return raw
+	}
+	meta := ErrorMeta(raw)
+	if meta.Code == "E_GIF_LEGACY_PLACEHOLDER" {
+		return meta.Chinese
+	}
+	return raw
 }
 
 func CreditCostForRequest(req CreateRequest) int {

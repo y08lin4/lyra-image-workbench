@@ -4,17 +4,19 @@ import (
 	"encoding/json"
 	"net/http"
 
+	"github.com/y08lin4/lyra-image-workbench/internal/activitylog"
 	"github.com/y08lin4/lyra-image-workbench/internal/adminauth"
 	"github.com/y08lin4/lyra-image-workbench/internal/users"
 )
 
 type AdminUsersHandler struct {
-	store *users.Store
-	auth  *adminauth.Store
+	store    *users.Store
+	auth     *adminauth.Store
+	activity activitylog.Recorder
 }
 
-func NewAdminUsersHandler(store *users.Store, auth *adminauth.Store) AdminUsersHandler {
-	return AdminUsersHandler{store: store, auth: auth}
+func NewAdminUsersHandler(store *users.Store, auth *adminauth.Store, activity activitylog.Recorder) AdminUsersHandler {
+	return AdminUsersHandler{store: store, auth: auth, activity: activity}
 }
 
 func (h AdminUsersHandler) List(w http.ResponseWriter, r *http.Request) {
@@ -38,11 +40,27 @@ func (h AdminUsersHandler) AddCredits(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "BAD_JSON", "请求体不是有效 JSON")
 		return
 	}
-	user, entry, err := h.store.AddCreditsByAdmin(payload.Username, payload.Amount, payload.Reason, h.adminActorFromRequest(r))
+	actor := h.adminActorFromRequest(r)
+	user, entry, err := h.store.AddCreditsByAdmin(payload.Username, payload.Amount, payload.Reason, actor)
 	if err != nil {
 		writeUserError(w, err)
 		return
 	}
+	recordActivity(h.activity, activitylog.EntryInput{
+		Type:         activitylog.TypeAdminCreditGrant,
+		Level:        activitylog.LevelInfo,
+		Actor:        actor,
+		Username:     user.Username,
+		ResourceType: "credit_ledger",
+		ResourceID:   entry.ID,
+		Message:      "管理员增加用户次数",
+		Fields: map[string]any{
+			"amount":       payload.Amount,
+			"balanceAfter": entry.BalanceAfter,
+			"reason":       payload.Reason,
+			"target":       user.Username,
+		},
+	})
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "user": user, "entry": entry, "users": h.store.ListAdminUsers()})
 }
 

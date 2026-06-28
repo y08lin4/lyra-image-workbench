@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/y08lin4/lyra-image-workbench/internal/activitylog"
 	"github.com/y08lin4/lyra-image-workbench/internal/config"
 	"github.com/y08lin4/lyra-image-workbench/internal/events"
 	"github.com/y08lin4/lyra-image-workbench/internal/newapi"
@@ -25,18 +26,20 @@ import (
 )
 
 type Manager struct {
-	store       *Store
-	hub         *events.Hub
-	settings    *settings.FileStore
-	spaceConfig *spaceconfig.Store
-	uploads     *uploads.Store
-	output      *output.Store
-	newapi      *newapi.Client
-	pixhost     *pixhost.Client
-	queue       chan jobRef
-	mu          sync.Mutex
-	cancels     map[string]context.CancelFunc
-	secrets     map[string]jobSecret
+	store         *Store
+	hub           *events.Hub
+	settings      *settings.FileStore
+	spaceConfig   *spaceconfig.Store
+	uploads       *uploads.Store
+	output        *output.Store
+	newapi        *newapi.Client
+	pixhost       *pixhost.Client
+	activity      activitylog.Recorder
+	ownerForSpace func(string) string
+	queue         chan jobRef
+	mu            sync.Mutex
+	cancels       map[string]context.CancelFunc
+	secrets       map[string]jobSecret
 }
 
 type jobRef struct {
@@ -68,6 +71,13 @@ func NewManager(store *Store, hub *events.Hub, settingsStore *settings.FileStore
 	}
 	go m.worker()
 	return m
+}
+
+func (m *Manager) SetActivityRecorder(recorder activitylog.Recorder, ownerForSpace func(string) string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.activity = recorder
+	m.ownerForSpace = ownerForSpace
 }
 
 func (m *Manager) Recover(options ...RecoverOptions) error {
@@ -232,7 +242,7 @@ func (m *Manager) Create(spaceToken string, req CreateRequest) (Job, error) {
 	ApplyStatus(&job, StatusQueued)
 	ApplyStage(&job, StageQueued)
 	if job.DebugEnabled {
-		job.DebugLogs = append(job.DebugLogs, newDebugLog(-1, "info", "create", "任务已创建，Debug 日志已开启", map[string]any{
+		job.DebugLogs = append(job.DebugLogs, newDebugLog(-1, "info", "create", "任务已创建，诊断日志已开启", map[string]any{
 			"provider":        job.Provider,
 			"model":           job.Model,
 			"mode":            job.Mode,
@@ -512,10 +522,28 @@ func (m *Manager) run(spaceToken string, jobID string) {
 			okCount++
 		}
 	}
+	activityJob := job
+	activityJob.Results = results
+	activityJob.Progress = 100
+	activityJob.FinishedAt = time.Now()
+	if okCount == activityJob.Count {
+		ApplyStatus(&activityJob, StatusSucceeded)
+		ApplyStage(&activityJob, StageSucceeded)
+	} else if okCount > 0 {
+		ApplyStatus(&activityJob, StatusPartialFailed)
+		ApplyStage(&activityJob, StagePartialFailed)
+	} else if activityJob.Status != StatusCancelled {
+		ApplyStatus(&activityJob, StatusFailed)
+		ApplyStage(&activityJob, StageFailed)
+		activityJob.Error = "没有图片生成成功"
+	}
+	if okCount < activityJob.Count && activityJob.Status != StatusCancelled {
+		m.recordTaskFailure(activityJob, okCount)
+	}
 	job, _, _ = m.store.Update(spaceToken, jobID, func(j *Job) {
 		j.Results = results
 		j.Progress = 100
-		j.FinishedAt = time.Now()
+		j.FinishedAt = activityJob.FinishedAt
 		if okCount == j.Count {
 			ApplyStatus(j, StatusSucceeded)
 			ApplyStage(j, StageSucceeded)
@@ -550,6 +578,9 @@ func (m *Manager) runImages(ctx context.Context, spaceToken string, jobID string
 				upsertResult(j, result)
 			})
 			if ok {
+				if !result.OK {
+					m.recordResultFailure(job, result)
+				}
 				m.publish(jobID, "result", map[string]any{"result": result, "job": job})
 			}
 		}()
@@ -920,6 +951,10 @@ func (m *Manager) fakeProgress(spaceToken string, jobID string, done <-chan stru
 		case <-done:
 			return
 		case <-ticker.C:
+			current, exists, _ := m.store.Get(spaceToken, jobID)
+			if !exists || current.Final() {
+				return
+			}
 			job, ok, _ := m.store.Update(spaceToken, jobID, func(j *Job) {
 				if j.Final() || j.Progress >= 90 {
 					return
@@ -941,6 +976,82 @@ func (m *Manager) fakeProgress(spaceToken string, jobID string, done <-chan stru
 func (m *Manager) publish(jobID string, name string, data any) {
 	meta := EventMeta(name)
 	m.hub.Publish(jobID, events.Event{Event: name, Code: meta.Code, English: meta.English, Chinese: meta.Chinese, Data: data})
+}
+
+func (m *Manager) activityContext(spaceToken string) (activitylog.Recorder, string) {
+	m.mu.Lock()
+	recorder := m.activity
+	ownerForSpace := m.ownerForSpace
+	m.mu.Unlock()
+	username := ""
+	if ownerForSpace != nil {
+		username = strings.TrimSpace(ownerForSpace(spaceToken))
+	}
+	return recorder, username
+}
+
+func (m *Manager) recordResultFailure(job Job, result Result) {
+	if result.OK {
+		return
+	}
+	recorder, username := m.activityContext(job.SpaceToken)
+	if recorder == nil {
+		return
+	}
+	meta := ErrorMeta(result.Error)
+	_, _ = recorder.Append(activitylog.EntryInput{
+		Type:         activitylog.TypeResultFailed,
+		Level:        activitylog.LevelError,
+		Username:     username,
+		ResourceType: "task_result",
+		ResourceID:   fmt.Sprintf("%s:%d", job.ID, result.Index),
+		Message:      "生成结果失败",
+		Fields: map[string]any{
+			"taskId":       job.ID,
+			"imageIndex":   result.Index,
+			"mode":         job.Mode,
+			"provider":     job.Provider,
+			"model":        job.Model,
+			"outputFormat": job.OutputFormat,
+			"status":       result.Status,
+			"errorCode":    meta.Code,
+			"errorText":    meta.Chinese,
+			"elapsedMs":    result.ElapsedMs,
+		},
+	})
+}
+
+func (m *Manager) recordTaskFailure(job Job, okCount int) {
+	recorder, username := m.activityContext(job.SpaceToken)
+	if recorder == nil {
+		return
+	}
+	failedCount := job.Count - okCount
+	level := activitylog.LevelError
+	message := "生成任务失败"
+	if okCount > 0 {
+		level = activitylog.LevelWarning
+		message = "生成任务部分失败"
+	}
+	_, _ = recorder.Append(activitylog.EntryInput{
+		Type:         activitylog.TypeTaskFailed,
+		Level:        level,
+		Username:     username,
+		ResourceType: "task",
+		ResourceID:   job.ID,
+		Message:      message,
+		Fields: map[string]any{
+			"taskId":         job.ID,
+			"mode":           job.Mode,
+			"provider":       job.Provider,
+			"model":          job.Model,
+			"status":         job.Status,
+			"statusCode":     job.StatusCode,
+			"count":          job.Count,
+			"succeededCount": okCount,
+			"failedCount":    failedCount,
+		},
+	})
 }
 
 func (m *Manager) appendDebugLog(spaceToken string, jobID string, imageIndex int, level string, stage string, message string, fields map[string]any) {
@@ -1103,7 +1214,13 @@ func runtimeAPIKey(secrets RuntimeSecrets, provider string) string {
 
 func cloudAPIKey(cfg spaceconfig.Config, provider string) string {
 	if provider == config.BananaProvider {
+		if !cfg.CloudBananaAPIKeyEnabled {
+			return ""
+		}
 		return strings.TrimSpace(cfg.BananaAPIKey)
+	}
+	if !cfg.CloudAPIKeyEnabled {
+		return ""
 	}
 	return strings.TrimSpace(cfg.APIKey)
 }

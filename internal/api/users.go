@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/y08lin4/lyra-image-workbench/internal/activitylog"
 	"github.com/y08lin4/lyra-image-workbench/internal/settings"
 	"github.com/y08lin4/lyra-image-workbench/internal/spaces"
 	"github.com/y08lin4/lyra-image-workbench/internal/users"
@@ -16,6 +17,7 @@ import (
 const userSessionCookie = "image_workbench_user_session"
 
 type UserHandler struct {
+	activity activitylog.Recorder
 	store    *users.Store
 	spaces   *spaces.FileStore
 	settings *settings.FileStore
@@ -47,8 +49,8 @@ type twoFactorCodeRequest struct {
 	Code string `json:"code"`
 }
 
-func NewUserHandler(store *users.Store, spaceStore *spaces.FileStore, settingsStore *settings.FileStore) UserHandler {
-	return UserHandler{store: store, spaces: spaceStore, settings: settingsStore}
+func NewUserHandler(store *users.Store, spaceStore *spaces.FileStore, settingsStore *settings.FileStore, activity activitylog.Recorder) UserHandler {
+	return UserHandler{store: store, spaces: spaceStore, settings: settingsStore, activity: activity}
 }
 
 func (h UserHandler) Register(w http.ResponseWriter, r *http.Request) {
@@ -80,6 +82,20 @@ func (h UserHandler) Register(w http.ResponseWriter, r *http.Request) {
 		writeUserError(w, err)
 		return
 	}
+	recordActivity(h.activity, activitylog.EntryInput{
+		Type:         activitylog.TypeUserRegistration,
+		Level:        activitylog.LevelInfo,
+		Username:     session.User.Username,
+		ResourceType: "user",
+		ResourceID:   session.User.Username,
+		Message:      "用户注册成功",
+		Fields: map[string]any{
+			"emailSet":          session.User.Email != "",
+			"initialCredits":    initialCredits,
+			"legacySpaceLinked": storageToken != "",
+			"referralUsed":      strings.TrimSpace(payload.ReferralCode) != "",
+		},
+	})
 	setUserSessionCookie(w, r, session)
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "session": session, "referralLink": h.referralLink(r, session.User.ReferralCode)})
 }

@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"github.com/y08lin4/lyra-image-workbench/internal/activitylog"
 	"log"
 	"net/http"
 	"path/filepath"
@@ -53,6 +54,10 @@ func main() {
 	if err != nil {
 		log.Fatalf("加载充值订单失败：%v", err)
 	}
+	activityStore, err := activitylog.NewStore(filepath.Join(cfg.DataDir, "activity.json"))
+	if err != nil {
+		log.Fatalf("加载活动日志失败：%v", err)
+	}
 	spaceStore, err := spaces.NewFileStore(cfg.DataDir)
 	if err != nil {
 		log.Fatalf("加载个人空间存储失败：%v", err)
@@ -71,6 +76,13 @@ func main() {
 	eventHub := events.NewHub()
 	jobStore := jobs.NewStore(spaceStore)
 	jobManager := jobs.NewManager(jobStore, eventHub, settingsStore, spaceConfigStore, uploadStore, outputStore, newapi.NewClient())
+	jobManager.SetActivityRecorder(activityStore, func(spaceToken string) string {
+		owner, ok := userStore.FindByStorageToken(spaceToken)
+		if !ok {
+			return ""
+		}
+		return owner.Username
+	})
 	llmClient := llm.NewClient()
 	promptStore := prompttools.NewStore(spaceStore)
 	promptService := prompttools.NewService(promptStore, settingsStore, spaceConfigStore, uploadStore, jobManager, outputStore, llmClient)
@@ -113,7 +125,8 @@ func main() {
 		PromptLibrary: promptLibraryService,
 		PromptSquare:  promptSquareStore,
 		PromptTools:   promptService,
-		LLM:           llmClient})
+		LLM:           llmClient,
+		Activity:      activityStore})
 	httpServer := server.New(cfg, router)
 
 	log.Printf("Lyra Image Workbench 后端启动：http://%s", cfg.Addr)

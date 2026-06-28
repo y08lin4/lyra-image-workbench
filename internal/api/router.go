@@ -3,6 +3,7 @@ package api
 import (
 	"net/http"
 
+	"github.com/y08lin4/lyra-image-workbench/internal/activitylog"
 	"github.com/y08lin4/lyra-image-workbench/internal/adminauth"
 	"github.com/y08lin4/lyra-image-workbench/internal/apikeys"
 	"github.com/y08lin4/lyra-image-workbench/internal/billing"
@@ -36,6 +37,7 @@ type Dependencies struct {
 	PromptSquare  *promptsquare.Store
 	PromptTools   *prompttools.Service
 	LLM           *llm.Client
+	Activity      *activitylog.Store
 }
 
 func NewRouter(deps Dependencies) http.Handler {
@@ -43,8 +45,9 @@ func NewRouter(deps Dependencies) http.Handler {
 	health := NewHealthHandler(deps.Config)
 	adminAuth := NewAdminAuthHandler(deps.AdminAuth, deps.Config.AdminSetupToken).WithInitialSetup(deps.Settings, deps.Users)
 	adminConfig := NewAdminConfigHandler(deps.Settings, deps.AdminAuth, deps.Users)
-	adminUsers := NewAdminUsersHandler(deps.Users, deps.AdminAuth)
-	userHandler := NewUserHandler(deps.Users, deps.Spaces, deps.Settings)
+	adminUsers := NewAdminUsersHandler(deps.Users, deps.AdminAuth, deps.Activity)
+	adminActivity := NewAdminActivityHandler(deps.Activity, deps.AdminAuth, deps.Users)
+	userHandler := NewUserHandler(deps.Users, deps.Spaces, deps.Settings, deps.Activity)
 	userConfig := NewUserConfigHandler(deps.SpaceConfig, deps.Settings)
 	developerKeyHandler := NewDeveloperAPIKeyHandler(deps.APIKeys, deps.SpaceConfig, deps.Settings)
 	statusMetadata := NewStatusMetadataHandler()
@@ -55,7 +58,7 @@ func NewRouter(deps Dependencies) http.Handler {
 	promptLibraryHandler := NewPromptLibraryHandler(deps.PromptLibrary)
 	outputHandler := NewOutputHandler(deps.Output)
 	promptSquareHandler := NewPromptSquareHandlerWithResults(deps.PromptSquare, deps.Jobs, deps.Output)
-	billingHandler := NewBillingHandler(deps.Settings, deps.Billing, deps.Users)
+	billingHandler := NewBillingHandler(deps.Settings, deps.Billing, deps.Users, deps.Activity)
 	staticHandler := NewStaticHandler(deps.Config.WebDir)
 
 	mux.HandleFunc("GET /api/health", health.ServeHTTP)
@@ -70,6 +73,7 @@ func NewRouter(deps Dependencies) http.Handler {
 	mux.HandleFunc("POST /api/admin/users/credits/add", adminUsers.AddCredits)
 	mux.HandleFunc("GET /api/admin/users/{username}/ledger", adminUsers.Ledger)
 	mux.HandleFunc("POST /api/admin/users/{username}/role", adminUsers.SetRole)
+	mux.HandleFunc("GET /api/admin/activity", adminActivity.List)
 	mux.HandleFunc("POST /api/users/register", userHandler.Register)
 	mux.HandleFunc("POST /api/users/session", userHandler.Login)
 	mux.HandleFunc("GET /api/users/session", userHandler.Current)

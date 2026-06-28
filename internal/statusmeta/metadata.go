@@ -42,7 +42,7 @@ func All() Metadata {
 			{Code: "E110", English: "progress", Chinese: "进度更新", Description: "任务状态、阶段、百分比和中文文案更新"},
 			{Code: "E120", English: "result", Chinese: "单图结果", Description: "某一张图片成功或失败"},
 			{Code: "E130", English: "heartbeat", Chinese: "心跳保活", Description: "证明观察连接仍然存在，不代表上游完成"},
-			{Code: "E140", English: "debug", Chinese: "调试日志", Description: "Admin 开启 Debug 后推送脱敏请求、响应和保存阶段日志"},
+			{Code: "E140", English: "debug", Chinese: "调试日志", Description: "管理员开启诊断后推送脱敏请求、响应和保存阶段日志"},
 			{Code: "E300", English: "done", Chinese: "任务结束", Description: "任务进入 succeeded、partial_failed、failed、cancelled 或 interrupted"},
 			{Code: "E500", English: "error", Chinese: "错误事件", Description: "任务或事件流出现错误，需同时显示中英文和状态码"},
 		},
