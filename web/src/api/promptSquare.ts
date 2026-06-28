@@ -4,10 +4,11 @@ import type {
   PromptSquareItemResponse,
   PromptSquareItemsResponse,
   PromptSquareListOptions,
+  PromptSquareReferencePayload,
   SubmitPromptSquareFromResultRequest,
 } from './contracts/promptSquare'
 
-export type { PromptSquareListOptions, SubmitPromptSquareFromResultRequest } from './contracts/promptSquare'
+export type { PromptSquareListOptions, PromptSquareReferencePayload, SubmitPromptSquareFromResultRequest } from './contracts/promptSquare'
 
 export async function listPromptSquareItems(options: PromptSquareListOptions = {}) {
   const data = await requestJson<PromptSquareItemsResponse>(promptSquareListPath(options))
@@ -32,14 +33,25 @@ export async function likePromptSquareItem(id: string, liked: boolean) {
 }
 
 export async function submitPromptSquareFromResult(payload: SubmitPromptSquareFromResultRequest) {
+  const references = normalizeSubmitReferences(payload.references)
+  const referenceUploadIds = normalizeReferenceUploadIds([
+    ...(payload.referenceUploadIds || []),
+    ...references.map((item) => item.uploadId || ''),
+  ])
+  const referenceUsageNote = (payload.referenceUsageNote || '').trim()
+  const body: Record<string, unknown> = {
+    taskId: payload.taskId,
+    imageIndex: payload.imageIndex,
+    title: (payload.title || '').trim(),
+    tags: normalizeSubmitTags(payload.tags),
+  }
+  if (referenceUploadIds.length) body.referenceUploadIds = referenceUploadIds
+  if (references.length) body.references = references
+  if (referenceUsageNote) body.referenceUsageNote = referenceUsageNote
+
   const data = await requestJson<PromptSquareItemResponse>('/api/prompt-square/from-result', {
     method: 'POST',
-    body: JSON.stringify({
-      taskId: payload.taskId,
-      imageIndex: payload.imageIndex,
-      title: (payload.title || '').trim(),
-      tags: normalizeSubmitTags(payload.tags),
-    }),
+    body: JSON.stringify(body),
   })
   if (!data.item) throw new Error('结果投稿接口响应缺少作品信息')
   return data.item
@@ -96,4 +108,44 @@ function normalizeSubmitTags(value: string[] | string | undefined) {
     return value.flatMap((item) => splitTags(item)).slice(0, 12)
   }
   return splitTags(value || '')
+}
+
+function normalizeReferenceUploadIds(value: string[] | undefined) {
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const item of value || []) {
+    const normalized = item.trim()
+    if (!normalized || seen.has(normalized)) continue
+    seen.add(normalized)
+    out.push(normalized)
+    if (out.length >= 12) break
+  }
+  return out
+}
+
+function normalizeSubmitReferences(value: PromptSquareReferencePayload[] | undefined) {
+  const seen = new Set<string>()
+  const out: PromptSquareReferencePayload[] = []
+  for (const item of value || []) {
+    const reference = compactSubmitReference(item)
+    const key = reference.uploadId || reference.fileName || reference.originalName || ''
+    if (!key || seen.has(key)) continue
+    seen.add(key)
+    out.push(reference)
+    if (out.length >= 12) break
+  }
+  return out
+}
+
+function compactSubmitReference(item: PromptSquareReferencePayload) {
+  return {
+    uploadId: (item.uploadId || '').trim() || undefined,
+    originalName: (item.originalName || '').trim() || undefined,
+    fileName: (item.fileName || '').trim() || undefined,
+    mime: (item.mime || '').trim() || undefined,
+    size: Number.isFinite(item.size) ? item.size : undefined,
+    imageUrl: (item.imageUrl || '').trim() || undefined,
+    thumbnailUrl: (item.thumbnailUrl || '').trim() || undefined,
+    usageNote: (item.usageNote || '').trim() || undefined,
+  }
 }

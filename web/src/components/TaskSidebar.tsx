@@ -212,7 +212,7 @@ function TaskQueueItem({ task, active, favorite, selected, onSelect, onOpenDetai
           <button type="button" className={`favorite-btn ${favorite ? 'active' : ''}`} onClick={(event) => { event.stopPropagation(); onToggleFavorite() }}>★</button>
         </div>
         <div className="queue-tags">
-          <span>{task.mode === 'image-to-image' ? '图生图' : '文生图'}</span>
+          <span>{task.mode === 'gif' ? 'GIF动图' : task.mode === 'image-to-image' ? '图生图' : '文生图'}</span>
           <span>{providerLabel(task.provider)}</span>
           <span>{modelLabel}</span>
           <span>来源 {sourceLabel}</span>

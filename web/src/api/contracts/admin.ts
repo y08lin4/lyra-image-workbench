@@ -35,6 +35,10 @@ export interface AdminEmailConfig {
 export interface AdminConfig {
   siteName: string
   newApiBaseUrl: string
+  systemApiKeySet?: boolean
+  systemApiKeyPreview?: string
+  systemBananaApiKeySet?: boolean
+  systemBananaApiKeyPreview?: string
   publicBaseUrl: string
   debugEnabled: boolean
   timeoutSec: number
@@ -139,3 +143,5 @@ export type GrantCreditsResponse = {
 
 export type SetAdminUserRoleRequest = { isAdmin: boolean } | { role: string }
 export type SetAdminUserRoleResponse = { ok: boolean; user?: AdminUser; users?: AdminUser[] }
+
+

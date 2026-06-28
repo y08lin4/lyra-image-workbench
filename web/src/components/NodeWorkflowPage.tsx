@@ -5,11 +5,12 @@ import type {
   KeyboardEvent as ReactKeyboardEvent,
   MouseEvent as ReactMouseEvent,
   PointerEvent as ReactPointerEvent,
+  WheelEvent as ReactWheelEvent,
 } from 'react'
 import type { CreateTaskRequest, Mode, ModelProvider, ReferenceUpload, Task } from '../types'
 import { formatError } from '../api/client'
 import { getReferenceUploadBlob } from '../api/uploads'
-import { optimizeCanvasTextPrompt } from './creativeCanvas/promptOptimization'
+import { buildCanvasPromptDraft, generateCanvasPromptFromCanvas, optimizeCanvasTextPrompt } from './creativeCanvas/promptOptimization'
 import type { CanvasConnection, CanvasContextMenu, CanvasHistoryImage, CanvasInteraction, CanvasItem, ReferenceRole } from './creativeCanvas/types'
 import { REFERENCE_ROLES } from './creativeCanvas/types'
 import {
@@ -34,15 +35,16 @@ import {
 } from './creativeCanvas/data'
 import {
   autoItemPosition,
-  canvasControlStyle,
   canvasItemContentStyle,
   canvasItemStyle,
+  canvasControlStyle,
   canvasPointFromClient,
   dropPointFromEvent,
   itemCenter,
   nearestConnectableItem,
   normalizeRotation,
   pointerAngleForItem,
+  scaleCanvasItemByWheel,
   spreadPoint,
   updateCanvasItemsForInteraction,
 } from './creativeCanvas/geometry'
@@ -73,6 +75,8 @@ import {
   connectionLabel,
   normalizeConnectionLabel,
 } from './creativeCanvas/connectionPrompt'
+import { loadCreativeCanvasDraft, saveCreativeCanvasDraft } from './creativeCanvas/persistence'
+import { canvasConnectionClassName, canvasConnectionLabelClassName, isEditableTarget } from './creativeCanvas/interaction'
 import './NodeWorkflowPage.css'
 
 export type NodeWorkflowUsePromptOptions = {
@@ -115,8 +119,10 @@ export function NodeWorkflowPage({
   recentResults = [],
   latestTask,
 }: NodeWorkflowPageProps) {
-  const [mode, setMode] = useState<Mode>('text-to-image')
-  const [draftPrompt, setDraftPrompt] = useState(prompt ?? initialPrompt ?? '')
+  const [initialCanvasDraft] = useState(loadCreativeCanvasDraft)
+  const initialDraftPrompt = initialCanvasDraft.hasStoredDraft ? initialCanvasDraft.prompt : prompt || initialPrompt || ''
+  const [mode, setMode] = useState<Mode>(initialCanvasDraft.mode)
+  const [draftPrompt, setDraftPrompt] = useState(initialDraftPrompt)
   const [localProvider, setLocalProvider] = useState<ModelProvider>(provider || IMAGE2_PROVIDER)
   const [localBananaModel, setLocalBananaModel] = useState(bananaModel || DEFAULT_BANANA_MODEL)
   const [ratio, setRatio] = useState('1:1')
@@ -127,10 +133,13 @@ export function NodeWorkflowPage({
   const [concurrency, setConcurrency] = useState(1)
   const [message, setMessage] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [isGeneratingCanvasPrompt, setIsGeneratingCanvasPrompt] = useState(false)
   const [previewUrls, setPreviewUrls] = useState<Record<string, string>>({})
-  const [canvasItems, setCanvasItems] = useState<CanvasItem[]>([])
-  const [connections, setConnections] = useState<CanvasConnection[]>([])
+  const [canvasItems, setCanvasItems] = useState<CanvasItem[]>(initialCanvasDraft.items)
+  const [connections, setConnections] = useState<CanvasConnection[]>(initialCanvasDraft.connections)
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null)
+  const [selectedConnectionId, setSelectedConnectionId] = useState<string | null>(null)
+  const [generatedPromptOverride, setGeneratedPromptOverride] = useState('')
   const [connectionDraftFrom, setConnectionDraftFrom] = useState<string | null>(null)
   const [editingConnectionId, setEditingConnectionId] = useState<string | null>(null)
   const [connectionLabelDraft, setConnectionLabelDraft] = useState('')
@@ -144,11 +153,15 @@ export function NodeWorkflowPage({
   const stageRef = useRef<HTMLElement | null>(null)
   const promptTextareaRef = useRef<HTMLTextAreaElement | null>(null)
   const textEditorRefs = useRef<Record<string, HTMLTextAreaElement | null>>({})
-  const canvasItemsRef = useRef<CanvasItem[]>([])
+  const canvasItemsRef = useRef<CanvasItem[]>(initialCanvasDraft.items)
+  const connectionsRef = useRef<CanvasConnection[]>(initialCanvasDraft.connections)
+  const draftPromptRef = useRef(draftPrompt)
+  const modeRef = useRef<Mode>(mode)
   const pastePointRef = useRef<{ x: number; y: number }>(autoItemPosition(0))
   const localPreviewUrlsRef = useRef<string[]>([])
   const autofocusedTextItemIdRef = useRef<string | null>(null)
   const canvasDropDepthRef = useRef(0)
+  const hadStoredCanvasDraftRef = useRef(initialCanvasDraft.hasStoredDraft)
 
   useEffect(() => {
     setLocalProvider(provider || IMAGE2_PROVIDER)
@@ -159,9 +172,27 @@ export function NodeWorkflowPage({
   }, [bananaModel])
 
   useEffect(() => {
-    if (prompt !== undefined) setDraftPrompt(prompt)
+    if (!prompt || hadStoredCanvasDraftRef.current) return
+    setDraftPrompt(prompt)
+    setGeneratedPromptOverride('')
   }, [prompt])
 
+  useEffect(() => {
+    const handle = window.setTimeout(() => {
+      saveCreativeCanvasDraft({ items: canvasItems, connections, prompt: draftPrompt, mode, hasStoredDraft: true })
+    }, 300)
+    return () => window.clearTimeout(handle)
+  }, [canvasItems, connections, draftPrompt, mode])
+
+  useEffect(() => () => {
+    saveCreativeCanvasDraft({
+      items: canvasItemsRef.current,
+      connections: connectionsRef.current,
+      prompt: draftPromptRef.current,
+      mode: modeRef.current,
+      hasStoredDraft: true,
+    })
+  }, [])
 
   useEffect(() => {
     let disposed = false
@@ -202,7 +233,7 @@ export function NodeWorkflowPage({
       const size = await canvasImageSizeFromSrc(previewUrls[firstUpload.id])
       if (disposed) return
       setCanvasItems((items) => {
-        if (items.length) return items
+        if (items.length || hadStoredCanvasDraftRef.current) return items
         return [createCanvasItemFromUpload(firstUpload, { x: 88, y: 82 }, 0, undefined, size)]
       })
     }
@@ -219,7 +250,23 @@ export function NodeWorkflowPage({
 
   useEffect(() => {
     canvasItemsRef.current = canvasItems
-  }, [canvasItems])
+    connectionsRef.current = connections
+    draftPromptRef.current = draftPrompt
+    modeRef.current = mode
+  }, [canvasItems, connections, draftPrompt, mode])
+
+  useEffect(() => {
+    const itemIds = new Set(canvasItems.map((item) => item.id))
+    setSelectedConnectionId((current) => {
+      if (!current) return current
+      const exists = connections.some((item) => item.id === current && itemIds.has(item.fromId) && itemIds.has(item.toId))
+      return exists ? current : null
+    })
+  }, [canvasItems, connections])
+
+  useEffect(() => {
+    setGeneratedPromptOverride('')
+  }, [canvasItems, connections, mode, ratio, localBananaModel])
 
   useEffect(() => {
     if (!interaction) return
@@ -295,10 +342,12 @@ export function NodeWorkflowPage({
   const selectedTextItem = useMemo(() => (isCanvasTextItem(selectedItem) ? selectedItem : null), [selectedItem])
   const referenceCanvasItems = useMemo(() => canvasItems.filter(isCanvasImageItem).filter((item) => item.isReference), [canvasItems])
   const canvasTextPromptItems = useMemo(() => canvasItems.filter(isCanvasTextItem).filter((item) => item.text.trim().length > 0), [canvasItems])
-  const markedUploadIds = useMemo(() => unique(referenceCanvasItems.map((item) => item.uploadId).filter((id): id is string => Boolean(id))), [referenceCanvasItems])
+  const availableUploadIds = useMemo(() => new Set(referenceUploads.map((item) => item.id)), [referenceUploads])
+  const markedUploadIds = useMemo(() => unique(referenceCanvasItems.map((item) => item.uploadId).filter((id): id is string => typeof id === 'string' && availableUploadIds.has(id))), [availableUploadIds, referenceCanvasItems])
   const taskUploadIds = mode === 'image-to-image' ? markedUploadIds : []
-  const hasCanvasPromptContent = trimmedPrompt.length > 0 || canvasTextPromptItems.length > 0 || connections.length > 0
-  const submissionPrompt = useMemo(() => appendCanvasContextPrompt(trimmedPrompt, canvasItems, connections), [canvasItems, connections, trimmedPrompt])
+  const generatedPromptTrimmed = generatedPromptOverride.trim()
+  const hasCanvasPromptContent = generatedPromptTrimmed.length > 0 || trimmedPrompt.length > 0 || referenceCanvasItems.length > 0 || canvasTextPromptItems.length > 0 || connections.length > 0
+  const submissionPrompt = useMemo(() => generatedPromptTrimmed || appendCanvasContextPrompt(trimmedPrompt, canvasItems, connections), [canvasItems, connections, generatedPromptTrimmed, trimmedPrompt])
   const trimmedSubmissionPrompt = submissionPrompt.trim()
 
   const canCreateTask = hasCanvasPromptContent && (mode === 'text-to-image' || taskUploadIds.length > 0)
@@ -307,7 +356,8 @@ export function NodeWorkflowPage({
     return okResults[okResults.length - 1]
   }, [latestTask])
   const selectedItemPreview = selectedImageItem ? imageSrcForCanvasItem(selectedImageItem, previewUrls) : ''
-  const renderPreviewSrc = latestOkResult?.imageUrl || selectedItemPreview
+  const renderPreviewSrc = selectedItemPreview || latestOkResult?.imageUrl || ''
+  const renderPreviewAlt = selectedImageItem ? selectedImageItem.name : latestOkResult ? '最新生成结果' : selectedItem?.name || '画布预览'
   const visibleReferences = referenceUploads.slice(0, 10)
   const visibleHistory = recentResults.slice(0, 12)
   const contextMenuItem = contextMenu?.target === 'item' ? canvasItems.find((item) => item.id === contextMenu.itemId) : null
@@ -388,12 +438,24 @@ export function NodeWorkflowPage({
   }
 
   async function addUploadToCanvas(upload: ReferenceUpload, point?: { x: number; y: number }) {
+    if (!point) {
+      const existing = canvasItemsRef.current.find((item) => isCanvasImageItem(item) && item.uploadId === upload.id)
+      if (existing) {
+        setCanvasItems((items) => items.map((item) => (isCanvasImageItem(item) && item.id === existing.id ? { ...item, isReference: true } : item)))
+        setSelectedItemId(existing.id)
+        setSelectedConnectionId(null)
+        setMode('image-to-image')
+        setMessage('已选中画布中的参考图。')
+        return
+      }
+    }
     const index = canvasItems.length
     const preview = await resolveUploadPreviewUrl(upload.id)
     const size = await canvasImageSizeFromSrc(preview.src)
     const item = createCanvasItemFromUpload(upload, point || autoItemPosition(index), index, preview.localPreviewUrl, size)
     setCanvasItems((items) => [...items, item])
     setSelectedItemId(item.id)
+    setSelectedConnectionId(null)
     setMode('image-to-image')
     setMessage('已加入画布参考。')
   }
@@ -428,21 +490,41 @@ export function NodeWorkflowPage({
   }
 
   async function addHistoryImageToCanvas(image: CanvasHistoryImage, point: { x: number; y: number }) {
+    const existing = canvasItemsRef.current.find((item) => isCanvasImageItem(item) && item.resultSrc === image.src)
+    if (existing) {
+      setCanvasItems((items) => items.map((item) => (isCanvasImageItem(item) && item.id === existing.id ? { ...item, isReference: true } : item)))
+      setSelectedItemId(existing.id)
+      setSelectedConnectionId(null)
+      setMode('image-to-image')
+      setMessage('已选中画布中的历史参考图。')
+      return
+    }
     try {
       const uploadPromise = onUseHistoryImageAsReference
         ? onUseHistoryImageAsReference(image.src, image.index)
         : Promise.resolve(undefined)
       const [upload, size] = await Promise.all([uploadPromise, canvasImageSizeFromSrc(image.src)])
+      if (upload?.id) {
+        const existingUpload = canvasItemsRef.current.find((item) => isCanvasImageItem(item) && item.uploadId === upload.id)
+        if (existingUpload) {
+          setCanvasItems((items) => items.map((item) => (isCanvasImageItem(item) && item.id === existingUpload.id ? { ...item, isReference: true, resultSrc: item.resultSrc || image.src } : item)))
+          setSelectedItemId(existingUpload.id)
+          setSelectedConnectionId(null)
+          setMode('image-to-image')
+          setMessage('已选中画布中的历史参考图。')
+          return
+        }
+      }
       const item = createCanvasItemFromHistory(image, point, canvasItems.length, upload, size)
       setCanvasItems((items) => [...items, item])
       setSelectedItemId(item.id)
+      setSelectedConnectionId(null)
       setMode('image-to-image')
       setMessage('历史结果已加入画布参考。')
     } catch (error) {
       setMessage(error instanceof Error ? error.message : '加入历史结果失败。')
     }
   }
-
   async function deleteReferenceUploadFromStrip(event: ReactMouseEvent<HTMLButtonElement>, upload: ReferenceUpload) {
     event.preventDefault()
     event.stopPropagation()
@@ -534,6 +616,8 @@ export function NodeWorkflowPage({
   function handleStagePointerDown(event: ReactPointerEvent<HTMLElement>) {
     if (event.target !== event.currentTarget) return
     pastePointRef.current = canvasPointFromClient(event.clientX, event.clientY, stageRef.current)
+    setSelectedItemId(null)
+    setSelectedConnectionId(null)
     stageRef.current?.focus({ preventScroll: true })
   }
 
@@ -551,6 +635,7 @@ export function NodeWorkflowPage({
     event.stopPropagation()
     const point = canvasTextPointFromClient(event.clientX, event.clientY, stageRef.current)
     setSelectedItemId(null)
+    setSelectedConnectionId(null)
     setContextMenu({ target: 'stage', point, x: event.clientX, y: event.clientY })
   }
 
@@ -558,6 +643,7 @@ export function NodeWorkflowPage({
     const item = createCanvasTextItem(point, canvasItems.length)
     setCanvasItems((items) => [...items, item])
     setSelectedItemId(item.id)
+    setSelectedConnectionId(null)
     setEditingTextItemId(item.id)
     setContextMenu(null)
     setMessage('已新建文字块。')
@@ -597,6 +683,8 @@ export function NodeWorkflowPage({
     event.preventDefault()
     event.stopPropagation()
     setSelectedItemId(item.id)
+    setSelectedConnectionId(null)
+    stageRef.current?.focus({ preventScroll: true })
     setContextMenu(null)
     canvasItemsRef.current = canvasItems
     const origin = { x: item.x, y: item.y, width: item.width, height: item.height, rotation: item.rotation }
@@ -612,18 +700,37 @@ export function NodeWorkflowPage({
 
   function handleItemClick(event: ReactMouseEvent<HTMLElement>, item: CanvasItem) {
     event.stopPropagation()
+    if (isEditableTarget(event.target)) {
+      setSelectedItemId(item.id)
+      setSelectedConnectionId(null)
+      return
+    }
     if (connectionDraftFrom && connectionDraftFrom !== item.id) {
-      if (isCanvasImageItem(item)) addConnection(connectionDraftFrom, item.id)
+      addConnection(connectionDraftFrom, item.id)
       setConnectionDraftFrom(null)
       return
     }
     setSelectedItemId(item.id)
+    setSelectedConnectionId(null)
+    stageRef.current?.focus({ preventScroll: true })
+  }
+
+  function handleItemWheel(event: ReactWheelEvent<HTMLElement>, item: CanvasItem) {
+    if (selectedItemId !== item.id || interaction || isEditableTarget(event.target)) return
+    event.preventDefault()
+    event.stopPropagation()
+    setCanvasItems((items) => {
+      const nextItems = items.map((entry) => (entry.id === item.id ? scaleCanvasItemByWheel(entry, event.deltaY, stageRef.current) : entry))
+      canvasItemsRef.current = nextItems
+      return nextItems
+    })
   }
 
   function handleItemContextMenu(event: ReactMouseEvent<HTMLElement>, itemId: string) {
     event.preventDefault()
     event.stopPropagation()
     setSelectedItemId(itemId)
+    setSelectedConnectionId(null)
     setContextMenu({ target: 'item', itemId, x: event.clientX, y: event.clientY })
   }
 
@@ -680,6 +787,7 @@ export function NodeWorkflowPage({
     setCanvasItems((items) => items.filter((item) => item.id !== itemId))
     setConnections((items) => items.filter((item) => item.fromId !== itemId && item.toId !== itemId))
     setSelectedItemId((current) => (current === itemId ? null : current))
+    setSelectedConnectionId(null)
     setConnectionDraftFrom((current) => (current === itemId ? null : current))
     setEditingTextItemId((current) => (current === itemId ? null : current))
     setOptimizingTextItemId((current) => (current === itemId ? null : current))
@@ -687,6 +795,14 @@ export function NodeWorkflowPage({
       const editingConnection = connections.find((item) => item.id === current)
       return editingConnection?.fromId === itemId || editingConnection?.toId === itemId ? null : current
     })
+    setContextMenu(null)
+  }
+
+  function removeConnection(connectionId: string) {
+    setConnections((items) => items.filter((item) => item.id !== connectionId))
+    setSelectedConnectionId((current) => (current === connectionId ? null : current))
+    setEditingConnectionId((current) => (current === connectionId ? null : current))
+    setConnectionLabelDraft('')
     setContextMenu(null)
   }
 
@@ -700,11 +816,29 @@ export function NodeWorkflowPage({
     })
   }
 
+  function selectConnection(connectionId: string) {
+    setSelectedConnectionId(connectionId)
+    setSelectedItemId(null)
+    setContextMenu(null)
+    stageRef.current?.focus({ preventScroll: true })
+  }
+
   function beginConnectionLabelEdit(event: ReactMouseEvent<HTMLButtonElement>, connection: CanvasConnection) {
     event.preventDefault()
     event.stopPropagation()
+    selectConnection(connection.id)
     setEditingConnectionId(connection.id)
     setConnectionLabelDraft(connectionLabel(connection))
+  }
+
+  function handleConnectionLabelClick(event: ReactMouseEvent<HTMLButtonElement>, connection: CanvasConnection) {
+    event.preventDefault()
+    event.stopPropagation()
+    if (selectedConnectionId !== connection.id) {
+      selectConnection(connection.id)
+      return
+    }
+    beginConnectionLabelEdit(event, connection)
   }
 
   function saveConnectionLabel(connectionId: string) {
@@ -722,10 +856,53 @@ export function NodeWorkflowPage({
     event.currentTarget.blur()
   }
 
+  function handleCanvasKeyDown(event: ReactKeyboardEvent<HTMLElement>) {
+    if (event.defaultPrevented || event.nativeEvent.isComposing || isEditableTarget(event.target)) return
+    if (event.key !== 'Delete' && event.key !== 'Backspace') return
+    if (editingConnectionId || editingTextItemId) return
+
+    if (selectedConnectionId) {
+      event.preventDefault()
+      event.stopPropagation()
+      removeConnection(selectedConnectionId)
+      return
+    }
+
+    if (selectedItemId) {
+      event.preventDefault()
+      event.stopPropagation()
+      removeItem(selectedItemId)
+    }
+  }
+
+  async function generatePromptFromCanvas() {
+    if (!hasCanvasPromptContent) {
+      setMessage('先在画布里添加参考、文字或连线。')
+      return
+    }
+    const localDraft = buildCanvasPromptDraft(trimmedPrompt, canvasItems, connections, { ratio: effectiveRatio })
+    setIsGeneratingCanvasPrompt(true)
+    setMessage('正在根据画布整理提示词...')
+    try {
+      const generatedPrompt = await generateCanvasPromptFromCanvas(trimmedPrompt, canvasItems, connections, { ratio: effectiveRatio })
+      setGeneratedPromptOverride(generatedPrompt)
+      setDraftPrompt(generatedPrompt)
+      setMessage('已根据画布生成提示词。')
+    } catch {
+      setGeneratedPromptOverride(localDraft)
+      setDraftPrompt(localDraft)
+      setMessage('AI 整理失败，已使用本地规则生成提示词。')
+    } finally {
+      setIsGeneratingCanvasPrompt(false)
+    }
+  }
+
   function clearCanvas() {
     setCanvasItems([])
     setConnections([])
     setSelectedItemId(null)
+    setSelectedConnectionId(null)
+    setGeneratedPromptOverride('')
     setConnectionDraftFrom(null)
     setEditingTextItemId(null)
     setOptimizingTextItemId(null)
@@ -759,11 +936,6 @@ export function NodeWorkflowPage({
           <h2>创作画布</h2>
           <p>{providerLabel(localProvider)} / {imageSize} / {modeLabel(mode)} / {referenceCanvasItems.length || taskUploadIds.length} 张参考</p>
         </div>
-        <div className="creative-canvas-top-actions">
-          <button type="button" onClick={useCanvasPrompt} disabled={!hasCanvasPromptContent}>同步到快捷生成</button>
-          <button type="button" onClick={clearCanvas} disabled={!canvasItems.length}>清空画布</button>
-          <button type="button" className="primary" onClick={() => void createCanvasTask()} disabled={!canCreateTask || isSubmitting}>{isSubmitting ? '生成中' : '生成'}</button>
-        </div>
       </header>
 
       {message ? <div className="creative-canvas-message" role="status">{message}</div> : null}
@@ -777,22 +949,40 @@ export function NodeWorkflowPage({
           onPointerDown={handleStagePointerDown}
           onContextMenu={handleStageContextMenu}
           onClick={(event) => {
-            if (event.target === event.currentTarget) setSelectedItemId(null)
+            if (event.target !== event.currentTarget) return
+            setSelectedItemId(null)
+            setSelectedConnectionId(null)
           }}
+          onKeyDown={handleCanvasKeyDown}
           onPaste={handleStagePaste}
         >
           {canvasItems.length ? (
-            <svg className="creative-connection-layer" aria-hidden="true">
+            <svg className="creative-connection-layer" aria-label="画布连线">
               {connections.map((connection) => {
                 const from = canvasItems.find((item) => item.id === connection.fromId)
                 const to = canvasItems.find((item) => item.id === connection.toId)
                 if (!from || !to) return null
                 const start = itemCenter(from)
                 const end = itemCenter(to)
+                const label = connectionLabel(connection)
+                const selected = selectedConnectionId === connection.id
                 return (
-                  <g key={connection.id}>
-                    <line x1={start.x} y1={start.y} x2={end.x} y2={end.y} />
-                    <circle cx={end.x} cy={end.y} r="4" />
+                  <g
+                    key={connection.id}
+                    className={canvasConnectionClassName(selected)}
+                    role="button"
+                    tabIndex={-1}
+                    aria-label={`选中连接：${label}`}
+                    onPointerDown={(event) => {
+                      event.preventDefault()
+                      event.stopPropagation()
+                      selectConnection(connection.id)
+                    }}
+                    onClick={(event) => event.stopPropagation()}
+                  >
+                    <line className="creative-connection-hit" x1={start.x} y1={start.y} x2={end.x} y2={end.y} />
+                    <line className="creative-connection-line" x1={start.x} y1={start.y} x2={end.x} y2={end.y} />
+                    <circle className="creative-connection-node" cx={end.x} cy={end.y} r="4" />
                   </g>
                 )
               })}
@@ -807,10 +997,11 @@ export function NodeWorkflowPage({
             const end = itemCenter(to)
             const label = connectionLabel(connection)
             const isEditing = editingConnectionId === connection.id
+            const selected = selectedConnectionId === connection.id
             return (
               <div
                 key={`label-${connection.id}`}
-                className="creative-connection-label"
+                className={canvasConnectionLabelClassName(selected)}
                 style={{ left: (start.x + end.x) / 2, top: (start.y + end.y) / 2 }}
                 onPointerDown={(event) => event.stopPropagation()}
                 onClick={(event) => event.stopPropagation()}
@@ -828,9 +1019,9 @@ export function NodeWorkflowPage({
                 ) : (
                   <button
                     type="button"
-                    title="编辑连接关系"
-                    aria-label={`编辑连接关系：${label}`}
-                    onClick={(event) => beginConnectionLabelEdit(event, connection)}
+                    title={selected ? '编辑连接关系' : '选中连接关系'}
+                    aria-label={`${selected ? '编辑' : '选中'}连接关系：${label}`}
+                    onClick={(event) => handleConnectionLabelClick(event, connection)}
                   >
                     {label}
                   </button>
@@ -853,6 +1044,7 @@ export function NodeWorkflowPage({
                 style={canvasItemStyle(item)}
                 aria-label={`${item.name}，${role?.label || '文字块'}`}
                 onClick={(event) => handleItemClick(event, item)}
+                onWheel={(event) => handleItemWheel(event, item)}
                 onContextMenu={(event) => handleItemContextMenu(event, item.id)}
               >
                 <div
@@ -875,10 +1067,14 @@ export function NodeWorkflowPage({
                           aria-label="编辑文字提示词"
                           spellCheck={false}
                           placeholder="在这里输入提示词"
-                          onFocus={() => setSelectedItemId(item.id)}
+                          onFocus={() => {
+                            setSelectedItemId(item.id)
+                            setSelectedConnectionId(null)
+                          }}
                           onChange={(event) => updateTextItem(item.id, event.currentTarget.value)}
                           onBlur={() => setEditingTextItemId((current) => (current === item.id ? null : current))}
                           onPointerDown={(event) => event.stopPropagation()}
+                          onClick={(event) => event.stopPropagation()}
                           onKeyDown={(event) => {
                             if (event.key === 'Escape' || ((event.ctrlKey || event.metaKey) && event.key === 'Enter')) event.currentTarget.blur()
                           }}
@@ -944,11 +1140,11 @@ export function NodeWorkflowPage({
           <section className="creative-render-preview">
             <header>
               <strong>实时预览</strong>
-              <span>{latestTask ? `${latestTask.statusText} / ${latestTask.progress}%` : selectedImageItem ? roleMeta(selectedImageItem.role).label : selectedTextItem ? '文字块' : '待生成'}</span>
+              <span>{selectedImageItem ? roleMeta(selectedImageItem.role).label : latestTask ? `${latestTask.statusText} / ${latestTask.progress}%` : selectedTextItem ? '文字块' : '待生成'}</span>
             </header>
             <div className="creative-render-frame" style={{ aspectRatio: aspectRatioValue(effectiveRatio) }}>
               {renderPreviewSrc ? (
-                <img src={renderPreviewSrc} alt={latestOkResult ? '最新生成结果' : selectedItem?.name || '画布预览'} />
+                <img src={renderPreviewSrc} alt={renderPreviewAlt} />
               ) : (
                 <span>等待画布内容</span>
               )}
@@ -1036,6 +1232,7 @@ export function NodeWorkflowPage({
                   type="button"
                   title={item.originalName}
                   aria-label={`加入画布：${item.originalName}`}
+                  aria-pressed={markedUploadIds.includes(item.id)}
                   draggable
                   onDragStart={(event) => handleUploadDragStart(event, item)}
                   onClick={() => void addUploadToCanvas(item)}
@@ -1058,6 +1255,12 @@ export function NodeWorkflowPage({
             )) : (
               <span className="creative-reference-empty">拖入图片或使用历史结果</span>
             )}
+          </div>
+          <div className="creative-reference-actions">
+            <button type="button" onClick={() => void generatePromptFromCanvas()} disabled={!hasCanvasPromptContent || isGeneratingCanvasPrompt}>{isGeneratingCanvasPrompt ? '整理中' : '画布生成提示词'}</button>
+            <button type="button" onClick={useCanvasPrompt} disabled={!hasCanvasPromptContent}>同步到快捷生成</button>
+            <button type="button" onClick={clearCanvas} disabled={!canvasItems.length}>清空画布</button>
+            <button type="button" className="primary" onClick={() => void createCanvasTask()} disabled={!canCreateTask || isSubmitting}>{isSubmitting ? '生成中' : '生成'}</button>
           </div>
         </section>
 
@@ -1127,6 +1330,7 @@ export function NodeWorkflowPage({
                 <button type="button" className={mode === 'text-to-image' ? 'active' : ''} onClick={() => setMode('text-to-image')}>文生图</button>
                 <button type="button" className={mode === 'image-to-image' ? 'active' : ''} onClick={() => setMode('image-to-image')}>图生图</button>
               </div>
+              <button type="button" className="creative-icon-action" onClick={() => void generatePromptFromCanvas()} disabled={!hasCanvasPromptContent || isGeneratingCanvasPrompt} title="根据画布生成提示词" aria-label="根据画布生成提示词">{isGeneratingCanvasPrompt ? '…' : '✦'}</button>
               <button type="button" className="creative-icon-action" onClick={useCanvasPrompt} disabled={!hasCanvasPromptContent} title="同步到快捷生成" aria-label="同步到快捷生成">↗</button>
               <button type="submit" className="creative-submit-action" disabled={!canCreateTask || isSubmitting} aria-label="生成">{isSubmitting ? '...' : '→'}</button>
             </div>
@@ -1164,3 +1368,4 @@ export function NodeWorkflowPage({
     </main>
   )
 }
+

@@ -37,7 +37,9 @@ import {
 import './AdminPage.css'
 
 type AdminMode = 'loading' | 'setup' | 'login' | 'config'
-export function AdminPage({ theme, onToggleTheme }: { theme: ThemeMode; onToggleTheme: () => void }) {
+type AdminPageProps = { theme: ThemeMode; onToggleTheme: () => void; embedded?: boolean }
+
+export function AdminPage({ theme, onToggleTheme, embedded = false }: AdminPageProps) {
   const [mode, setMode] = useState<AdminMode>('loading')
   const [activeTab, setActiveTab] = useState<AdminTab>('overview')
   const [auth, setAuth] = useState<AdminAuthStatus | null>(null)
@@ -47,6 +49,10 @@ export function AdminPage({ theme, onToggleTheme }: { theme: ThemeMode; onToggle
   const [adminEmail, setAdminEmail] = useState('')
   const [url, setUrl] = useState('http://127.0.0.1:3000/v1')
   const [publicBaseUrl, setPublicBaseUrl] = useState('')
+  const [systemApiKey, setSystemApiKey] = useState('')
+  const [systemBananaApiKey, setSystemBananaApiKey] = useState('')
+  const [clearSystemApiKey, setClearSystemApiKey] = useState(false)
+  const [clearSystemBananaApiKey, setClearSystemBananaApiKey] = useState(false)
   const [debugEnabled, setDebugEnabled] = useState(false)
   const [timeout, setTimeoutSec] = useState<NumericInputValue>(600)
   const [epayEnabled, setEpayEnabled] = useState(false)
@@ -117,6 +123,10 @@ export function AdminPage({ theme, onToggleTheme }: { theme: ThemeMode; onToggle
       setSiteName(cfg.siteName || 'Lyra Image Workbench')
       setUrl(cfg.newApiBaseUrl)
       setPublicBaseUrl(cfg.publicBaseUrl || '')
+      setSystemApiKey('')
+      setSystemBananaApiKey('')
+      setClearSystemApiKey(false)
+      setClearSystemBananaApiKey(false)
       setDebugEnabled(Boolean(cfg.debugEnabled))
       setTimeoutSec(cfg.timeoutSec)
       applyBillingConfig(cfg)
@@ -189,6 +199,10 @@ export function AdminPage({ theme, onToggleTheme }: { theme: ThemeMode; onToggle
           setSiteName(next.config.siteName || siteName)
           setUrl(next.config.newApiBaseUrl)
           setPublicBaseUrl(next.config.publicBaseUrl || '')
+          setSystemApiKey('')
+          setSystemBananaApiKey('')
+          setClearSystemApiKey(false)
+          setClearSystemBananaApiKey(false)
           setDebugEnabled(Boolean(next.config.debugEnabled))
           setTimeoutSec(next.config.timeoutSec)
           applyBillingConfig(next.config)
@@ -211,10 +225,19 @@ export function AdminPage({ theme, onToggleTheme }: { theme: ThemeMode; onToggle
     event.preventDefault()
     setError('')
     try {
-      const cfg = await saveAdminConfig(siteName, url, numericOrDefault(timeout, config?.timeoutSec || 600), publicBaseUrl, debugEnabled)
+      const cfg = await saveAdminConfig(siteName, url, numericOrDefault(timeout, config?.timeoutSec || 600), publicBaseUrl, debugEnabled, {
+        ...(systemApiKey.trim() ? { systemApiKey: systemApiKey.trim() } : {}),
+        ...(systemBananaApiKey.trim() ? { systemBananaApiKey: systemBananaApiKey.trim() } : {}),
+        clearSystemApiKey,
+        clearSystemBananaApiKey,
+      })
       setConfig(cfg)
       setSiteName(cfg.siteName || 'Lyra Image Workbench')
       setPublicBaseUrl(cfg.publicBaseUrl || '')
+      setSystemApiKey('')
+      setSystemBananaApiKey('')
+      setClearSystemApiKey(false)
+      setClearSystemBananaApiKey(false)
       setDebugEnabled(Boolean(cfg.debugEnabled))
       applyBillingConfig(cfg)
       applyEmailConfig(cfg)
@@ -401,30 +424,37 @@ export function AdminPage({ theme, onToggleTheme }: { theme: ThemeMode; onToggle
   const billingConfig = billingConfigOf(config)
   const emailConfig = emailConfigOf(config)
   const activeTabMeta = ADMIN_TABS.find((tab) => tab.id === activeTab) ?? ADMIN_TABS[0]
+  const Shell: 'main' | 'section' = embedded ? 'section' : 'main'
+  const centerShellClassName = embedded ? 'admin-embedded-page admin-embedded-auth-page' : 'center-shell'
+  const consoleShellClassName = embedded ? 'admin-embedded-page admin-embedded-console-page' : 'center-shell admin-page-shell'
 
   if (mode === 'loading') {
     return (
-      <main className="center-shell">
-        <div className="center-theme-action">
-          <GitHubLink compact />
-          <ThemeToggle theme={theme} onToggle={onToggleTheme} />
-        </div>
+      <Shell className={centerShellClassName}>
+        {!embedded ? (
+          <div className="center-theme-action">
+            <GitHubLink compact />
+            <ThemeToggle theme={theme} onToggle={onToggleTheme} />
+          </div>
+        ) : null}
         <section className="admin-panel">
           <AdminBrand title="后台管理" />
           <div className="info">正在检查 Admin 鉴权状态...</div>
           {error ? <div className="error">{error}</div> : null}
         </section>
-      </main>
+      </Shell>
     )
   }
 
   if (mode === 'setup' || mode === 'login') {
     return (
-      <main className="center-shell">
-        <div className="center-theme-action">
-          <GitHubLink compact />
-          <ThemeToggle theme={theme} onToggle={onToggleTheme} />
-        </div>
+      <Shell className={centerShellClassName}>
+        {!embedded ? (
+          <div className="center-theme-action">
+            <GitHubLink compact />
+            <ThemeToggle theme={theme} onToggle={onToggleTheme} />
+          </div>
+        ) : null}
         <form className={mode === 'setup' ? 'admin-panel admin-setup-panel' : 'admin-panel'} onSubmit={submitPassword}>
           <AdminBrand title={mode === 'setup' ? '初始化站点' : '输入 Admin 密码'} />
           {mode === 'setup' ? (
@@ -472,25 +502,27 @@ export function AdminPage({ theme, onToggleTheme }: { theme: ThemeMode; onToggle
               <button className="primary" type="submit">登录 Admin</button>
             </>
           )}
-          <a href="/">返回工作台</a>
+          {!embedded ? <a href="/">返回工作台</a> : null}
           {message ? <div className="ok">{message}</div> : null}
           {error ? <div className="error">{error}</div> : null}
         </form>
-      </main>
+      </Shell>
     )
   }
 
   return (
-    <main className="center-shell admin-page-shell">
-      <div className="center-theme-action">
-        <GitHubLink compact />
-        <ThemeToggle theme={theme} onToggle={onToggleTheme} />
-      </div>
+    <Shell className={consoleShellClassName}>
+      {!embedded ? (
+        <div className="center-theme-action">
+          <GitHubLink compact />
+          <ThemeToggle theme={theme} onToggle={onToggleTheme} />
+        </div>
+      ) : null}
       <section className="admin-panel admin-panel-wide admin-console" aria-labelledby="admin-console-title">
         <header className="admin-console-head">
           <AdminBrand title="后台管理" />
           <div className="admin-console-actions">
-            <a href="/">返回工作台</a>
+            {!embedded ? <a href="/">返回工作台</a> : null}
             <button type="button" onClick={handleLogout}>退出 Admin</button>
           </div>
         </header>
@@ -528,11 +560,19 @@ export function AdminPage({ theme, onToggleTheme }: { theme: ThemeMode; onToggle
             siteName={siteName}
             url={url}
             publicBaseUrl={publicBaseUrl}
+            systemApiKey={systemApiKey}
+            systemBananaApiKey={systemBananaApiKey}
+            clearSystemApiKey={clearSystemApiKey}
+            clearSystemBananaApiKey={clearSystemBananaApiKey}
             timeout={timeout}
             debugEnabled={debugEnabled}
             onSiteNameChange={setSiteName}
             onUrlChange={setUrl}
             onPublicBaseUrlChange={setPublicBaseUrl}
+            onSystemApiKeyChange={setSystemApiKey}
+            onSystemBananaApiKeyChange={setSystemBananaApiKey}
+            onClearSystemApiKeyChange={setClearSystemApiKey}
+            onClearSystemBananaApiKeyChange={setClearSystemBananaApiKey}
             onTimeoutChange={setTimeoutSec}
             onDebugEnabledChange={setDebugEnabled}
             onSubmit={submit}
@@ -633,7 +673,7 @@ export function AdminPage({ theme, onToggleTheme }: { theme: ThemeMode; onToggle
           />
         ) : null}
       </section>
-    </main>
+    </Shell>
   )
 }
 

@@ -40,7 +40,7 @@ export function TaskDetailModal({
         <header className="task-detail-header">
           <div className="task-detail-title">
             <p className="eyebrow">任务详情</p>
-            <h2 id="task-detail-title">{task.mode === 'image-to-image' ? '图生图任务' : '文生图任务'}</h2>
+            <h2 id="task-detail-title">{task.mode === 'gif' ? 'GIF 动图任务' : task.mode === 'image-to-image' ? '图生图任务' : '文生图任务'}</h2>
             <span>{task.stageText} / {task.stageCode || task.stage} · ID {task.id}</span>
           </div>
           <div className="task-detail-header-actions">
@@ -163,7 +163,7 @@ function resultErrorText(result: TaskResult) {
 
 function taskParameterItems(task: Task) {
   return [
-    task.mode === 'image-to-image' ? '图生图' : '文生图',
+    task.mode === 'gif' ? 'GIF 动图' : task.mode === 'image-to-image' ? '图生图' : '文生图',
     task.ratio && task.ratio !== 'auto' ? `比例 ${task.ratio}` : '自动比例',
     `清晰度 ${resolutionLabel(task.resolution)}`,
     `质量 ${qualityLabel(task.quality)}`,
@@ -230,7 +230,7 @@ function qualityLabel(value?: string) {
 }
 
 function outputFormatLabel(value?: string) {
-  const labels: Record<string, string> = { auto: '自动', png: 'PNG', jpeg: 'JPG', jpg: 'JPG', webp: 'WEBP' }
+  const labels: Record<string, string> = { auto: '自动', png: 'PNG', jpeg: 'JPG', jpg: 'JPG', webp: 'WEBP', gif: 'GIF' }
   return value ? labels[value] || value.toUpperCase() : 'PNG'
 }
 

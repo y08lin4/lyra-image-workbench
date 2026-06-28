@@ -7,6 +7,9 @@ import { ThemeToggle } from './components/ThemeToggle'
 import { nextTheme, resolveTheme, type ThemeMode } from './lib/themes'
 import { getAdminAuthStatus } from './api/admin'
 import './styles.css'
+import './components/WorkbenchSidebar.css'
+import './components/ResultCanvas.css'
+import './components/PromptSquarePanel.css'
 
 const THEME_KEY = 'image-workbench-theme'
 
@@ -40,9 +43,13 @@ function PublicApiDocsPage({ theme, onToggleTheme }: { theme: ThemeMode; onToggl
 }
 function App() {
   const initialPath = window.location.pathname
+  if (initialPath === '/admin') {
+    window.history.replaceState(null, '', '/')
+  }
+  const normalizedInitialPath = initialPath === '/admin' ? '/' : initialPath
   const [theme, setTheme] = useState<ThemeMode>(initialTheme)
-  const [setupChecked, setSetupChecked] = useState(initialPath === '/admin' || initialPath === '/api-docs')
-  const [forceAdminSetup, setForceAdminSetup] = useState(initialPath === '/admin')
+  const [setupChecked, setSetupChecked] = useState(normalizedInitialPath === '/api-docs')
+  const [forceAdminSetup, setForceAdminSetup] = useState(false)
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme
@@ -51,7 +58,7 @@ function App() {
 
   useEffect(() => {
     const path = window.location.pathname
-    if (path === '/admin' || path === '/api-docs') {
+    if (path === '/api-docs') {
       setSetupChecked(true)
       return
     }
@@ -60,7 +67,6 @@ function App() {
       .then((status) => {
         if (!alive) return
         if (status.setupRequired || status.initialized === false) {
-          window.history.replaceState(null, '', '/admin')
           setForceAdminSetup(true)
         }
       })
@@ -90,7 +96,7 @@ function App() {
       </main>
     )
   }
-  if (forceAdminSetup || window.location.pathname === '/admin') return <AdminPage theme={theme} onToggleTheme={toggleTheme} />
+  if (forceAdminSetup) return <AdminPage theme={theme} onToggleTheme={toggleTheme} />
   if (window.location.pathname === '/api-docs') return <PublicApiDocsPage theme={theme} onToggleTheme={toggleTheme} />
   return <WorkbenchPage theme={theme} onToggleTheme={toggleTheme} />
 }

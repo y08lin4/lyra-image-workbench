@@ -1,5 +1,6 @@
 export type Tab = 'text' | 'image' | 'inspiration' | 'history'
 export type InspirationStepId = 'idea' | 'purpose' | 'style' | 'palette' | 'composition' | 'constraints'
+export type InspirationSkipState = Record<InspirationStepId, boolean>
 
 export type InspirationStep = {
   id: InspirationStepId
@@ -25,7 +26,7 @@ export const inspirationStyleOptions = ['随机', '写实摄影', '电影感', '
 export const quickRefines = ['更写实', '更电影感', '更简洁', '更高级', '更梦幻', '增强光影', '减少元素', '改成竖屏构图', '改成商业海报']
 
 export const promptTabs: Array<{ id: Tab; label: string }> = [
-  { id: 'text', label: '文生图' },
+  { id: 'text', label: '提示词优化' },
   { id: 'inspiration', label: '灵感模式' },
   { id: 'image', label: '图片还原' },
   { id: 'history', label: '历史' },
@@ -85,6 +86,15 @@ export const emptyInspirationAnswers: Record<InspirationStepId, string> = {
   constraints: '',
 }
 
+export const emptyInspirationSkipped: InspirationSkipState = {
+  idea: false,
+  purpose: false,
+  style: false,
+  palette: false,
+  composition: false,
+  constraints: false,
+}
+
 export const observationLabels: Record<string, string> = {
   subject: '主体',
   composition: '构图',
@@ -118,5 +128,5 @@ export function kindLabel(kind?: string) {
   if (kind === 'image') return '图片还原'
   if (kind === 'inspiration') return '灵感扩写'
   if (kind === 'manual') return '手动会话'
-  return '文字扩写'
+  return '提示词优化'
 }

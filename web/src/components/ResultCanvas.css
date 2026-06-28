@@ -1,0 +1,458 @@
+/* Result canvas and square-submit refinements. Imported after styles.css on purpose. */
+
+.result-queue-layout {
+  height: 100%;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(288px, 360px) minmax(0, 1fr);
+  gap: 12px;
+  align-items: stretch;
+}
+
+.result-queue-layout .queue-sidebar,
+.result-queue-layout .result-canvas {
+  min-height: 0;
+}
+
+.result-queue-layout .queue-sidebar {
+  height: 100%;
+}
+
+.result-queue-layout .result-canvas {
+  min-width: 0;
+}
+
+.result-retention-note {
+  margin: 0;
+  border: 1px solid #bfdbfe;
+  border-radius: 14px;
+  background: #eff6ff;
+  color: #1e3a8a;
+  padding: 10px 12px;
+  font-size: 13px;
+  font-weight: 850;
+  line-height: 1.45;
+}
+
+.square-submit-button:disabled {
+  cursor: default;
+  opacity: .72;
+}
+
+.square-retention-state {
+  display: block;
+  margin: -4px 10px 10px;
+  color: #9a3412;
+  font-size: 12px;
+  font-weight: 850;
+  line-height: 1.45;
+}
+
+.square-retention-state.is-square-copy {
+  color: #166534;
+}
+
+.result-card .card-toolbar .square-submit-button {
+  border-color: #1d4ed8;
+}
+
+:root[data-theme] .result-retention-note {
+  background: var(--surface-soft) !important;
+  border-color: var(--border-strong) !important;
+  color: var(--text) !important;
+}
+
+:root[data-theme] .square-retention-state {
+  color: var(--muted) !important;
+}
+
+:root[data-theme] .square-retention-state.is-square-copy {
+  color: var(--success, #16a34a) !important;
+}
+
+.result-task-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-soft);
+}
+
+.result-task-summary div {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.result-task-summary span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.result-task-summary strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font-size: 13px;
+}
+
+.square-submit-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+  display: grid;
+  place-items: center;
+  padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+  background: rgba(15, 23, 42, .42);
+}
+
+.square-submit-dialog {
+  width: min(900px, 100%);
+  max-height: min(760px, calc(100svh - 32px));
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 16px 40px rgba(15, 23, 42, .20);
+}
+
+.square-submit-dialog header,
+.square-submit-dialog footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+}
+
+.square-submit-dialog header {
+  border-bottom: 1px solid var(--border);
+}
+
+.square-submit-dialog footer {
+  border-top: 1px solid var(--border);
+  background: var(--surface-soft);
+}
+
+.square-submit-dialog header span,
+.square-submit-form label span,
+.square-submit-prompt span,
+.square-submit-references > span,
+.square-submit-meta dt {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.square-submit-dialog h3 {
+  margin: 3px 0 0;
+  color: var(--text);
+  font-size: 18px;
+  line-height: 1.25;
+}
+
+.square-submit-dialog header button {
+  flex: none;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  padding: 0;
+  font-size: 20px;
+  line-height: 1;
+}
+
+.square-submit-body {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(240px, .82fr) minmax(320px, 1.18fr);
+  align-items: start;
+  gap: 16px;
+  overflow: auto;
+  padding: 16px;
+}
+
+.square-submit-preview {
+  width: 100%;
+  align-self: start;
+  min-height: 220px;
+  aspect-ratio: 1 / 1;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-soft);
+}
+
+.square-submit-preview img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: contain;
+}
+
+.square-submit-form {
+  min-width: 320px;
+  display: grid;
+  gap: 10px;
+}
+
+.square-submit-form label {
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.square-submit-meta {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 12px;
+  margin: 0;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-soft);
+}
+
+.square-submit-meta div,
+.square-submit-meta dd {
+  min-width: 0;
+}
+
+.square-submit-meta dt,
+.square-submit-meta dd {
+  margin: 0;
+}
+
+.square-submit-meta dd {
+  margin-top: 2px;
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 850;
+}
+
+.square-submit-prompt {
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.square-submit-prompt p {
+  max-height: 132px;
+  margin: 0;
+  overflow: auto;
+  color: var(--text);
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.square-submit-note {
+  margin: 0;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-soft);
+  color: var(--muted);
+  padding: 9px 10px;
+  font-size: 12px;
+  font-weight: 850;
+  line-height: 1.45;
+}
+
+.square-submit-policy {
+  border-color: #bfdbfe;
+  background: #eff6ff;
+  color: #1e3a8a;
+}
+
+.square-submit-policy strong {
+  color: #1e3a8a;
+}
+
+.square-submit-references {
+  min-width: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.square-submit-reference-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 8px;
+}
+
+.square-submit-reference-item {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-soft);
+  padding: 8px;
+}
+
+.square-submit-reference-thumb {
+  width: 52px;
+  aspect-ratio: 1 / 1;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.square-submit-reference-thumb img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: contain;
+}
+
+.square-submit-reference-item strong,
+.square-submit-reference-item small {
+  display: block;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.square-submit-reference-item strong {
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.square-submit-reference-item small {
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.square-submit-reference-note-field textarea {
+  min-height: 78px;
+  resize: vertical;
+}
+
+.square-submit-dialog footer button {
+  min-height: 40px;
+  min-width: 112px;
+  border-radius: 10px;
+}
+
+@media (max-width: 980px) {
+  .result-queue-layout {
+    height: auto;
+    grid-template-columns: 1fr;
+  }
+
+  .result-queue-layout .queue-sidebar,
+  .result-queue-layout .result-canvas {
+    height: auto;
+    overflow: visible;
+  }
+}
+
+@media (max-width: 820px) {
+  .square-submit-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .square-submit-form {
+    min-width: 0;
+  }
+
+  .square-submit-preview {
+    min-height: 180px;
+    max-height: min(38svh, 360px);
+  }
+}
+
+@media (max-width: 560px) {
+  .result-queue-layout {
+    gap: 10px;
+  }
+
+  .result-retention-note {
+    border-radius: 12px;
+    font-size: 12px;
+  }
+
+  .square-retention-state {
+    margin: -2px 10px 10px;
+  }
+}
+:root[data-theme] .result-task-summary,
+:root[data-theme] .square-submit-dialog {
+  background: var(--surface) !important;
+  border-color: var(--border) !important;
+  color: var(--text) !important;
+  box-shadow: var(--shadow) !important;
+}
+
+:root[data-theme] .result-task-summary,
+:root[data-theme] .square-submit-dialog footer,
+:root[data-theme] .square-submit-meta,
+:root[data-theme] .square-submit-note {
+  background: var(--surface-soft) !important;
+  border-color: var(--border) !important;
+  color: var(--text) !important;
+}
+
+:root[data-theme] .result-card .card-toolbar .square-submit-button {
+  background: var(--primary) !important;
+  border-color: var(--primary) !important;
+  color: var(--primary-contrast) !important;
+}
+
+:root[data-theme] .result-task-summary strong {
+  color: var(--text) !important;
+}
+
+:root[data-theme] .result-task-summary span {
+  color: var(--muted) !important;
+}
+
+@media (max-width: 760px) {
+  .square-submit-meta {
+    grid-template-columns: 1fr;
+  }
+
+  .square-submit-dialog footer {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .square-submit-dialog footer button {
+    width: 100%;
+  }
+}
+
+@media (max-width: 640px) {
+  .result-task-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .square-submit-dialog header,
+  .square-submit-dialog footer {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
+
+@media (max-width: 430px) {
+  .result-task-summary,
+  .square-submit-meta {
+    grid-template-columns: 1fr;
+  }
+}

@@ -55,8 +55,12 @@ export interface UserConfig {
   cloudApiKeyPreview?: string
   cloudBananaApiKeySet?: boolean
   cloudBananaApiKeyPreview?: string
-  apiKeySource?: 'local' | 'cloud' | 'none'
-  bananaApiKeySource?: 'local' | 'cloud' | 'none'
+  systemApiKeySet?: boolean
+  systemApiKeyPreview?: string
+  systemBananaApiKeySet?: boolean
+  systemBananaApiKeyPreview?: string
+  apiKeySource?: 'local' | 'cloud' | 'system' | 'none'
+  bananaApiKeySource?: 'local' | 'cloud' | 'system' | 'none'
   defaultCount: number
   defaultConcurrency: number
   autoUploadPixhost: boolean
@@ -83,6 +87,19 @@ export interface ReferenceUpload {
 export interface PromptLibraryImage {
   url: string
   alt?: string
+}
+
+export interface PromptLibraryReferenceImage extends PromptLibraryImage {
+  itemId: string
+  itemTitle: string
+  itemCategory: string
+}
+
+export interface PromptLibraryUsePromptOptions {
+  provider: ModelProvider
+  model: string
+  ratio?: string
+  referenceImage?: PromptLibraryReferenceImage
 }
 
 export interface PromptLibrarySource {

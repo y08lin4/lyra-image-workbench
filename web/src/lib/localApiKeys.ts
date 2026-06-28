@@ -25,6 +25,8 @@ export function mergeLocalApiKeys(config: UserConfig, scope = getLocalKeyScope()
   const localBananaApiKeySet = Boolean(keys.bananaApiKey)
   const cloudApiKeySet = Boolean(config.cloudApiKeySet ?? config.apiKeySet)
   const cloudBananaApiKeySet = Boolean(config.cloudBananaApiKeySet ?? config.bananaApiKeySet)
+  const systemApiKeySet = Boolean(config.systemApiKeySet)
+  const systemBananaApiKeySet = Boolean(config.systemBananaApiKeySet)
   return {
     ...config,
     localApiKeySet,
@@ -35,12 +37,16 @@ export function mergeLocalApiKeys(config: UserConfig, scope = getLocalKeyScope()
     cloudApiKeyPreview: config.cloudApiKeyPreview || config.apiKeyPreview || '',
     cloudBananaApiKeySet,
     cloudBananaApiKeyPreview: config.cloudBananaApiKeyPreview || config.bananaApiKeyPreview || '',
-    apiKeySet: localApiKeySet || cloudApiKeySet,
-    apiKeyPreview: localApiKeySet ? maskSecret(keys.apiKey || '') : (config.cloudApiKeyPreview || config.apiKeyPreview || ''),
-    bananaApiKeySet: localBananaApiKeySet || cloudBananaApiKeySet,
-    bananaApiKeyPreview: localBananaApiKeySet ? maskSecret(keys.bananaApiKey || '') : (config.cloudBananaApiKeyPreview || config.bananaApiKeyPreview || ''),
-    apiKeySource: localApiKeySet ? 'local' : cloudApiKeySet ? 'cloud' : 'none',
-    bananaApiKeySource: localBananaApiKeySet ? 'local' : cloudBananaApiKeySet ? 'cloud' : 'none',
+    systemApiKeySet,
+    systemApiKeyPreview: '',
+    systemBananaApiKeySet,
+    systemBananaApiKeyPreview: '',
+    apiKeySet: localApiKeySet || cloudApiKeySet || systemApiKeySet,
+    apiKeyPreview: localApiKeySet ? maskSecret(keys.apiKey || '') : cloudApiKeySet ? (config.cloudApiKeyPreview || config.apiKeyPreview || '') : '',
+    bananaApiKeySet: localBananaApiKeySet || cloudBananaApiKeySet || systemBananaApiKeySet,
+    bananaApiKeyPreview: localBananaApiKeySet ? maskSecret(keys.bananaApiKey || '') : cloudBananaApiKeySet ? (config.cloudBananaApiKeyPreview || config.bananaApiKeyPreview || '') : '',
+    apiKeySource: localApiKeySet ? 'local' : cloudApiKeySet ? 'cloud' : systemApiKeySet ? 'system' : 'none',
+    bananaApiKeySource: localBananaApiKeySet ? 'local' : cloudBananaApiKeySet ? 'cloud' : systemBananaApiKeySet ? 'system' : 'none',
   }
 }
 

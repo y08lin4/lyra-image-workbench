@@ -50,7 +50,7 @@ export function PromptResultPanel({
   const negativePrompt = activeVersion?.negativePrompt || record?.negativePrompt || ''
   const promptRatio = activeVersion?.ratio || record?.ratio || session?.ratio || ''
   const mustKeep = activeVersion?.mustKeep?.length ? activeVersion.mustKeep : record?.mustKeep
-  const title = session ? `${kindLabel(session.kind)} · ${session.title}` : record ? (record.mode === 'image-to-prompt' ? '图片还原提示词' : '文字生成图片提示词') : '结果预览'
+  const title = session ? `${kindLabel(session.kind)} · ${session.title}` : record ? (record.mode === 'image-to-prompt' ? '图片还原提示词' : '提示词优化结果') : '结果预览'
   const elapsedMs = activeVersion?.elapsedMs || record?.elapsedMs || 0
   const promptModel = activeVersion?.model || record?.model || 'gpt-5.5'
   const preferredBananaResolution = getBananaModelOption(bananaModel).resolution

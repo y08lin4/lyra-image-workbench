@@ -19,6 +19,7 @@ import { PromptResultPanel } from './promptAssistant/PromptResultPanel'
 import {
   categoryOptions,
   emptyInspirationAnswers,
+  emptyInspirationSkipped,
   inspirationSteps,
   inspirationStyleOptions,
   kindLabel,
@@ -26,10 +27,18 @@ import {
   promptTabs,
   ratioOptions,
   styleOptions,
+  type InspirationSkipState,
   type InspirationStepId,
   type Tab,
 } from './promptAssistant/constants'
-import { buildInspirationBrief, buildInspirationMessages, normalizeRandom } from './promptAssistant/inspiration'
+import {
+  buildInspirationBrief,
+  buildInspirationMessages,
+  countInspirationProgress,
+  isInspirationStepComplete,
+  normalizeRandom,
+} from './promptAssistant/inspiration'
+import { buildPromptOptimizationTarget } from './promptAssistant/templates'
 
 
 type Props = {
@@ -52,7 +61,6 @@ export function PromptAssistantModal({ tasks, uploads, provider, bananaModel, on
   const [applyBananaModel, setApplyBananaModel] = useState(bananaModel || DEFAULT_BANANA_MODEL)
   const [sourceType, setSourceType] = useState<'upload' | 'result'>('upload')
   const [uploadId, setUploadId] = useState('')
-  const [uploadAutoSelectEnabled, setUploadAutoSelectEnabled] = useState(true)
   const [resultKey, setResultKey] = useState('')
   const [records, setRecords] = useState<PromptRecord[]>([])
   const [sessions, setSessions] = useState<PromptSession[]>([])
@@ -66,6 +74,7 @@ export function PromptAssistantModal({ tasks, uploads, provider, bananaModel, on
   const [inspirationSeed, setInspirationSeed] = useState('')
   const [inspirationRatio, setInspirationRatio] = useState('auto')
   const [inspirationAnswers, setInspirationAnswers] = useState<Record<InspirationStepId, string>>({ ...emptyInspirationAnswers })
+  const [inspirationSkipped, setInspirationSkipped] = useState<InspirationSkipState>({ ...emptyInspirationSkipped })
   const [inspirationDraft, setInspirationDraft] = useState('')
   const [inspirationStepIndex, setInspirationStepIndex] = useState(0)
   const [ideas, setIdeas] = useState<InspirationIdea[]>([])
@@ -94,10 +103,12 @@ export function PromptAssistantModal({ tasks, uploads, provider, bananaModel, on
   const imageInputRef = useRef<HTMLInputElement | null>(null)
   const resultScrollKey = visibleActiveVersion?.id || visibleSession?.id || visibleRecord?.id || ''
   const inspirationCurrentStep = inspirationSteps[inspirationStepIndex] || inspirationSteps[0]
-  const inspirationAnsweredCount = inspirationSteps.filter((stepItem) => inspirationAnswers[stepItem.id]?.trim()).length
-  const inspirationComplete = inspirationAnsweredCount === inspirationSteps.length
-  const inspirationProgress = `${inspirationAnsweredCount}/${inspirationSteps.length}`
-  const inspirationMessages = useMemo(() => buildInspirationMessages(inspirationAnswers, inspirationStepIndex), [inspirationAnswers, inspirationStepIndex])
+  const inspirationCurrentStepSkipped = Boolean(inspirationSkipped[inspirationCurrentStep.id])
+  const inspirationCompletedCount = countInspirationProgress(inspirationAnswers, inspirationSkipped)
+  const inspirationComplete = inspirationCompletedCount === inspirationSteps.length
+  const inspirationProgress = `${inspirationCompletedCount}/${inspirationSteps.length}`
+  const inspirationMessages = useMemo(() => buildInspirationMessages(inspirationAnswers, inspirationStepIndex, inspirationSkipped), [inspirationAnswers, inspirationSkipped, inspirationStepIndex])
+  const textPromptInputCollapsed = tab === 'text' && hasPromptResult
   const imagePreviewUrl = sourceType === 'upload' && uploadId ? `/api/uploads/reference/${uploadId}/image` : ''
 
   useEffect(() => {
@@ -113,9 +124,6 @@ export function PromptAssistantModal({ tasks, uploads, provider, bananaModel, on
     void refreshHistory()
   }, [])
 
-  useEffect(() => {
-    if (uploadAutoSelectEnabled && !uploadId && uploads[0]) setUploadId(uploads[0].id)
-  }, [uploads, uploadId, uploadAutoSelectEnabled])
 
   useEffect(() => {
     if (!resultKey && resultOptions[0]) setResultKey(resultOptions[0].key)
@@ -157,41 +165,81 @@ export function PromptAssistantModal({ tasks, uploads, provider, bananaModel, on
     return `${providerLabel(applyProvider)} / ${selectedModel()}`
   }
 
-  function selectInspirationStep(index: number) {
+  function inspirationDraftForStep(index: number) {
+    const stepItem = inspirationSteps[index]
+    if (!stepItem || inspirationSkipped[stepItem.id]) return ''
+    return inspirationAnswers[stepItem.id] || ''
+  }
+
+  function moveToInspirationStep(index: number) {
     const nextIndex = Math.max(0, Math.min(index, inspirationSteps.length - 1))
     setInspirationStepIndex(nextIndex)
-    setInspirationDraft(inspirationAnswers[inspirationSteps[nextIndex].id] || '')
+    setInspirationDraft(inspirationDraftForStep(nextIndex))
   }
 
-  function appendInspirationQuick(value: string) {
-    setInspirationDraft((current) => current.trim() ? `${current.trim()}，${value}` : value)
+  function selectInspirationStep(index: number) {
+    moveToInspirationStep(index)
   }
 
-  function submitInspirationAnswer() {
-    const value = inspirationDraft.trim()
-    if (!value) {
-      setError(`先回答「${inspirationCurrentStep.label}」`)
-      return
-    }
-    setError('')
-    setMessage('')
-    setInspirationAnswers((current) => ({ ...current, [inspirationCurrentStep.id]: value }))
+  function moveToNextInspirationStep() {
     if (inspirationStepIndex < inspirationSteps.length - 1) {
-      const nextIndex = inspirationStepIndex + 1
-      setInspirationStepIndex(nextIndex)
-      setInspirationDraft(inspirationAnswers[inspirationSteps[nextIndex].id] || '')
+      moveToInspirationStep(inspirationStepIndex + 1)
       return
     }
     setInspirationDraft('')
     setMessage('追问信息已整理，可以生成完整提示词')
   }
 
+  function updateInspirationDraft(value: string) {
+    setInspirationDraft(value)
+    if (!inspirationCurrentStepSkipped) return
+    setInspirationSkipped((current) => ({ ...current, [inspirationCurrentStep.id]: false }))
+  }
+
+  function appendInspirationQuick(value: string) {
+    if (inspirationCurrentStepSkipped) {
+      setInspirationSkipped((current) => ({ ...current, [inspirationCurrentStep.id]: false }))
+    }
+    setInspirationDraft((current) => current.trim() ? `${current.trim()}，${value}` : value)
+  }
+
+  function submitInspirationAnswer() {
+    const value = inspirationDraft.trim()
+    if (!value) {
+      setError(`先回答「${inspirationCurrentStep.label}」，或点“跳过此项”`)
+      return
+    }
+    setError('')
+    setMessage('')
+    setInspirationAnswers((current) => ({ ...current, [inspirationCurrentStep.id]: value }))
+    setInspirationSkipped((current) => ({ ...current, [inspirationCurrentStep.id]: false }))
+    moveToNextInspirationStep()
+  }
+
+  function skipInspirationAnswer() {
+    setError('')
+    setMessage('')
+    setInspirationAnswers((current) => ({ ...current, [inspirationCurrentStep.id]: '' }))
+    setInspirationSkipped((current) => ({ ...current, [inspirationCurrentStep.id]: true }))
+    moveToNextInspirationStep()
+  }
+
   function resetInspirationConversation() {
     setInspirationAnswers({ ...emptyInspirationAnswers })
+    setInspirationSkipped({ ...emptyInspirationSkipped })
     setInspirationDraft('')
     setInspirationStepIndex(0)
     setIdeas([])
     setMessage('已重开灵感对话')
+    setError('')
+  }
+
+  function startNewTextOptimization() {
+    setActiveRecord(null)
+    setActiveSession(null)
+    setActiveVersionId('')
+    setRefineText('')
+    setMessage('可以输入新的提示词优化想法')
     setError('')
   }
 
@@ -216,13 +264,13 @@ export function PromptAssistantModal({ tasks, uploads, provider, bananaModel, on
         style,
         ratio,
         language: 'zh',
-        target: '通用图片模型',
+        target: buildPromptOptimizationTarget(),
       })
       setActiveRecord(record)
       setActiveSession(null)
       setActiveVersionId('')
       if (record.sessionId) await loadSession(record.sessionId)
-      setMessage('文字提示词已生成，可以继续对话修改')
+      setMessage('提示词优化结果已生成，可以继续对话修改')
       await refreshHistory()
     } catch (err) {
       setError(formatError(err, '生成失败'))
@@ -269,7 +317,6 @@ export function PromptAssistantModal({ tasks, uploads, provider, bananaModel, on
     setError('')
     setMessage('')
     setSourceType('upload')
-    setUploadAutoSelectEnabled(true)
     setLoading(true)
     try {
       const created = await uploadReferenceImages(imageFiles.slice(0, 1))
@@ -292,7 +339,6 @@ export function PromptAssistantModal({ tasks, uploads, provider, bananaModel, on
     setLoading(true)
     try {
       await deleteReferenceUpload(currentUploadId)
-      setUploadAutoSelectEnabled(false)
       setUploadId('')
       if (imageInputRef.current) imageInputRef.current.value = ''
       await onRefreshUploads()
@@ -345,9 +391,9 @@ export function PromptAssistantModal({ tasks, uploads, provider, bananaModel, on
   async function makeIdeas() {
     setError('')
     setMessage('')
-    const seed = buildInspirationBrief(inspirationAnswers, inspirationSeed)
+    const seed = buildInspirationBrief(inspirationAnswers, inspirationSeed, inspirationSkipped)
     if (!seed.trim()) {
-      setError('先在灵感对话里输入一句想法')
+      setError('先回答或跳过灵感对话里的问题')
       return
     }
     setLoading(true)
@@ -372,13 +418,13 @@ export function PromptAssistantModal({ tasks, uploads, provider, bananaModel, on
   async function generateInspirationPrompt() {
     setError('')
     setMessage('')
-    const seed = buildInspirationBrief(inspirationAnswers, inspirationSeed)
-    if (!inspirationAnswers.idea.trim()) {
-      setError('先在灵感对话里输入一句想法')
+    const seed = buildInspirationBrief(inspirationAnswers, inspirationSeed, inspirationSkipped)
+    if (!seed.trim()) {
+      setError('先回答或跳过灵感对话里的问题')
       return
     }
     if (!inspirationComplete) {
-      setError(`继续回答「${inspirationCurrentStep.label}」后再生成完整提示词`)
+      setError(`继续回答或跳过「${inspirationCurrentStep.label}」后再生成完整提示词`)
       return
     }
     setLoading(true)
@@ -547,27 +593,37 @@ export function PromptAssistantModal({ tasks, uploads, provider, bananaModel, on
 
         <div className={`prompt-assistant-body is-${tab}${tab === 'inspiration' ? ' is-inspiration' : ''}${hasPromptResult ? ' has-result' : ''}`}>
           {tab === 'text' ? (
-            <section className="prompt-tool-panel" id="prompt-panel-text" role="tabpanel" aria-labelledby="prompt-tab-text">
-              <label>
-                <span>一句话想法</span>
-                <textarea value={idea} onChange={(event) => setIdea(event.target.value)} placeholder="例如：雨夜东京街头的赛博朋克少女" rows={4} />
-              </label>
-              <div className="prompt-tool-grid">
+            textPromptInputCollapsed ? (
+              <section className="prompt-tool-panel prompt-text-collapsed" id="prompt-panel-text" role="tabpanel" aria-labelledby="prompt-tab-text">
+                <div>
+                  <strong>初始输入已收起</strong>
+                  <span>当前结果请在“继续对话修改”里调整；需要新想法时可重新打开输入。</span>
+                </div>
+                <button type="button" onClick={startNewTextOptimization}>重新优化</button>
+              </section>
+            ) : (
+              <section className="prompt-tool-panel" id="prompt-panel-text" role="tabpanel" aria-labelledby="prompt-tab-text">
                 <label>
-                  <span>风格</span>
-                  <select value={style} onChange={(event) => setStyle(event.target.value)}>
-                    {styleOptions.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
-                  </select>
+                  <span>原始想法</span>
+                  <textarea value={idea} onChange={(event) => setIdea(event.target.value)} placeholder="例如：雨夜东京街头的赛博朋克少女" rows={4} />
                 </label>
-                <label>
-                  <span>比例</span>
-                  <select value={ratio} onChange={(event) => setRatio(event.target.value)}>
-                    {ratioOptions.map((item) => <option key={item} value={item}>{item === 'auto' ? '自动' : item}</option>)}
-                  </select>
-                </label>
-              </div>
-              <button type="button" className="primary" disabled={loading} onClick={generateTextPrompt}>{loading ? '生成中...' : '生成专业提示词'}</button>
-            </section>
+                <div className="prompt-tool-grid">
+                  <label>
+                    <span>风格</span>
+                    <select value={style} onChange={(event) => setStyle(event.target.value)}>
+                      {styleOptions.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+                    </select>
+                  </label>
+                  <label>
+                    <span>比例</span>
+                    <select value={ratio} onChange={(event) => setRatio(event.target.value)}>
+                      {ratioOptions.map((item) => <option key={item} value={item}>{item === 'auto' ? '自动' : item}</option>)}
+                    </select>
+                  </label>
+                </div>
+                <button type="button" className="primary" disabled={loading} onClick={generateTextPrompt}>{loading ? '优化中...' : '优化提示词'}</button>
+              </section>
+            )
           ) : null}
 
           {tab === 'image' ? (
@@ -621,15 +677,16 @@ export function PromptAssistantModal({ tasks, uploads, provider, bananaModel, on
 
               <div className="inspiration-stepper" aria-label="灵感追问进度">
                 {inspirationSteps.map((stepItem, index) => {
-                  const answered = Boolean(inspirationAnswers[stepItem.id]?.trim())
+                  const skipped = Boolean(inspirationSkipped[stepItem.id])
+                  const completed = isInspirationStepComplete(inspirationAnswers, inspirationSkipped, stepItem.id)
                   return (
                     <button
                       key={stepItem.id}
                       type="button"
-                      className={`${index === inspirationStepIndex ? 'active' : ''}${answered ? ' done' : ''}`}
+                      className={`${index === inspirationStepIndex ? 'active' : ''}${completed ? ' done' : ''}${skipped ? ' skipped' : ''}`}
                       onClick={() => selectInspirationStep(index)}
                     >
-                      <span>{index + 1}</span>
+                      <span>{skipped ? '跳' : index + 1}</span>
                       <b>{stepItem.label}</b>
                     </button>
                   )
@@ -647,11 +704,11 @@ export function PromptAssistantModal({ tasks, uploads, provider, bananaModel, on
 
               <div className="inspiration-composer">
                 <label>
-                  <span>{inspirationCurrentStep.label}</span>
+                  <span>{inspirationCurrentStep.label}{inspirationCurrentStepSkipped ? <em>已跳过</em> : null}</span>
                   <textarea
                     value={inspirationDraft}
-                    onChange={(event) => setInspirationDraft(event.target.value)}
-                    placeholder={inspirationCurrentStep.placeholder}
+                    onChange={(event) => updateInspirationDraft(event.target.value)}
+                    placeholder={inspirationCurrentStepSkipped ? '已跳过；输入内容可重新回答这一项' : inspirationCurrentStep.placeholder}
                     rows={3}
                   />
                 </label>
@@ -661,6 +718,7 @@ export function PromptAssistantModal({ tasks, uploads, provider, bananaModel, on
                   ))}
                 </div>
                 <div className="inspiration-action-row">
+                  <button type="button" onClick={skipInspirationAnswer}>{inspirationStepIndex === inspirationSteps.length - 1 ? '跳过并完成' : '跳过此项'}</button>
                   <button type="button" onClick={submitInspirationAnswer}>{inspirationStepIndex === inspirationSteps.length - 1 ? '完成追问' : '继续追问'}</button>
                   <button type="button" className="primary" disabled={loading || !inspirationComplete} onClick={() => void generateInspirationPrompt()}>{loading ? '生成中...' : '生成完整提示词'}</button>
                 </div>
@@ -739,7 +797,7 @@ export function PromptAssistantModal({ tasks, uploads, provider, bananaModel, on
               {records.length ? <p className="prompt-history-heading">生成记录</p> : null}
               {records.map((record) => (
                 <article key={record.id} className="prompt-history-item" onClick={() => openRecord(record)}>
-                  <strong>{record.mode === 'image-to-prompt' ? '图片还原' : '文字扩写'}</strong>
+                  <strong>{record.mode === 'image-to-prompt' ? '图片还原' : '提示词优化'}</strong>
                   <p>{record.flatPrompt}</p>
                   <footer>
                     <span>{record.model}</span>

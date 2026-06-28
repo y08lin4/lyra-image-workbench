@@ -1,3 +1,25 @@
+.admin-embedded-page {
+  min-height: 0;
+  height: 100%;
+  display: grid;
+  align-content: start;
+  overflow: auto;
+  padding: 0;
+}
+
+.admin-embedded-auth-page {
+  place-items: start center;
+  padding: 18px;
+}
+
+.admin-embedded-console-page .admin-console.admin-panel-wide {
+  width: 100%;
+  max-width: none;
+}
+
+.admin-embedded-console-page .admin-console {
+  min-height: 100%;
+}
 .admin-page-shell {
   place-items: start center;
   align-content: start;

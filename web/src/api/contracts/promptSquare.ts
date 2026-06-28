@@ -1,3 +1,14 @@
+export interface PromptSquareReferencePayload {
+  uploadId?: string
+  originalName?: string
+  fileName?: string
+  mime?: string
+  size?: number
+  imageUrl?: string
+  thumbnailUrl?: string
+  usageNote?: string
+}
+
 export interface PromptSquareItem {
   id: string
   title: string
@@ -5,6 +16,9 @@ export interface PromptSquareItem {
   negativePrompt?: string
   model?: string
   params?: Record<string, string>
+  referenceUploadIds?: string[]
+  references?: PromptSquareReferencePayload[]
+  referenceUsageNote?: string
   imageUrl?: string
   thumbnailUrl?: string
   ratio?: string
@@ -70,6 +84,9 @@ export type SubmitPromptSquareFromResultRequest = {
   imageIndex: number
   title?: string
   tags?: string[] | string
+  referenceUploadIds?: string[]
+  references?: PromptSquareReferencePayload[]
+  referenceUsageNote?: string
 }
 
 export type PromptSquareItemsResponse = { ok: boolean; items?: PromptSquareItem[] }

@@ -112,8 +112,8 @@ export async function saveAdminEmailConfig(config: AdminEmailConfigPatch) {
   return updateAdminConfig(config as AdminConfigPatch)
 }
 
-export async function saveAdminConfig(siteName: string, newApiBaseUrl: string, timeoutSec: number, publicBaseUrl: string, debugEnabled: boolean) {
-  const body: Record<string, unknown> = { siteName, newApiBaseUrl, timeoutSec, publicBaseUrl, debugEnabled }
+export async function saveAdminConfig(siteName: string, newApiBaseUrl: string, timeoutSec: number, publicBaseUrl: string, debugEnabled: boolean, extra: Record<string, unknown> = {}) {
+  const body: Record<string, unknown> = { siteName, newApiBaseUrl, timeoutSec, publicBaseUrl, debugEnabled, ...extra }
   const data = await requestJson<AdminConfigResponse>('/api/admin/config', {
     method: 'POST',
     headers: adminHeaders(),
@@ -155,3 +155,4 @@ export async function setAdminUserRole(username: string, role: string | boolean)
   }, '')
   return data
 }
+

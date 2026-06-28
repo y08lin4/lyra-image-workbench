@@ -2,13 +2,13 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { KeyboardEvent } from 'react'
 import { formatError } from '../api/client'
 import { getCachedPromptLibrary, listPromptLibrary, refreshPromptLibrary } from '../api/promptLibrary'
-import type { ModelProvider, PromptLibrary, PromptLibraryItem } from '../types'
+import type { ModelProvider, PromptLibrary, PromptLibraryImage, PromptLibraryItem, PromptLibraryReferenceImage, PromptLibraryUsePromptOptions } from '../types'
 import { BANANA_PROVIDER, DEFAULT_IMAGE2_MODEL, providerLabel } from '../lib/models'
 
 type Props = {
   provider: ModelProvider
   bananaModel: string
-  onUsePrompt: (prompt: string, options: { provider: ModelProvider; model: string }) => void
+  onUsePrompt: (prompt: string, options: PromptLibraryUsePromptOptions) => void | Promise<void>
 }
 
 const AUTO_REFRESH_MS = 10 * 60 * 1000
@@ -32,8 +32,36 @@ export function PromptLibraryPage({ provider, bananaModel, onUsePrompt }: Props)
   const loadingRef = useRef(false)
   const filterRefreshReadyRef = useRef(false)
   const previewRef = useRef<HTMLElement | null>(null)
+  const [creativeItemId, setCreativeItemId] = useState('')
+  const [creativeElements, setCreativeElements] = useState('')
+  const [creativeIdea, setCreativeIdea] = useState('')
+  const [selectedReferenceUrl, setSelectedReferenceUrl] = useState('')
+  const [generatedCreativePrompt, setGeneratedCreativePrompt] = useState('')
 
   const selectedModel = useMemo(() => provider === BANANA_PROVIDER ? bananaModel : DEFAULT_IMAGE2_MODEL, [bananaModel, provider])
+  const creativeOpen = Boolean(activeItem && creativeItemId === activeItem.id)
+  const selectedReferenceImage = useMemo(() => {
+    if (!activeItem || !selectedReferenceUrl) return null
+    return activeItem.images?.find((image) => image.url === selectedReferenceUrl) || null
+  }, [activeItem, selectedReferenceUrl])
+  const selectedReference = useMemo(
+    () => activeItem && selectedReferenceImage ? toPromptLibraryReferenceImage(activeItem, selectedReferenceImage) : undefined,
+    [activeItem, selectedReferenceImage],
+  )
+  const creativeDraftPrompt = useMemo(
+    () => activeItem ? buildCreativePrompt(activeItem, creativeElements, creativeIdea, selectedReferenceImage || undefined) : '',
+    [activeItem, creativeElements, creativeIdea, selectedReferenceImage],
+  )
+  const creativePrompt = generatedCreativePrompt || creativeDraftPrompt
+  const visibleItems = useMemo(() => filterPromptLibraryItems(library?.items || [], query, category), [library, query, category])
+
+  useEffect(() => {
+    setCreativeElements('')
+    setCreativeIdea('')
+    setSelectedReferenceUrl(activeItem?.images?.[0]?.url || '')
+    setGeneratedCreativePrompt('')
+    if (!activeItem) setCreativeItemId('')
+  }, [activeItem?.id])
 
   useEffect(() => {
     void refresh(false)
@@ -58,6 +86,14 @@ export function PromptLibraryPage({ provider, bananaModel, onUsePrompt }: Props)
     }, AUTO_REFRESH_MS)
     return () => window.clearInterval(timer)
   }, [loaded, query, category])
+  useEffect(() => {
+    if (!library) return
+    setActiveItem((current) => {
+      if (current && visibleItems.some((item) => item.id === current.id)) return current
+      return visibleItems[0] || null
+    })
+  }, [library, visibleItems])
+
   useEffect(() => {
     previewRef.current?.scrollTo({ top: 0, behavior: 'smooth' })
   }, [activeItem?.id])
@@ -93,14 +129,33 @@ export function PromptLibraryPage({ provider, bananaModel, onUsePrompt }: Props)
     })
   }
 
-  async function copyPrompt(prompt: string) {
+  async function copyPrompt(prompt: string, nextMessage = '提示词已复制') {
     await navigator.clipboard.writeText(prompt)
-    setMessage('提示词已复制')
+    setMessage(nextMessage)
+  }
+
+  async function applyPrompt(prompt: string, options: PromptLibraryUsePromptOptions, nextMessage: string) {
+    setError('')
+    try {
+      await onUsePrompt(prompt, options)
+      setMessage(nextMessage)
+    } catch (err) {
+      setError(formatError(err, '应用提示词失败'))
+    }
   }
 
   function usePrompt(item: PromptLibraryItem) {
-    onUsePrompt(item.prompt, { provider, model: selectedModel })
-    setMessage(`已填入生成页，并切到 ${providerLabel(provider)}`)
+    void applyPrompt(item.prompt, { provider, model: selectedModel }, `已填入生成页，并切到 ${providerLabel(provider)}`)
+  }
+
+  function useReferenceImage(item: PromptLibraryItem, image: PromptLibraryImage, promptOverride?: string) {
+    const referenceImage = toPromptLibraryReferenceImage(item, image)
+    setSelectedReferenceUrl(image.url)
+    void applyPrompt(
+      promptOverride || item.prompt,
+      { provider, model: selectedModel, referenceImage },
+      '已填入生成页，并准备使用例图作为参考图',
+    )
   }
 
   function useWorkflowPrompt(item: PromptLibraryItem, workflow: 'template' | 'product-copy') {
@@ -124,8 +179,50 @@ export function PromptLibraryPage({ provider, bananaModel, onUsePrompt }: Props)
         '',
         '待改写广告词：',
       ].join('\n')
-    onUsePrompt(prompt, { provider, model: selectedModel })
-    setMessage(workflow === 'template' ? '已填入“模型套模板”草稿' : '已填入“产品图+广告词改写”草稿')
+    void applyPrompt(
+      prompt,
+      { provider, model: selectedModel },
+      workflow === 'template' ? '已填入“模型套模板”草稿' : '已填入“产品图+广告词改写”草稿',
+    )
+  }
+
+  function openCreativeMode(item: PromptLibraryItem) {
+    setActiveItem(item)
+    setCreativeItemId(item.id)
+    setCreativeElements('')
+    setCreativeIdea('')
+    setSelectedReferenceUrl(item.images?.[0]?.url || '')
+    setGeneratedCreativePrompt('')
+  }
+
+  function updateCreativeElements(value: string) {
+    setCreativeElements(value)
+    setGeneratedCreativePrompt('')
+  }
+
+  function updateCreativeIdea(value: string) {
+    setCreativeIdea(value)
+    setGeneratedCreativePrompt('')
+  }
+
+  function selectCreativeReference(url: string) {
+    setSelectedReferenceUrl(url)
+    setGeneratedCreativePrompt('')
+  }
+
+  function generateCreativePrompt() {
+    setGeneratedCreativePrompt(creativeDraftPrompt)
+    setMessage('已根据元素和想法生成新提示词')
+  }
+
+  function useCreativePrompt(includeReference: boolean) {
+    if (!activeItem) return
+    const referenceImage = includeReference ? selectedReference : undefined
+    void applyPrompt(
+      creativePrompt || activeItem.prompt,
+      { provider, model: selectedModel, referenceImage },
+      referenceImage ? '已填入生成页，并准备使用例图作为参考图' : '已填入生成页',
+    )
   }
 
   function selectItem(item: PromptLibraryItem) {
@@ -173,17 +270,18 @@ export function PromptLibraryPage({ provider, bananaModel, onUsePrompt }: Props)
 
           {library ? (
             <div className={`prompt-library-status ${library.stale ? 'stale' : ''}`}>
-              <span>{library.matching}/{library.total} 条</span>
+              <span>{visibleItems.length}/{library.total} 条</span>
               <span>更新：{formatLibraryTime(library.fetchedAt)}</span>
               {autoCheckedAt ? <span>最近检查：{formatLibraryTime(autoCheckedAt)}</span> : null}
+              {query.trim() || category ? <strong>已先本地筛选，后台同步更新中</strong> : null}
               {library.stale ? <strong>当前显示缓存，后台更新暂不可用</strong> : null}
             </div>
           ) : null}
           {loading && !library ? <div className="prompt-empty">正在加载提示词库...</div> : null}
-          {!loading && library && !library.items.length ? <div className="prompt-empty">没有匹配的提示词</div> : null}
+          {!loading && library && !visibleItems.length ? <div className="prompt-empty">没有匹配的提示词</div> : null}
 
           <div className="prompt-library-list prompt-library-list-large">
-            {library?.items.map((item) => (
+            {visibleItems.map((item) => (
               <article
                 key={item.id}
                 className={`prompt-library-item ${activeItem?.id === item.id ? 'active' : ''}`}
@@ -202,6 +300,7 @@ export function PromptLibraryPage({ provider, bananaModel, onUsePrompt }: Props)
                   <p>{item.prompt}</p>
                   <div className="prompt-library-actions">
                     <button type="button" onClick={(event) => { event.stopPropagation(); void copyPrompt(item.prompt) }}>复制</button>
+                    <button type="button" onClick={(event) => { event.stopPropagation(); openCreativeMode(item) }}>进入创作模式</button>
                     <button type="button" className="primary" onClick={(event) => { event.stopPropagation(); usePrompt(item) }}>应用</button>
                   </div>
                 </div>
@@ -220,18 +319,68 @@ export function PromptLibraryPage({ provider, bananaModel, onUsePrompt }: Props)
                 </div>
                 <div className="prompt-result-title-actions">
                   <button type="button" onClick={() => void copyPrompt(activeItem.prompt)}>复制</button>
+                  <button type="button" onClick={() => openCreativeMode(activeItem)}>进入创作模式</button>
                   <button type="button" className="primary" onClick={() => usePrompt(activeItem)}>应用</button>
                 </div>
               </div>
 
               {activeItem.images?.length ? (
                 <div className="prompt-library-preview-images">
-                  {activeItem.images.slice(0, 4).map((image) => (
-                    <figure key={image.url} className="prompt-library-preview-image">
+                  {activeItem.images.slice(0, 4).map((image, index) => (
+                    <figure key={image.url} className={`prompt-library-preview-image ${selectedReferenceUrl === image.url ? 'selected' : ''}`}>
                       <img src={image.url} alt={image.alt || activeItem.title} loading="lazy" referrerPolicy="no-referrer" />
+                      <figcaption>
+                        <span>{image.alt || `例图 ${index + 1}`}</span>
+                        <button type="button" onClick={() => useReferenceImage(activeItem, image)}>用作参考图</button>
+                      </figcaption>
                     </figure>
                   ))}
                 </div>
+              ) : null}
+
+              {creativeOpen ? (
+                <section className="prompt-library-creator" aria-label="创作模式">
+                  <header className="prompt-library-creator-head">
+                    <div>
+                      <strong>创作模式</strong>
+                      <span>基于当前条目填写元素和想法，生成一条新的图像提示词。</span>
+                    </div>
+                    <button type="button" onClick={() => setCreativeItemId('')}>收起</button>
+                  </header>
+                  <div className="prompt-library-creator-fields">
+                    <label>
+                      <span>元素</span>
+                      <textarea value={creativeElements} onChange={(event) => updateCreativeElements(event.target.value)} rows={3} placeholder="例如：白色机械猫、玻璃温室、雨夜霓虹街角" />
+                    </label>
+                    <label>
+                      <span>想法</span>
+                      <textarea value={creativeIdea} onChange={(event) => updateCreativeIdea(event.target.value)} rows={3} placeholder="例如：改成未来感广告海报，强调透明材质、逆光和高级留白" />
+                    </label>
+                  </div>
+
+                  {activeItem.images?.length ? (
+                    <div className="prompt-library-reference-picker" aria-label="选择条目例图参考">
+                      <button type="button" className={!selectedReferenceUrl ? 'active text-only' : 'text-only'} aria-pressed={!selectedReferenceUrl} onClick={() => selectCreativeReference('')}>不使用例图</button>
+                      {activeItem.images.slice(0, 4).map((image, index) => (
+                        <button key={image.url} type="button" className={selectedReferenceUrl === image.url ? 'active' : ''} aria-pressed={selectedReferenceUrl === image.url} onClick={() => selectCreativeReference(image.url)}>
+                          <img src={image.url} alt={image.alt || `${activeItem.title} 例图 ${index + 1}`} loading="lazy" referrerPolicy="no-referrer" />
+                          <span>例图 {index + 1}</span>
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
+
+                  <label className="prompt-library-creator-output">
+                    <span>新提示词</span>
+                    <textarea value={creativePrompt} readOnly rows={10} />
+                  </label>
+                  <div className="prompt-library-creator-actions">
+                    <button type="button" onClick={generateCreativePrompt}>生成新提示词</button>
+                    <button type="button" onClick={() => void copyPrompt(creativePrompt, '新提示词已复制')}>复制新提示词</button>
+                    <button type="button" onClick={() => useCreativePrompt(false)}>应用到生成</button>
+                    <button type="button" className="primary" disabled={!selectedReference} onClick={() => useCreativePrompt(true)}>带参考图应用</button>
+                  </div>
+                </section>
               ) : null}
 
               <label>
@@ -266,4 +415,66 @@ function formatLibraryTime(value: string) {
   const time = new Date(value)
   if (Number.isNaN(time.getTime())) return value
   return time.toLocaleString()
+}
+
+function filterPromptLibraryItems(items: PromptLibraryItem[], query: string, category: string) {
+  const keyword = query.trim().toLowerCase()
+  const selectedCategory = category.trim()
+  return items.filter((item) => {
+    if (selectedCategory && item.category !== selectedCategory) return false
+    if (!keyword) return true
+    const haystack = [
+      item.title,
+      item.category,
+      item.prompt,
+      item.repoUrl,
+      ...(item.images || []).map((image) => image.alt || image.url),
+      ...(item.sources || []).map((source) => `${source.label} ${source.url}`),
+    ].join(' ').toLowerCase()
+    return haystack.includes(keyword)
+  })
+}
+function toPromptLibraryReferenceImage(item: PromptLibraryItem, image: PromptLibraryImage): PromptLibraryReferenceImage {
+  return {
+    url: image.url,
+    alt: image.alt,
+    itemId: item.id,
+    itemTitle: item.title,
+    itemCategory: item.category,
+  }
+}
+
+function buildCreativePrompt(item: PromptLibraryItem, elements: string, idea: string, referenceImage?: PromptLibraryImage) {
+  const cleanElements = normalizePromptInput(elements) || '沿用基础提示词中的主体，并允许替换为更具体的元素。'
+  const cleanIdea = normalizePromptInput(idea) || '沿用基础提示词的氛围，在画面中加入更明确的叙事、情绪或用途。'
+  const cleanBasePrompt = item.prompt.trim()
+  const referenceLine = referenceImage
+    ? `${referenceImage.alt || item.title}：${referenceImage.url}`
+    : '不使用例图，仅参考基础提示词的构图、镜头、光线、材质与审美关键词。'
+
+  return [
+    `【创作来源】${item.title} / ${item.category}`,
+    '',
+    '【基础提示词】',
+    cleanBasePrompt,
+    '',
+    '【元素】',
+    cleanElements,
+    '',
+    '【想法】',
+    cleanIdea,
+    '',
+    '【参考例图】',
+    referenceLine,
+    '',
+    '【新的图像提示词】',
+    `主体元素：${cleanElements}`,
+    `创意方向：${cleanIdea}`,
+    `风格模板：${cleanBasePrompt}`,
+    referenceImage ? '参考图使用：借鉴例图的构图、色彩、质感和主体关系，不复制水印、署名或无关文字。' : '参考图使用：无。',
+  ].join('\n')
+}
+
+function normalizePromptInput(value: string) {
+  return value.trim().replace(/\n{3,}/g, '\n\n')
 }

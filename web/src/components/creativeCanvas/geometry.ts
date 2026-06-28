@@ -56,10 +56,34 @@ export function canvasControlStyle(item: CanvasItem): CSSProperties {
   }
 }
 
+export function scaleCanvasItemByWheel(item: CanvasItem, deltaY: number, stage: HTMLElement | null): CanvasItem {
+  const rect = stage?.getBoundingClientRect()
+  const maxWidth = rect ? Math.max(160, rect.width - 24) : 900
+  const maxHeight = rect ? Math.max(120, rect.height - 24) : 720
+  const minWidth = item.type === 'text' ? 96 : 64
+  const minHeight = item.type === 'text' ? 64 : 48
+  const requestedScale = deltaY < 0 ? 1.08 : 0.92
+  const minScale = Math.max(minWidth / item.width, minHeight / item.height)
+  const maxScale = Math.min(maxWidth / item.width, maxHeight / item.height)
+  const scale = clamp(requestedScale, minScale, maxScale)
+  const nextWidth = roundCanvasMetric(item.width * scale)
+  const nextHeight = roundCanvasMetric(item.height * scale)
+  const centerX = item.x + item.width / 2
+  const centerY = item.y + item.height / 2
+  const nextX = centerX - nextWidth / 2
+  const nextY = centerY - nextHeight / 2
+
+  return {
+    ...item,
+    x: rect ? clamp(nextX, 8, Math.max(8, rect.width - nextWidth - 8)) : nextX,
+    y: rect ? clamp(nextY, 8, Math.max(8, rect.height - nextHeight - 8)) : nextY,
+    width: nextWidth,
+    height: nextHeight,
+  }
+}
+
 export function rotatedItemBounds(item: CanvasItem): { x: number; y: number; width: number; height: number } {
-  const radians = item.rotation * Math.PI / 180
-  const cos = Math.abs(Math.cos(radians))
-  const sin = Math.abs(Math.sin(radians))
+  const { cos, sin } = rotationComponents(item.rotation)
   const width = roundCanvasMetric(item.width * cos + item.height * sin)
   const height = roundCanvasMetric(item.width * sin + item.height * cos)
   return {
@@ -68,6 +92,20 @@ export function rotatedItemBounds(item: CanvasItem): { x: number; y: number; wid
     width,
     height,
   }
+}
+
+function rotationComponents(rotation: number) {
+  const radians = normalizeRotation(rotation) * Math.PI / 180
+  return {
+    cos: snapUnit(Math.abs(Math.cos(radians))),
+    sin: snapUnit(Math.abs(Math.sin(radians))),
+  }
+}
+
+function snapUnit(value: number) {
+  if (value < 0.000001) return 0
+  if (1 - value < 0.000001) return 1
+  return value
 }
 
 function roundCanvasMetric(value: number) {

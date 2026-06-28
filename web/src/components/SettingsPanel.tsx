@@ -169,13 +169,13 @@ export function SettingsPanel({ onReady, onConfig }: { onReady?: (ready: boolean
     setError(formatError(err, fallback))
   }
 
-  const cloudKeyReady = Boolean(config?.cloudApiKeySet || config?.cloudBananaApiKeySet)
+  const hostedKeyReady = Boolean(config?.cloudApiKeySet || config?.cloudBananaApiKeySet || config?.systemApiKeySet || config?.systemBananaApiKeySet)
   const hasPendingUpstreamKey = Boolean(apiKey.trim() || bananaApiKey.trim())
   const pendingCloudKey = Boolean((apiKey.trim() && saveApiKeyToCloud) || (bananaApiKey.trim() && saveBananaKeyToCloud))
   const saveCue = hasPendingUpstreamKey
     ? pendingCloudKey
       ? '会先确认云端风险；确认后保存 Key 路径和默认生成设置。'
-      : '会保存到当前浏览器；开发者 Bearer Key 仍需云端上游 Key。'
+      : '会保存到当前浏览器；开发者 Bearer Key 仍需云端或系统托管上游 Key。'
     : '会保存默认数量、并发和图床偏好。'
 
   return (
@@ -225,7 +225,7 @@ export function SettingsPanel({ onReady, onConfig }: { onReady?: (ready: boolean
           <p className="muted">默认只保存在当前浏览器本地。勾选上传到云端后，其他设备登录同一账号也能使用，但账号泄露时 Key 有被使用或窃取的风险。</p>
           <div className="settings-key-actions">
             <div className={`status-line ${config?.apiKeySet ? 'ready' : 'missing'}`}>
-              当前：{config?.apiKeySet ? `已设置 ${config.apiKeyPreview}（${sourceLabel(config.apiKeySource)}）` : '未设置'}
+              当前：{config?.apiKeySet ? keyStatusText(config.apiKeyPreview, config.apiKeySource) : '未设置'}
             </div>
             <button type="button" disabled={!config?.localApiKeySet} onClick={() => void clearLocalKey('apiKey')}>清除本地 Key</button>
             <button type="button" disabled={!config?.cloudApiKeySet} onClick={() => void clearCloudKey('apiKey')}>清除云端 Key</button>
@@ -249,7 +249,7 @@ export function SettingsPanel({ onReady, onConfig }: { onReady?: (ready: boolean
           <p className="muted">默认只保存在当前浏览器本地。勾选上传到云端后，其他设备登录同一账号也能使用；账号泄露时同样存在 Key 被使用或窃取的风险。</p>
           <div className="settings-key-actions">
             <div className={`status-line ${config?.bananaApiKeySet ? 'ready' : 'missing'}`}>
-              当前：{config?.bananaApiKeySet ? `已设置 ${config.bananaApiKeyPreview}（${sourceLabel(config.bananaApiKeySource)}）` : '未设置'}
+              当前：{config?.bananaApiKeySet ? keyStatusText(config.bananaApiKeyPreview, config.bananaApiKeySource) : '未设置'}
             </div>
             <button type="button" disabled={!config?.localBananaApiKeySet} onClick={() => void clearLocalKey('bananaApiKey')}>清除本地 Key</button>
             <button type="button" disabled={!config?.cloudBananaApiKeySet} onClick={() => void clearCloudKey('bananaApiKey')}>清除云端 Key</button>
@@ -270,14 +270,14 @@ export function SettingsPanel({ onReady, onConfig }: { onReady?: (ready: boolean
             <span>开发者 API Key</span>
             <small>Bearer / SDK</small>
           </div>
-          <p className="muted">Bearer/SDK 请求由云端 worker 执行，需先保存至少一个云端上游 Key；浏览器本地 Key 云端拿不到。</p>
-          <div className={`settings-path-note ${cloudKeyReady ? 'ready' : 'missing'}`}>
-            <strong>{cloudKeyReady ? '云端上游 Key 已就绪' : '生成前先保存云端上游 Key'}</strong>
-            <span>{cloudKeyReady ? '新 Secret 只显示一次，生成后请立即保存。' : '在上方任一上游 Key 填写内容，勾选“同时上传到云端”，点底部“保存设置”后再生成。'}</span>
+          <p className="muted">Bearer/SDK 请求由云端 worker 执行，需先保存云端上游 Key，或由管理员配置系统托管 Key；浏览器本地 Key 云端拿不到。</p>
+          <div className={`settings-path-note ${hostedKeyReady ? 'ready' : 'missing'}`}>
+            <strong>{hostedKeyReady ? '服务端上游 Key 已就绪' : '生成前先准备服务端上游 Key'}</strong>
+            <span>{hostedKeyReady ? '云端账号或系统托管 Key 可供 Bearer/SDK 请求使用；新 Secret 只显示一次。' : '在上方上传云端 Key，或由管理员配置系统托管 Key 后再生成。'}</span>
           </div>
           <div className="developer-key-create">
             <input value={developerKeyName} onChange={(e) => setDeveloperKeyName(e.target.value)} placeholder="API Key 名称" />
-            <button type="button" className="primary" disabled={!cloudKeyReady} onClick={() => void createDeveloperKey()}>生成 Bearer Key</button>
+            <button type="button" className="primary" disabled={!hostedKeyReady} onClick={() => void createDeveloperKey()}>生成 Bearer Key</button>
           </div>
           {developerSecret ? (
             <div className="developer-secret-box">
@@ -354,8 +354,14 @@ export function SettingsPanel({ onReady, onConfig }: { onReady?: (ready: boolean
   )
 }
 
-function sourceLabel(source?: 'local' | 'cloud' | 'none') {
+function keyStatusText(preview: string | undefined, source?: 'local' | 'cloud' | 'system' | 'none') {
+  const label = sourceLabel(source)
+  const trimmedPreview = (preview || '').trim()
+  return trimmedPreview ? `已设置 ${trimmedPreview}（${label}）` : `已设置（${label}）`
+}
+function sourceLabel(source?: 'local' | 'cloud' | 'system' | 'none') {
   if (source === 'cloud') return '云端'
+  if (source === 'system') return '系统托管'
   if (source === 'local') return '本地'
   return '未设置'
 }

@@ -22,15 +22,6 @@ main.creative-canvas-page .creative-canvas-title p {
   line-height: 1.25;
 }
 
-main.creative-canvas-page .creative-canvas-top-actions {
-  gap: 6px;
-}
-
-main.creative-canvas-page .creative-canvas-top-actions button {
-  min-height: 32px;
-  padding: 6px 10px;
-  font-size: 12px;
-}
 
 main.creative-canvas-page .creative-canvas-message {
   padding: 7px 10px;
@@ -40,6 +31,10 @@ main.creative-canvas-page .creative-canvas-message {
 main.creative-canvas-page .creative-canvas-workspace {
   grid-template-columns: minmax(0, 1fr) minmax(260px, 300px);
   grid-template-rows: minmax(420px, calc(100svh - 388px)) minmax(54px, auto) auto;
+  grid-template-areas:
+    "stage render"
+    "refs render"
+    "composer render";
   gap: 8px;
 }
 
@@ -60,6 +55,54 @@ main.creative-canvas-page.is-page-drop-active .creative-canvas-stage {
   border-color: var(--primary);
   background-color: color-mix(in srgb, var(--surface-soft) 86%, var(--primary) 14%);
 }
+
+main.creative-canvas-page .creative-connection-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+
+main.creative-canvas-page .creative-connection {
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+main.creative-canvas-page .creative-connection-hit {
+  fill: none;
+  stroke: transparent;
+  stroke-linecap: round;
+  stroke-width: 18px;
+  pointer-events: stroke;
+}
+
+main.creative-canvas-page .creative-connection-line {
+  fill: none;
+  stroke: color-mix(in srgb, var(--primary) 48%, var(--border-strong));
+  stroke-linecap: round;
+  stroke-width: 2.5px;
+  vector-effect: non-scaling-stroke;
+}
+
+main.creative-canvas-page .creative-connection-node {
+  fill: var(--surface);
+  stroke: color-mix(in srgb, var(--primary) 58%, var(--border-strong));
+  stroke-width: 2px;
+}
+
+main.creative-canvas-page .creative-connection.selected .creative-connection-line {
+  stroke: var(--primary);
+  stroke-width: 4px;
+}
+
+main.creative-canvas-page .creative-connection.selected .creative-connection-node {
+  fill: var(--primary);
+  stroke: var(--surface);
+}
+
 main.creative-canvas-page .creative-connection-label {
   position: absolute;
   z-index: 4;
@@ -103,6 +146,11 @@ main.creative-canvas-page .creative-connection-label input:focus {
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 16%, transparent);
 }
 
+main.creative-canvas-page .creative-connection-label.selected button {
+  border-color: var(--primary);
+  background: color-mix(in srgb, var(--surface) 82%, var(--primary) 18%);
+}
+
 main.creative-canvas-page .creative-canvas-floating-meta {
   top: auto;
   right: auto;
@@ -119,6 +167,8 @@ main.creative-canvas-page .creative-canvas-floating-meta span {
 main.creative-canvas-page .creative-render-panel {
   gap: 8px;
   grid-template-rows: auto auto minmax(0, 1fr);
+  min-height: 0;
+  align-self: stretch;
 }
 
 main.creative-canvas-page .creative-render-panel > section,
@@ -155,25 +205,37 @@ main.creative-canvas-page .creative-inspector-actions {
   padding: 0 8px 8px;
 }
 
+main.creative-canvas-page .creative-history-panel {
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
 main.creative-canvas-page .creative-history-list {
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 5px;
-  max-height: 206px;
+  align-content: start;
+  gap: 6px;
+  height: 100%;
+  max-height: none;
+  min-height: 0;
+  overflow: auto;
   padding: 0 8px 8px;
 }
 
 main.creative-canvas-page .creative-history-list button {
-  min-height: 70px;
+  min-height: 86px;
   border-radius: 7px;
 }
 
 main.creative-canvas-page .creative-history-list img {
-  height: 52px;
+  height: 66px;
 }
 
 main.creative-canvas-page .creative-reference-strip {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  min-width: 0;
+  overflow: hidden;
   align-items: center;
   gap: 10px;
   min-height: 54px;
@@ -187,27 +249,58 @@ main.creative-canvas-page .creative-reference-heading {
 
 main.creative-canvas-page .creative-reference-list {
   display: flex;
+  min-width: 0;
+  max-width: 100%;
   gap: 7px;
   overflow-x: auto;
+  overflow-y: visible;
   padding: 8px 8px 4px 2px;
+}
+
+main.creative-canvas-page .creative-reference-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  flex-wrap: wrap;
+  min-width: max-content;
+}
+
+main.creative-canvas-page .creative-reference-actions button {
+  min-height: 32px;
+  padding: 6px 10px;
+  font-size: 12px;
+  white-space: nowrap;
 }
 
 main.creative-canvas-page .creative-reference-thumb {
   flex: 0 0 44px;
   width: 44px;
+  min-width: 44px;
+  max-width: 44px;
   height: 44px;
   min-height: 44px;
+  max-height: 44px;
+  box-sizing: border-box;
+  overflow: hidden;
   border-radius: 7px;
 }
 main.creative-canvas-page .creative-reference-thumb-wrap {
   position: relative;
   flex: 0 0 44px;
   width: 44px;
+  min-width: 44px;
+  max-width: 44px;
   height: 44px;
+  min-height: 44px;
+  max-height: 44px;
+  box-sizing: border-box;
 }
 
 main.creative-canvas-page .creative-reference-thumb-wrap .creative-reference-thumb {
   width: 100%;
+  min-width: 100%;
+  max-width: 100%;
   height: 100%;
   padding: 0;
   cursor: grab;
@@ -379,6 +472,15 @@ main.creative-canvas-page .creative-composer-tools input {
     padding-bottom: 4px;
   }
 
+  main.creative-canvas-page .creative-reference-actions {
+    justify-content: flex-start;
+    min-width: 0;
+  }
+
+  main.creative-canvas-page .creative-reference-actions button {
+    flex: 1 1 136px;
+  }
+
   main.creative-canvas-page .creative-composer-secondary-body {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -397,6 +499,7 @@ main.creative-canvas-page .creative-composer-tools input {
   }
 }
 main.creative-canvas-page .creative-canvas-item {
+  overflow: visible;
   border: 0;
   background: transparent;
   outline: 0;
@@ -435,6 +538,7 @@ main.creative-canvas-page .creative-canvas-item-content img {
 main.creative-canvas-page .creative-render-frame img,
 main.creative-canvas-page .creative-reference-thumb img,
 main.creative-canvas-page .creative-history-list img {
+  max-width: 100%;
   object-fit: contain;
 }
 
@@ -466,12 +570,47 @@ main.creative-canvas-page .creative-canvas-controls button {
 
 main.creative-canvas-page .creative-rotate-handle,
 main.creative-canvas-page .creative-resize-handle {
-  box-shadow: 0 4px 10px color-mix(in srgb, var(--shadow) 18%, transparent);
+  position: absolute;
+  width: 24px;
+  height: 24px;
+  min-height: 24px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid color-mix(in srgb, var(--primary) 48%, var(--border));
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 4px 8px color-mix(in srgb, var(--shadow) 18%, transparent);
+  touch-action: none;
 }
 
 main.creative-canvas-page .creative-rotate-handle {
-  top: -30px;
-  left: calc(50% - 12px);
+  top: -34px;
+  left: 50%;
+  cursor: grab;
+  transform: translateX(-50%);
+}
+
+main.creative-canvas-page .creative-resize-handle {
+  right: -12px;
+  bottom: -12px;
+  cursor: nwse-resize;
+}
+
+main.creative-canvas-page .creative-rotate-handle::before {
+  content: "↻";
+  font-size: 14px;
+  font-weight: 900;
+  line-height: 1;
+}
+
+main.creative-canvas-page .creative-resize-handle::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
 }
 
 main.creative-canvas-page .creative-rotate-handle::after,
@@ -496,8 +635,9 @@ main.creative-canvas-page .creative-resize-handle::after {
 main.creative-canvas-page .creative-canvas-composer {
   position: static;
   bottom: auto;
-  width: min(100%, 980px);
-  margin: 0 auto;
+  width: 100%;
+  margin: 0;
+  box-sizing: border-box;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: 12px;
@@ -653,7 +793,7 @@ main.creative-canvas-page .creative-submit-action:disabled {
 
 @media (max-width: 1320px) {
   main.creative-canvas-page .creative-canvas-composer {
-    width: min(100%, 880px);
+    width: 100%;
   }
 
   main.creative-canvas-page .creative-composer-controls {

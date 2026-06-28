@@ -3,10 +3,22 @@ import type { Task, TaskResult } from '../types'
 import { formatBytes } from '../lib/format'
 import { errorReasonLabel } from '../lib/errorLabels'
 import { ImagePreviewModal } from './ImagePreviewModal'
-import { BANANA_PROVIDER, getBananaModelOption, providerLabel } from '../lib/models'
+import { BANANA_PROVIDER, DEFAULT_IMAGE2_MODEL, getBananaModelOption, providerLabel } from '../lib/models'
 import { nativeCopyImage, nativeCopyText, nativeSaveImage } from '../lib/nativeBridge'
 
-type SquareSubmitOptions = { title?: string; tags?: string[] }
+type SquareSubmitOptions = {
+  title?: string
+  tags?: string[]
+  referenceUsageNote?: string
+}
+
+type SquareSubmitReference = {
+  uploadId?: string
+  originalName?: string
+  fileName?: string
+  mime?: string
+  size?: number
+}
 
 type ResultCanvasProps = {
   task?: Task
@@ -87,7 +99,7 @@ function ResultContext({ task }: { task: Task }) {
       <div className="result-task-summary" aria-label="任务摘要">
         <div><span>任务 ID</span><strong>{compactTaskId(task.id)}</strong></div>
         <div><span>来源</span><strong>{sourceLabel(task.source)}</strong></div>
-        <div><span>模型</span><strong>{providerLabel(task.provider || 'image-2')}</strong></div>
+        <div><span>模型</span><strong>{taskModelLabel(task)}</strong></div>
         <div><span>消耗</span><strong>{task.count || 1} 次</strong></div>
         <div><span>创建时间</span><strong>{formatTaskTime(task.createdAt)}</strong></div>
       </div>
@@ -145,9 +157,9 @@ function squareDefaultTitle(task: Task, result: TaskResult, index: number) {
 
 function squareDefaultTags(task: Task) {
   return [
-    task.mode === 'image-to-image' ? '参考图生成' : '文字生成',
-    task.provider || 'image-2',
-    task.model || '',
+    task.mode === 'gif' ? 'GIF 动图' : task.mode === 'image-to-image' ? '参考图生成' : '文字生成',
+    taskModelTag(task),
+    !task.ratio || task.ratio === 'auto' ? '' : task.ratio,
   ].filter(Boolean).slice(0, 6)
 }
 
@@ -337,12 +349,19 @@ function SquareSubmitDialog({ task, result, index, imageUrl, submitting, onClose
   onConfirm: (options: SquareSubmitOptions) => Promise<boolean>
 }) {
   const promptText = result.revisedPrompt || task.prompt || '（无提示词）'
+  const references = squareSubmitReferences(task)
+  const defaultReferenceUsageNote = squareReferenceUsageNote(task, references.length)
   const [title, setTitle] = useState(squareDefaultTitle(task, result, index))
   const [tagInput, setTagInput] = useState(squareDefaultTags(task).join(', '))
+  const [referenceUsageNote, setReferenceUsageNote] = useState(defaultReferenceUsageNote)
 
   async function submit(event: FormEvent) {
     event.preventDefault()
-    const submitted = await onConfirm({ title, tags: splitSquareTags(tagInput) })
+    const submitted = await onConfirm({
+      title,
+      tags: splitSquareTags(tagInput),
+      referenceUsageNote: references.length ? referenceUsageNote : undefined,
+    })
     if (submitted) onClose()
   }
 
@@ -361,25 +380,59 @@ function SquareSubmitDialog({ task, result, index, imageUrl, submitting, onClose
             <img src={imageUrl} alt={`提交预览 ${index + 1}`} />
           </div>
           <div className="square-submit-form">
+            <p className="square-submit-note square-submit-policy">
+              <strong>公开作品包：</strong>提交后广场会公开保存结果图、提示词、模型/比例/质量等参数和原始参考图，供别人查看和复用。不想公开参考图就不要提交。
+            </p>
             <label>
               <span>标题</span>
               <input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="给这张作品起个短标题" autoFocus />
             </label>
             <label>
               <span>标签</span>
-              <input value={tagInput} onChange={(event) => setTagInput(event.target.value)} placeholder="参考图生成, gpt-image-2, 1:1" />
+              <input value={tagInput} onChange={(event) => setTagInput(event.target.value)} placeholder={`参考图生成, ${taskModelTag(task)}, 1:1`} />
             </label>
             <dl className="square-submit-meta">
-              <div><dt>模型</dt><dd>{task.model || 'gpt-image-2'}</dd></div>
+              <div><dt>模型</dt><dd>{taskModelLabel(task)}</dd></div>
               <div><dt>比例</dt><dd>{task.ratio || 'auto'}</dd></div>
               <div><dt>质量</dt><dd>{result.actualQuality || task.quality || 'auto'}</dd></div>
               <div><dt>图片</dt><dd>第 {index + 1} 张 · {result.actualSize || task.size || '自动尺寸'} · {formatBytes(result.bytes)}</dd></div>
+              <div><dt>参考图</dt><dd>{references.length ? `${references.length} 张原始参考图` : '无参考图'}</dd></div>
             </dl>
             <div className="square-submit-prompt">
               <span>提示词</span>
               <p>{promptText}</p>
             </div>
-            <p className="square-submit-note">提交成功后会复制为广场展示副本；普通结果继续按当前保留策略处理。</p>
+            {references.length ? (
+              <div className="square-submit-references">
+                <span>原始参考图</span>
+                <div className="square-submit-reference-grid">
+                  {references.map((reference, referenceIndex) => (
+                    <div className="square-submit-reference-item" key={`${reference.uploadId || reference.fileName || referenceIndex}`}>
+                      <div className="square-submit-reference-thumb">
+                        {reference.uploadId ? (
+                          <img
+                            src={`/api/uploads/reference/${encodeURIComponent(reference.uploadId)}/image`}
+                            alt={squareReferenceLabel(reference, referenceIndex)}
+                            onError={(event) => { event.currentTarget.hidden = true }}
+                          />
+                        ) : null}
+                      </div>
+                      <div>
+                        <strong>{squareReferenceLabel(reference, referenceIndex)}</strong>
+                        <small>{reference.uploadId ? `upload id ${compactUploadId(reference.uploadId)}` : '任务参考图快照'}{reference.size ? ` · ${formatBytes(reference.size)}` : ''}</small>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+            {references.length ? (
+              <label className="square-submit-reference-note-field">
+                <span>参考图用途备注</span>
+                <textarea value={referenceUsageNote} onChange={(event) => setReferenceUsageNote(event.target.value)} rows={3} placeholder="说明参考图用于主体、风格、构图或整体画面" />
+              </label>
+            ) : null}
+            <p className="square-submit-note">不提交广场时，这条结果仍是私有临时记录，会按当前保留策略清理。</p>
           </div>
         </div>
         <footer>
@@ -620,12 +673,66 @@ function uniqueRevisedPrompts(task: Task) {
     })
 }
 
+function taskModelLabel(task: Task) {
+  if ((task.provider || 'image-2') === BANANA_PROVIDER) {
+    const option = getBananaModelOption(task.model || '')
+    return `${providerLabel(BANANA_PROVIDER)} · ${option.label}`
+  }
+  return image2ModelLabel(task.model)
+}
+
+function taskModelTag(task: Task) {
+  if ((task.provider || 'image-2') === BANANA_PROVIDER) {
+    return task.model || getBananaModelOption(task.model || '').id
+  }
+  return image2ModelLabel(task.model)
+}
+
+function image2ModelLabel(model?: string) {
+  const normalized = (model || '').trim()
+  if (!normalized || normalized === 'image-2' || normalized === DEFAULT_IMAGE2_MODEL) return DEFAULT_IMAGE2_MODEL
+  return normalized
+}
+
+function squareSubmitReferences(task: Task): SquareSubmitReference[] {
+  const references: SquareSubmitReference[] = (task.references || []).map((reference) => ({
+    uploadId: reference.uploadId,
+    originalName: reference.originalName,
+    fileName: reference.fileName,
+    mime: reference.mime,
+    size: reference.size,
+  }))
+  const seen = new Set(references.map((reference) => reference.uploadId).filter(Boolean))
+  for (const uploadId of task.uploadIds || []) {
+    if (!uploadId || seen.has(uploadId)) continue
+    seen.add(uploadId)
+    references.push({ uploadId })
+  }
+  return references
+}
+
+function squareReferenceUsageNote(task: Task, count: number) {
+  if (!count) return ''
+  return task.mode === 'image-to-image'
+    ? '这些原始参考图用于图生图参考，可能影响主体、风格、构图和整体画面。'
+    : '这些原始参考图随公开作品包保存，供别人理解和复用生成过程。'
+}
+
+function squareReferenceLabel(reference: SquareSubmitReference, index: number) {
+  return reference.originalName || reference.fileName || (reference.uploadId ? `参考图 ${index + 1}` : `参考图快照 ${index + 1}`)
+}
+
+function compactUploadId(id: string) {
+  if (id.length <= 18) return id
+  return `${id.slice(0, 8)}...${id.slice(-6)}`
+}
+
 function taskParameters(task: Task) {
   const provider = task.provider || 'image-2'
   if (provider === BANANA_PROVIDER) {
     const option = getBananaModelOption(task.model || '')
     return [
-      task.mode === 'image-to-image' ? '参考图生成' : '文字生成',
+      task.mode === 'gif' ? 'GIF 动图' : task.mode === 'image-to-image' ? '参考图生成' : '文字生成',
       `模型分组 ${providerLabel(provider)}`,
       `规格 ${option.label}`,
       `模型 ID ${option.id}`,
@@ -635,9 +742,8 @@ function taskParameters(task: Task) {
     ]
   }
   return [
-    task.mode === 'image-to-image' ? '参考图生成' : '文字生成',
-    `模型分组 ${providerLabel(provider)}`,
-    `模型 ${task.model || 'gpt-image-2'}`,
+    task.mode === 'gif' ? 'GIF 动图' : task.mode === 'image-to-image' ? '参考图生成' : '文字生成',
+    `模型 ${taskModelLabel(task)}`,
     !task.ratio || task.ratio === 'auto' ? '自动比例' : `比例 ${task.ratio}`,
     `清晰度 ${resolutionLabel(task.resolution)}`,
     `质量 ${qualityLabel(task.quality)}`,
@@ -670,7 +776,7 @@ function qualityLabel(value?: string) {
 }
 
 function outputFormatLabel(value?: string) {
-  const labels: Record<string, string> = { auto: '自动', png: 'PNG', jpeg: 'JPG', jpg: 'JPG', webp: 'WEBP' }
+  const labels: Record<string, string> = { auto: '自动', png: 'PNG', jpeg: 'JPG', jpg: 'JPG', webp: 'WEBP', gif: 'GIF' }
   if (!value) return 'PNG'
   return labels[value] || value.toUpperCase()
 }

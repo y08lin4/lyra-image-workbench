@@ -19,6 +19,25 @@ type ApiExample = {
   code: string
 }
 
+type CodeCardProps = {
+  examples: ApiExample[]
+  activeId: string
+  title: string
+  description: string
+  copyLabel: string
+  onActiveIdChange: (id: string) => void
+  onCopy: (label: string, value: string) => void
+}
+
+type CodeBlockFrameProps = {
+  title: string
+  fileName?: string
+  code: string
+  copyLabel: string
+  wrap?: boolean
+  onCopy: (label: string, value: string) => void
+}
+
 const REQUEST_PAYLOAD = {
   model: DEFAULT_MODEL,
   prompt: 'A clean product photo of a translucent smart speaker on a stone pedestal',
@@ -60,7 +79,7 @@ const ERROR_CODES = [
 const API_EXAMPLES: ApiExample[] = [
   {
     id: 'curl',
-    language: 'curl',
+    language: 'cURL',
     fileName: 'terminal',
     code: [
       'export LYRA_API_KEY="lyra_sk_xxx"',
@@ -84,7 +103,9 @@ const API_EXAMPLES: ApiExample[] = [
       '[[ " failed cancelled interrupted " == *" $STATUS "* ]] && { echo "$TASK_JSON"; exit 1; }',
       'OK_INDEX=$(python -c "import json,sys; t=json.load(sys.stdin)[\'task\']; print(next((r.get(\'index\', i) for i,r in enumerate(t.get(\'results\', [])) if r.get(\'ok\')), \'\'))" <<< "$TASK_JSON")',
       'test -n "$OK_INDEX" || { echo "no ok=true result"; exit 1; }',
-      'curl --fail-with-body -L "$BASE_URL/v1/image-tasks/$TASK_ID/images/$OK_INDEX" -H "Authorization: Bearer $LYRA_API_KEY" --output "result-$OK_INDEX.png"',
+      'DOWNLOAD_URL="$BASE_URL/v1/image-tasks/$TASK_ID/images/$OK_INDEX"',
+      'echo "result_url=$DOWNLOAD_URL"',
+      'curl --fail-with-body -L "$DOWNLOAD_URL" -H "Authorization: Bearer $LYRA_API_KEY" --output "result-$OK_INDEX.png"',
     ].join('\n'),
   },
   {
@@ -95,15 +116,21 @@ const API_EXAMPLES: ApiExample[] = [
       'import { writeFile } from "node:fs/promises";',
       '',
       `const BASE_URL = "${API_BASE_URL}";`,
+      'const API_KEY = process.env.LYRA_API_KEY;',
       'const TERMINAL = new Set(["succeeded", "partial_failed", "failed", "cancelled", "interrupted"]);',
       'const FAILURE = new Set(["failed", "cancelled", "interrupted"]);',
+      'if (!API_KEY) throw new Error("Set LYRA_API_KEY before running this script.");',
       '',
       'async function api(path: string, init: RequestInit = {}) {',
       '  const response = await fetch(BASE_URL + path, {',
       '    ...init,',
-      '    headers: { Authorization: "Bearer " + process.env.LYRA_API_KEY, ...(init.body ? { "Content-Type": "application/json" } : {}), ...init.headers },',
+      '    headers: {',
+      '      Authorization: "Bearer " + API_KEY,',
+      '      ...(init.body ? { "Content-Type": "application/json" } : {}),',
+      '      ...init.headers,',
+      '    },',
       '  });',
-      '  if (!response.ok) throw new Error(await response.text());',
+      '  if (!response.ok) throw new Error(`${response.status} ${response.statusText}: ${await response.text()}`);',
       '  return response;',
       '}',
       '',
@@ -124,6 +151,8 @@ const API_EXAMPLES: ApiExample[] = [
       'if (FAILURE.has(task.status)) throw new Error("task failed: " + task.status);',
       'const result = task.results?.find((item: { ok?: boolean }) => item.ok);',
       'if (!result) throw new Error("task finished without ok=true result");',
+      'const resultUrl = `${BASE_URL}/v1/image-tasks/${taskId}/images/${result.index}`;',
+      'console.log("result_url", resultUrl);',
       'const image = await api("/v1/image-tasks/" + taskId + "/images/" + result.index).then((res) => res.arrayBuffer());',
       'await writeFile("result-" + result.index + ".png", Buffer.from(image));',
     ].join('\n'),
@@ -140,7 +169,10 @@ const API_EXAMPLES: ApiExample[] = [
       `BASE_URL = "${API_BASE_URL}"`,
       'TERMINAL = {"succeeded", "partial_failed", "failed", "cancelled", "interrupted"}',
       'FAILURE = {"failed", "cancelled", "interrupted"}',
-      'headers = {"Authorization": f"Bearer {os.environ[\'LYRA_API_KEY\']}"}',
+      'api_key = os.environ.get("LYRA_API_KEY")',
+      'if not api_key:',
+      '    raise SystemExit("Set LYRA_API_KEY before running this script.")',
+      'headers = {"Authorization": f"Bearer {api_key}"}',
       '',
       'created = requests.post(f"{BASE_URL}/v1/images/generations", headers={**headers, "Content-Type": "application/json"}, json=' + JSON.stringify(REQUEST_PAYLOAD) + ', timeout=120)',
       'created.raise_for_status()',
@@ -161,7 +193,9 @@ const API_EXAMPLES: ApiExample[] = [
       'result = next((item for item in task.get("results", []) if item.get("ok")), None)',
       'if not result:',
       '    raise SystemExit("task finished without ok=true result")',
-      'image = requests.get(f"{BASE_URL}/v1/image-tasks/{task_id}/images/{result[\'index\']}", headers=headers, timeout=120)',
+      'result_url = f"{BASE_URL}/v1/image-tasks/{task_id}/images/{result[\'index\']}"',
+      'print("result_url", result_url)',
+      'image = requests.get(result_url, headers=headers, timeout=120)',
       'image.raise_for_status()',
       'open(f"result-{result[\'index\']}.png", "wb").write(image.content)',
     ].join('\n'),
@@ -186,8 +220,10 @@ const API_EXAMPLES: ApiExample[] = [
       `const baseURL = "${API_BASE_URL}"`,
       '',
       'func request(method string, path string, body []byte) []byte {',
+      '  apiKey := os.Getenv("LYRA_API_KEY")',
+      '  if apiKey == "" { panic("Set LYRA_API_KEY before running this script.") }',
       '  req, _ := http.NewRequest(method, baseURL+path, bytes.NewReader(body))',
-      '  req.Header.Set("Authorization", "Bearer "+os.Getenv("LYRA_API_KEY"))',
+      '  req.Header.Set("Authorization", "Bearer "+apiKey)',
       '  if body != nil { req.Header.Set("Content-Type", "application/json") }',
       '  resp, err := http.DefaultClient.Do(req); if err != nil { panic(err) }',
       '  defer resp.Body.Close()',
@@ -215,7 +251,9 @@ const API_EXAMPLES: ApiExample[] = [
       '  }',
       '  if failure[status] { panic("task failed: " + status) }',
       '  index := firstOKIndex(task); if index < 0 { panic("task finished without ok=true result") }',
-      '  image := request("GET", fmt.Sprintf("/v1/image-tasks/%s/images/%d", taskID, index), nil)',
+      '  resultPath := fmt.Sprintf("/v1/image-tasks/%s/images/%d", taskID, index)',
+      '  fmt.Println("result_url=" + baseURL + resultPath)',
+      '  image := request("GET", resultPath, nil)',
       '  os.WriteFile(fmt.Sprintf("result-%d.png", index), image, 0644)',
       '}',
       '',
@@ -262,7 +300,9 @@ const API_EXAMPLES: ApiExample[] = [
       '        if (FAILURE.contains(status)) throw new RuntimeException("task failed: " + status);',
       '        int index = firstOkIndex(snapshot);',
       '        if (index < 0) throw new RuntimeException("task finished without ok=true result");',
-      '        byte[] image = sendBytes("/v1/image-tasks/" + taskId + "/images/" + index);',
+      '        String resultPath = "/v1/image-tasks/" + taskId + "/images/" + index;',
+      '        System.out.println("result_url=" + BASE_URL + resultPath);',
+      '        byte[] image = sendBytes(resultPath);',
       '        Files.write(Path.of("result-" + index + ".png"), image);',
       '        break;',
       '      }',
@@ -271,7 +311,9 @@ const API_EXAMPLES: ApiExample[] = [
       '  }',
       '',
       '  static String send(String method, String path, String body) throws Exception {',
-      '    HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(BASE_URL + path)).header("Authorization", "Bearer " + System.getenv("LYRA_API_KEY")).timeout(Duration.ofSeconds(120));',
+      '    String apiKey = System.getenv("LYRA_API_KEY");',
+      '    if (apiKey == null || apiKey.isBlank()) throw new IllegalStateException("Set LYRA_API_KEY before running this script.");',
+      '    HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(BASE_URL + path)).header("Authorization", "Bearer " + apiKey).timeout(Duration.ofSeconds(120));',
       '    if (body == null) builder.GET(); else builder.header("Content-Type", "application/json").method(method, HttpRequest.BodyPublishers.ofString(body));',
       '    HttpResponse<String> response = HTTP.send(builder.build(), HttpResponse.BodyHandlers.ofString());',
       '    if (response.statusCode() >= 400) throw new RuntimeException(response.body());',
@@ -279,7 +321,9 @@ const API_EXAMPLES: ApiExample[] = [
       '  }',
       '',
       '  static byte[] sendBytes(String path) throws Exception {',
-      '    HttpRequest req = HttpRequest.newBuilder(URI.create(BASE_URL + path)).header("Authorization", "Bearer " + System.getenv("LYRA_API_KEY")).GET().build();',
+      '    String apiKey = System.getenv("LYRA_API_KEY");',
+      '    if (apiKey == null || apiKey.isBlank()) throw new IllegalStateException("Set LYRA_API_KEY before running this script.");',
+      '    HttpRequest req = HttpRequest.newBuilder(URI.create(BASE_URL + path)).header("Authorization", "Bearer " + apiKey).GET().build();',
       '    HttpResponse<byte[]> res = HTTP.send(req, HttpResponse.BodyHandlers.ofByteArray());',
       '    if (res.statusCode() >= 400) throw new RuntimeException("download failed: HTTP " + res.statusCode());',
       '    return res.body();',
@@ -325,6 +369,7 @@ const AI_INTEGRATION_PROMPT = [
   `- 示例请求体: ${REQUEST_BODY_COMPACT}`,
   '- /v1/images/generations 中 prompt 必填；model 可省略，image-2 默认 gpt-image-2；size 支持 auto、1024x1024、1024x1536、1536x1024、768x1024、1024x768、1008x1792、1792x1008 以及 2K/4K 对应尺寸。',
   '- 原生端点可传 ratio(auto/1:1/2:3/3:2/3:4/4:3/9:16/16:9)、resolution(auto/standard/2k/4k)、quality(auto/low/medium/high)、outputFormat(png/jpeg/webp/auto)、count(1-24)、concurrency(最小 1)。',
+  '- 创建响应里读取 taskId；若没有 taskId，则读取 task.id。保存原始响应，便于错误排查。',
   '',
   '轮询任务:',
   '- GET /v1/image-tasks/{taskId}',
@@ -336,6 +381,8 @@ const AI_INTEGRATION_PROMPT = [
   '下载结果:',
   '- GET /v1/image-tasks/{taskId}/images/{index}',
   '- index 来自 task.results[].index；只下载 ok=true 的结果；响应 body 是图片二进制，按 outputFormat 或 png 写入文件。',
+  `- 结果 URL 形如 ${API_BASE_URL}/v1/image-tasks/{taskId}/images/{index}；下载请求同样要带 Authorization Bearer。`,
+  '- 如果没有 ok=true 的 result，不要猜测 URL，抛出明确错误并输出 task.results。partial_failed 可以下载成功项，也要把失败项暴露给调用方。',
   '',
   '错误码:',
   ...ERROR_CODES.map((item) => `- ${item}`),
@@ -462,29 +509,16 @@ export function ApiDocsPage() {
                 <h3 id="api-examples-title">语言示例</h3>
                 <p>每个示例都包含创建、轮询和下载。</p>
               </div>
-              <button type="button" onClick={() => void copyText(`${activeExample.language} 示例`, activeExample.code)}>复制当前示例</button>
             </div>
-            <div className="api-console-tabs" role="tablist" aria-label="选择语言示例">
-              {ORDERED_API_EXAMPLES.map((example) => (
-                <button
-                  key={example.id}
-                  type="button"
-                  role="tab"
-                  aria-selected={activeExample.id === example.id}
-                  className={activeExample.id === example.id ? 'active' : ''}
-                  onClick={() => setActiveLanguage(example.id)}
-                >
-                  {example.language}
-                </button>
-              ))}
-            </div>
-            <div className="api-console-code-shell">
-              <div className="api-console-code-meta">
-                <strong>{activeExample.language}</strong>
-                <span>{activeExample.fileName}</span>
-              </div>
-              <pre className="api-console-code-block"><code>{activeExample.code}</code></pre>
-            </div>
+            <CodeCard
+              examples={ORDERED_API_EXAMPLES}
+              activeId={activeExample.id}
+              title={activeExample.language}
+              description={activeExample.fileName}
+              copyLabel={`${activeExample.language} 示例`}
+              onActiveIdChange={setActiveLanguage}
+              onCopy={(label, value) => void copyText(label, value)}
+            />
           </section>
 
           <section className="api-console-panel api-console-ai-prompt" aria-labelledby="ai-prompt-title">
@@ -493,9 +527,15 @@ export function ApiDocsPage() {
                 <h3 id="ai-prompt-title">给 AI 的完整提示词</h3>
                 <p>直接贴给编码 AI，无需再查外部文档。</p>
               </div>
-              <button type="button" onClick={() => void copyText('AI 提示词', AI_INTEGRATION_PROMPT)}>复制</button>
             </div>
-            <pre className="api-console-code-block api-console-prompt-block"><code>{AI_INTEGRATION_PROMPT}</code></pre>
+            <CodeBlockFrame
+              title="integration-prompt"
+              fileName="复制给编码 AI"
+              code={AI_INTEGRATION_PROMPT}
+              copyLabel="AI 提示词"
+              wrap
+              onCopy={(label, value) => void copyText(label, value)}
+            />
           </section>
         </div>
       </div>
@@ -503,6 +543,80 @@ export function ApiDocsPage() {
       {copied ? <div className="ok api-console-toast" role="status">已复制：{copied}</div> : null}
       {copyError ? <div className="error api-console-toast" role="alert">{copyError}</div> : null}
     </section>
+  )
+}
+
+function CodeCard({ examples, activeId, title, description, copyLabel, onActiveIdChange, onCopy }: CodeCardProps) {
+  const activeExample = examples.find((example) => example.id === activeId) || examples[0]
+  const tabPanelId = `api-example-${activeExample.id}-panel`
+
+  return (
+    <div className="api-console-code-card">
+      <div className="api-console-code-toolbar">
+        <div className="api-console-code-tabs" role="tablist" aria-label="选择语言示例">
+          {examples.map((example) => {
+            const selected = activeExample.id === example.id
+            return (
+              <button
+                key={example.id}
+                type="button"
+                role="tab"
+                aria-selected={selected}
+                aria-controls={selected ? tabPanelId : undefined}
+                className={selected ? 'active' : ''}
+                onClick={() => onActiveIdChange(example.id)}
+              >
+                {example.language}
+              </button>
+            )
+          })}
+        </div>
+        <button className="api-console-copy-button" type="button" onClick={() => onCopy(copyLabel, activeExample.code)}>
+          <span className="api-console-copy-icon" aria-hidden="true" />
+          复制
+        </button>
+      </div>
+      <div className="api-console-code-meta">
+        <strong>{title}</strong>
+        <span>{description}</span>
+      </div>
+      <CodeListing id={tabPanelId} code={activeExample.code} />
+    </div>
+  )
+}
+
+function CodeBlockFrame({ title, fileName, code, copyLabel, wrap = false, onCopy }: CodeBlockFrameProps) {
+  return (
+    <div className="api-console-code-card api-console-prompt-card">
+      <div className="api-console-code-toolbar">
+        <div className="api-console-code-title">
+          <strong>{title}</strong>
+          {fileName ? <span>{fileName}</span> : null}
+        </div>
+        <button className="api-console-copy-button" type="button" onClick={() => onCopy(copyLabel, code)}>
+          <span className="api-console-copy-icon" aria-hidden="true" />
+          复制
+        </button>
+      </div>
+      <CodeListing code={code} wrap={wrap} />
+    </div>
+  )
+}
+
+function CodeListing({ id, code, wrap = false }: { id?: string; code: string; wrap?: boolean }) {
+  const lines = code.split('\n')
+
+  return (
+    <pre id={id} className={`api-console-code-block${wrap ? ' api-console-code-block-wrap' : ''}`} role={id ? 'tabpanel' : undefined}>
+      <code>
+        {lines.map((line, index) => (
+          <span className="api-console-code-line" key={`${index}-${line}`}>
+            <span className="api-console-code-number" aria-hidden="true">{index + 1}</span>
+            <span className="api-console-code-text">{line || ' '}</span>
+          </span>
+        ))}
+      </code>
+    </pre>
   )
 }
 

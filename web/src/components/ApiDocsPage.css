@@ -487,3 +487,307 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+/* API docs code cards: theme-following examples with line numbers. */
+.api-docs-page.api-console-page {
+  --api-code-card-bg: color-mix(in srgb, var(--surface) 90%, var(--primary) 4%);
+  --api-code-toolbar-bg: color-mix(in srgb, var(--surface-soft) 88%, var(--primary) 6%);
+  --api-code-block-bg: color-mix(in srgb, var(--surface) 92%, var(--primary) 6%);
+  --api-code-border: color-mix(in srgb, var(--border) 78%, var(--primary) 22%);
+  --api-code-rule: color-mix(in srgb, var(--border) 84%, var(--primary) 16%);
+  --api-code-number: color-mix(in srgb, var(--muted) 70%, var(--primary) 30%);
+  --api-code-text: var(--text);
+  --api-code-muted: var(--muted);
+  --api-code-tab-hover: color-mix(in srgb, var(--surface-soft) 76%, var(--primary) 12%);
+  --api-code-tab-active-bg: color-mix(in srgb, var(--surface) 84%, var(--primary) 12%);
+  --api-code-focus: color-mix(in srgb, var(--primary) 26%, transparent);
+}
+
+:root[data-theme='dark'] .api-docs-page.api-console-page {
+  --api-code-card-bg: color-mix(in srgb, var(--surface) 82%, var(--bg) 18%);
+  --api-code-toolbar-bg: color-mix(in srgb, var(--surface-soft) 78%, var(--primary) 10%);
+  --api-code-block-bg: color-mix(in srgb, var(--surface-soft) 82%, var(--bg) 18%);
+  --api-code-border: color-mix(in srgb, var(--border) 78%, var(--primary) 22%);
+  --api-code-rule: color-mix(in srgb, var(--border) 88%, var(--primary) 12%);
+  --api-code-text: var(--text);
+  --api-code-muted: color-mix(in srgb, var(--muted) 78%, var(--primary-2, var(--primary)) 22%);
+}
+
+:root[data-theme='green'] .api-docs-page.api-console-page {
+  --api-code-card-bg: color-mix(in srgb, var(--surface) 88%, var(--primary) 7%);
+  --api-code-toolbar-bg: color-mix(in srgb, var(--surface-soft) 82%, var(--primary) 11%);
+  --api-code-block-bg: color-mix(in srgb, var(--surface) 86%, var(--primary) 10%);
+  --api-code-border: color-mix(in srgb, var(--border) 68%, var(--primary) 32%);
+  --api-code-rule: color-mix(in srgb, var(--border) 72%, var(--primary) 28%);
+  --api-code-tab-active-bg: var(--selected-bg, color-mix(in srgb, var(--surface) 78%, var(--primary) 16%));
+  --api-code-number: color-mix(in srgb, var(--muted) 54%, var(--primary) 46%);
+}
+
+.api-console-code-card {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--api-code-border);
+  border-radius: 8px;
+  background: var(--api-code-card-bg);
+  color: var(--api-code-text);
+}
+
+.api-console-code-toolbar {
+  min-width: 0;
+  min-height: 44px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: stretch;
+  gap: 8px;
+  border-bottom: 1px solid var(--api-code-rule);
+  background: var(--api-code-toolbar-bg);
+  padding: 0 8px 0 0;
+}
+
+.api-console-code-tabs {
+  min-width: 0;
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  overflow-x: auto;
+  padding-left: 8px;
+  scrollbar-width: thin;
+}
+
+.api-console-page .api-console-code-tabs button,
+:root[data-theme] .api-console-page .api-console-code-tabs button {
+  flex: 0 0 auto;
+  min-height: 44px;
+  min-width: 72px;
+  border: 0 !important;
+  border-bottom: 2px solid transparent !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  color: var(--api-code-muted) !important;
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0;
+  box-shadow: none !important;
+}
+
+.api-console-page .api-console-code-tabs button:hover,
+.api-console-page .api-console-code-tabs button:focus-visible,
+:root[data-theme] .api-console-page .api-console-code-tabs button:hover,
+:root[data-theme] .api-console-page .api-console-code-tabs button:focus-visible {
+  background: var(--api-code-tab-hover) !important;
+  color: var(--text) !important;
+  outline: none;
+}
+
+.api-console-page .api-console-code-tabs button.active,
+:root[data-theme] .api-console-page .api-console-code-tabs button.active {
+  border-bottom-color: var(--primary) !important;
+  background: var(--api-code-tab-active-bg) !important;
+  color: var(--text) !important;
+}
+
+.api-console-page .api-console-copy-button,
+:root[data-theme] .api-console-page .api-console-copy-button {
+  align-self: center;
+  min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border: 1px solid var(--api-code-border) !important;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface) 84%, var(--primary) 8%) !important;
+  color: var(--text) !important;
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 900;
+  box-shadow: none !important;
+  white-space: nowrap;
+}
+
+.api-console-page .api-console-copy-button:hover,
+.api-console-page .api-console-copy-button:focus-visible,
+:root[data-theme] .api-console-page .api-console-copy-button:hover,
+:root[data-theme] .api-console-page .api-console-copy-button:focus-visible {
+  border-color: var(--primary) !important;
+  background: color-mix(in srgb, var(--surface) 72%, var(--primary) 16%) !important;
+  outline: none;
+  box-shadow: 0 0 0 3px var(--api-code-focus) !important;
+}
+
+.api-console-copy-icon {
+  width: 13px;
+  height: 13px;
+  display: inline-block;
+  position: relative;
+  color: currentColor;
+}
+
+.api-console-copy-icon::before,
+.api-console-copy-icon::after {
+  content: '';
+  position: absolute;
+  width: 8px;
+  height: 9px;
+  border: 1.5px solid currentColor;
+  border-radius: 2px;
+}
+
+.api-console-copy-icon::before {
+  left: 1px;
+  top: 3px;
+  opacity: .58;
+}
+
+.api-console-copy-icon::after {
+  right: 1px;
+  top: 0;
+  background: var(--api-code-toolbar-bg);
+}
+
+.api-console-code-title {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-left: 10px;
+}
+
+.api-console-code-title strong {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 950;
+}
+
+.api-console-code-title span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.api-console-code-card .api-console-code-meta {
+  background: color-mix(in srgb, var(--api-code-card-bg) 88%, var(--surface-soft) 12%);
+  border-bottom: 1px solid var(--api-code-rule);
+  padding: 8px 12px;
+}
+
+.api-docs-page.api-console-page .api-console-code-card .api-console-code-block,
+:root[data-theme] .api-docs-page.api-console-page .api-console-code-card .api-console-code-block {
+  width: 100%;
+  max-width: 100%;
+  max-height: min(56svh, 560px);
+  overflow: auto;
+  margin: 0;
+  border: 0 !important;
+  border-radius: 0;
+  background: var(--api-code-block-bg) !important;
+  color: var(--api-code-text) !important;
+  padding: 10px 0 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.62;
+  tab-size: 2;
+  white-space: pre;
+  box-shadow: none !important;
+}
+
+.api-docs-page.api-console-page .api-console-code-card .api-console-code-block code,
+:root[data-theme] .api-docs-page.api-console-page .api-console-code-card .api-console-code-block code {
+  display: grid;
+  width: max-content;
+  min-width: 100%;
+  color: inherit !important;
+  font-family: inherit;
+  white-space: inherit;
+  word-break: normal;
+  overflow-wrap: normal;
+}
+
+.api-console-code-line {
+  min-width: 100%;
+  display: grid;
+  grid-template-columns: 44px minmax(max-content, 1fr);
+  align-items: start;
+  padding: 0 14px 0 0;
+}
+
+.api-console-code-line:hover {
+  background: color-mix(in srgb, var(--primary) 7%, transparent);
+}
+
+.api-console-code-number {
+  padding-right: 12px;
+  color: var(--api-code-number);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  user-select: none;
+}
+
+.api-console-code-text {
+  color: inherit;
+  white-space: pre;
+}
+
+.api-console-prompt-card .api-console-code-block {
+  max-height: min(44svh, 440px) !important;
+}
+
+.api-docs-page.api-console-page .api-console-code-block-wrap code,
+:root[data-theme] .api-docs-page.api-console-page .api-console-code-block-wrap code {
+  width: 100% !important;
+}
+
+.api-console-code-block-wrap .api-console-code-line {
+  grid-template-columns: 44px minmax(0, 1fr);
+}
+
+.api-console-code-block-wrap .api-console-code-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.api-console-key-preview {
+  background: var(--api-key-mask-bg, color-mix(in srgb, var(--surface-soft) 78%, var(--primary) 12%));
+  border-color: var(--api-key-mask-border, color-mix(in srgb, var(--border-strong) 70%, var(--primary) 30%));
+}
+
+.api-console-key-preview code {
+  color: var(--api-key-mask-text, var(--text));
+}
+
+:root[data-theme] .api-console-page .api-console-key-preview {
+  background: var(--api-key-mask-bg, color-mix(in srgb, var(--surface-soft) 78%, var(--primary) 12%)) !important;
+  border-color: var(--api-key-mask-border, color-mix(in srgb, var(--border-strong) 70%, var(--primary) 30%)) !important;
+}
+
+:root[data-theme] .api-console-page .api-console-key-preview code {
+  color: var(--api-key-mask-text, var(--text)) !important;
+}
+
+@media (max-width: 640px) {
+  .api-console-code-toolbar {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+    padding: 0;
+  }
+
+  .api-console-page .api-console-copy-button,
+  :root[data-theme] .api-console-page .api-console-copy-button {
+    justify-self: end;
+    margin: 7px 8px 8px;
+  }
+
+  .api-console-code-tabs {
+    padding-right: 8px;
+  }
+
+  .api-console-code-line,
+  .api-console-code-block-wrap .api-console-code-line {
+    grid-template-columns: 36px minmax(max-content, 1fr);
+  }
+
+  .api-console-code-number {
+    padding-right: 9px;
+  }
+}

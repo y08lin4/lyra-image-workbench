@@ -1,103 +1,59 @@
 import { type FormEvent, useEffect, useMemo, useState } from 'react'
-import type { CreateTaskRequest, ReferenceUpload } from '../types'
+import type { ReferenceUpload } from '../types'
 import { DEFAULT_IMAGE2_MODEL } from '../lib/models'
 import { formatBytes } from '../lib/format'
+import {
+  buildGifPrompt,
+  buildGifTaskDraft,
+  GIF_PRESETS,
+  RHYTHM_LABELS,
+  STRENGTH_LABELS,
+  type GifPresetId,
+  type GifTaskDraft,
+  type LoopRhythm,
+  type MotionStrength,
+} from '../api/gifTasks'
 import { UploadPanel } from './UploadPanel'
 import './GifPage.css'
 
-type MotionStrength = 'subtle' | 'standard' | 'bold'
-type LoopRhythm = 'smooth' | 'breathing' | 'snappy'
+export type GifDraftSubmission = GifTaskDraft
 
-type GifPresetId = 'hair-sway' | 'camera-push' | 'blink' | 'poster-loop' | 'cloth-breeze' | 'product-turn'
-
-type GifMotionPreset = {
-  id: GifPresetId
+export type GifHistoryImage = {
+  id: string
+  src: string
   title: string
-  summary: string
-  prompt: string
-}
-
-export type GifDraftSubmission = {
-  payload: CreateTaskRequest
-  preset: GifMotionPreset
-  reference: ReferenceUpload
-  strength: MotionStrength
-  rhythm: LoopRhythm
+  subtitle?: string
+  taskId?: string
+  index: number
+  prompt?: string
 }
 
 type Props = {
   uploads: ReferenceUpload[]
+  recentResults: GifHistoryImage[]
   keyReady: boolean
   keyPreview: string
   message: string
   error: string
   onUpload: (files: File[]) => void
   onDeleteUpload: (id: string) => void
+  onUseHistoryImageAsReference: (src: string, index: number) => Promise<ReferenceUpload | undefined>
   onOpenSettings: () => void
-  onSubmitDraft: (draft: GifDraftSubmission) => void
-}
-
-const GIF_PRESETS: GifMotionPreset[] = [
-  {
-    id: 'hair-sway',
-    title: '头发飘动',
-    summary: '适合人像、二次元头像，让发丝轻轻摆动。',
-    prompt: 'animate hair with gentle wind, keep the face identity and background stable',
-  },
-  {
-    id: 'camera-push',
-    title: '镜头推近',
-    summary: '轻微放大主体，制造短循环镜头感。',
-    prompt: 'subtle camera push-in toward the main subject, maintain image composition',
-  },
-  {
-    id: 'blink',
-    title: '眨眼微笑',
-    summary: '人像轻眨眼，表情只做细微变化。',
-    prompt: 'natural blink and slight smile micro-expression, preserve facial identity',
-  },
-  {
-    id: 'poster-loop',
-    title: '海报轻动效',
-    summary: '让光影、烟雾、背景元素做小幅循环。',
-    prompt: 'cinemagraph poster loop with subtle light, smoke, or background motion',
-  },
-  {
-    id: 'cloth-breeze',
-    title: '衣摆微风',
-    summary: '服饰、裙摆、披风等轻轻摆动。',
-    prompt: 'gentle breeze moving clothing edges, keep body pose stable',
-  },
-  {
-    id: 'product-turn',
-    title: '产品呼吸感',
-    summary: '商品图做轻微高光和小幅转动。',
-    prompt: 'premium product cinemagraph with subtle highlight sweep and tiny parallax',
-  },
-]
-
-const STRENGTH_LABELS: Record<MotionStrength, string> = {
-  subtle: '轻微',
-  standard: '标准',
-  bold: '明显',
-}
-
-const RHYTHM_LABELS: Record<LoopRhythm, string> = {
-  smooth: '平滑循环',
-  breathing: '呼吸节奏',
-  snappy: '短促活泼',
+  onSubmitTask: (draft: GifTaskDraft) => Promise<void>
 }
 
 export function GifPage({
   uploads,
+  recentResults,
   keyReady,
   keyPreview,
   message,
   error,
   onUpload,
   onDeleteUpload,
+  onUseHistoryImageAsReference,
   onOpenSettings,
-  onSubmitDraft,
+  onSubmitTask,
 }: Props) {
   const [selectedUploadId, setSelectedUploadId] = useState('')
   const [presetId, setPresetId] = useState<GifPresetId>('hair-sway')
@@ -105,7 +61,9 @@ export function GifPage({
   const [strength, setStrength] = useState<MotionStrength>('standard')
   const [rhythm, setRhythm] = useState<LoopRhythm>('smooth')
   const [localError, setLocalError] = useState('')
-  const [draft, setDraft] = useState<GifDraftSubmission | null>(null)
+  const [draft, setDraft] = useState<GifTaskDraft | null>(null)
+  const [submitting, setSubmitting] = useState(false)
+  const [historyImportingId, setHistoryImportingId] = useState('')
 
   useEffect(() => {
     if (selectedUploadId && uploads.some((item) => item.id === selectedUploadId)) return
@@ -121,7 +79,7 @@ export function GifPage({
     [presetId],
   )
 
-  function submitDraft(event: FormEvent) {
+  async function submitTask(event: FormEvent) {
     event.preventDefault()
     setLocalError('')
 
@@ -130,31 +88,48 @@ export function GifPage({
       return
     }
 
-    const payload: CreateTaskRequest = {
-      provider: 'image-2',
-      model: DEFAULT_IMAGE2_MODEL,
-      mode: 'gif',
-      prompt: buildGifPrompt(selectedPreset, description, strength, rhythm),
-      framePrompts: [
-        selectedPreset.prompt,
-        `motion strength: ${strength}`,
-        `loop rhythm: ${rhythm}`,
-        `user intent: ${description.trim() || selectedPreset.title}`,
-      ],
-      ratio: 'auto',
-      resolution: 'auto',
-      quality: 'auto',
-      outputFormat: 'gif',
-      count: 1,
-      concurrency: 1,
-      uploadIds: [selectedReference.id],
-    }
-    const nextDraft = { payload, preset: selectedPreset, reference: selectedReference, strength, rhythm }
+    const nextDraft = buildGifTaskDraft({
+      preset: selectedPreset,
+      reference: selectedReference,
+      description,
+      strength,
+      rhythm,
+    })
     setDraft(nextDraft)
-    onSubmitDraft(nextDraft)
+    setSubmitting(true)
+    try {
+      await onSubmitTask(nextDraft)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'GIF 任务创建失败'
+      setLocalError(formatGifCreateError(message))
+    } finally {
+      setSubmitting(false)
+    }
   }
 
-  const requestPreview = draft?.payload || {
+  async function useHistoryImage(item: GifHistoryImage) {
+    setLocalError('')
+    setHistoryImportingId(item.id)
+    try {
+      const created = await onUseHistoryImageAsReference(item.src, item.index)
+      if (created) {
+        setSelectedUploadId(created.id)
+        setDraft(null)
+      }
+    } catch (err) {
+      setLocalError(err instanceof Error ? err.message : '历史图片加入参考图失败')
+    } finally {
+      setHistoryImportingId('')
+    }
+  }
+
+  const requestPreview = draft?.payload || (selectedReference ? buildGifTaskDraft({
+    preset: selectedPreset,
+    reference: selectedReference,
+    description,
+    strength,
+    rhythm,
+  }).payload : {
     provider: 'image-2',
     model: DEFAULT_IMAGE2_MODEL,
     mode: 'gif',
@@ -171,26 +146,50 @@ export function GifPage({
     outputFormat: 'gif',
     count: 1,
     concurrency: 1,
-    uploadIds: selectedReference ? [selectedReference.id] : [],
-  }
+    uploadIds: [],
+  })
 
   return (
     <section className="gif-page-shell" data-gif-composer>
       <div className="request-status-row gif-status-row">
         <div>
           <strong>当前模式</strong>
-          <span>GIF 动图 · 单图动效参数</span>
+          <span>GIF 动图 · 独立后端任务</span>
         </div>
         <button type="button" className={keyReady ? 'key-ready' : 'key-missing'} onClick={onOpenSettings}>
-          {keyReady ? `Image-2 Key ${keyPreview || '已设置'}` : '去设置 Key'}
+          {keyReady ? `Image-2 Key ${keyPreview || '已设置'}` : '设置 Image-2 Key'}
         </button>
       </div>
 
-      <form className="gif-workflow-grid" onSubmit={submitDraft}>
+      <form className="gif-workflow-grid" onSubmit={submitTask}>
         <div className="gif-main-column">
           <section className="generate-step gif-step">
-            <StepTitle index="①" title="参考图" note="上传图片后选择一张作为动图来源；当前不接收视频输入。" />
+            <StepTitle index="①" title="参考图" note="上传图片或从历史结果加入一张作为动图来源；当前不接收视频输入。" />
             <UploadPanel uploads={uploads} onUpload={onUpload} onDelete={onDeleteUpload} />
+            {recentResults.length ? (
+              <section className="gif-history-picker" aria-label="历史图片参考">
+                <div className="gif-history-picker-head">
+                  <strong>历史图片</strong>
+                  <span>从生成历史复制为 GIF 参考图</span>
+                </div>
+                <div className="gif-history-list">
+                  {recentResults.map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => void useHistoryImage(item)}
+                      disabled={Boolean(historyImportingId)}
+                    >
+                      <img src={item.src} alt={item.title} />
+                      <span>
+                        <strong>{item.title}</strong>
+                        <small>{historyImportingId === item.id ? '加入中...' : item.subtitle || '历史结果'}</small>
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </section>
+            ) : null}
             {uploads.length ? (
               <fieldset className="gif-reference-picker">
                 <legend>选择要动起来的图片</legend>
@@ -268,16 +267,18 @@ export function GifPage({
           </section>
 
           <section className="generate-step gif-step gif-submit-step">
-            <StepTitle index="④" title="提交" note="当前先完成 GIF 任务参数闭环；真实 GIF 后端接入前不会生成动图文件。" />
+            <StepTitle index="④" title="提交" note="创建后端 GIF 任务并进入结果历史。" />
             <div className="gif-submit-row">
               <div className={`submit-readiness ${selectedReference ? 'ready' : 'missing'}`}>
-                <strong>{selectedReference ? '参数可准备' : '需要参考图'}</strong>
+                <strong>{selectedReference ? '可以创建任务' : '需要参考图'}</strong>
                 <span>{selectedReference ? `${selectedPreset.title} · ${STRENGTH_LABELS[strength]} · ${RHYTHM_LABELS[rhythm]}` : '上传并选择一张图片'}</span>
               </div>
-              <button className="primary generate-submit" type="submit">准备 GIF 任务参数</button>
+              <button className="primary generate-submit" type="submit" disabled={submitting}>
+                {submitting ? '创建中...' : '创建 GIF 任务'}
+              </button>
             </div>
-            <p className="gif-backend-note">真实 GIF API 尚未接入，本按钮不会创建后端生成任务，也不会调用视频或 FFmpeg 流程。</p>
-            {draft ? <div className="ok">GIF 参数已准备：{draft.preset.title}，等待真实后端接入。</div> : null}
+            <p className="gif-backend-note">会创建 /api/background-tasks GIF 任务并进入结果历史；后端会基于单张参考图生成循环动效。</p>
+            {draft ? <div className="ok">GIF 任务参数已提交：{draft.preset.title} · {draft.reference.originalName}</div> : null}
             {message ? <div className="ok">{message}</div> : null}
             {localError || error ? <div className="error">{localError || error}</div> : null}
           </section>
@@ -285,7 +286,7 @@ export function GifPage({
 
         <aside className="gif-draft-panel" aria-label="GIF 任务参数预览">
           <div>
-            <span>Draft payload</span>
+            <span>Task payload</span>
             <strong>mode: gif</strong>
           </div>
           <dl className="gif-draft-summary">
@@ -294,7 +295,7 @@ export function GifPage({
             <dt>预设</dt>
             <dd>{selectedPreset.title}</dd>
             <dt>输出</dt>
-            <dd>GIF · 占位参数</dd>
+            <dd>GIF · 后端任务</dd>
           </dl>
           <pre>{JSON.stringify(requestPreview, null, 2)}</pre>
         </aside>
@@ -303,6 +304,12 @@ export function GifPage({
   )
 }
 
+
+function formatGifCreateError(message: string) {
+  if (message.includes('任务模式无效')) return `${message}；请确认后端服务已重启到包含 GIF 模式的最新版本。`
+  if (message.includes('参考图不存在') || message.includes('参考图 ID 无效')) return `${message}；这张参考图可能已经被清理，请重新上传或重新从历史选择。`
+  return message
+}
 function StepTitle({ index, title, note }: { index: string; title: string; note: string }) {
   return (
     <div className="generate-step-title">
@@ -315,14 +322,3 @@ function StepTitle({ index, title, note }: { index: string; title: string; note:
   )
 }
 
-function buildGifPrompt(preset: GifMotionPreset, description: string, strength: MotionStrength, rhythm: LoopRhythm) {
-  const intent = description.trim() || preset.summary
-  return [
-    `[GIF 动图] ${preset.title}`,
-    intent,
-    `preset: ${preset.prompt}`,
-    `motion strength: ${STRENGTH_LABELS[strength]}`,
-    `loop rhythm: ${RHYTHM_LABELS[rhythm]}`,
-    'preserve identity, composition, and non-moving regions',
-  ].join('\n')
-}
