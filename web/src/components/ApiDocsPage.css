@@ -841,3 +841,19 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* Mobile touch targets */
+@media (max-width: 640px) {
+  .api-console-tabs button,
+  .api-console-page .api-console-copy-button,
+  :root[data-theme] .api-console-page .api-console-copy-button {
+    min-height: 44px;
+  }
+
+  .api-console-page .api-console-copy-button,
+  :root[data-theme] .api-console-page .api-console-copy-button {
+    width: calc(100% - 16px);
+    justify-self: stretch;
+    margin: 8px;
+  }
+}

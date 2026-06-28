@@ -877,3 +877,31 @@ main.creative-canvas-page .creative-canvas-item.is-text .creative-canvas-item-ba
   background: color-mix(in srgb, var(--primary) 14%, var(--surface));
   color: var(--text);
 }
+
+/* Mobile touch targets for canvas controls */
+@media (max-width: 980px) {
+  main.creative-canvas-page .creative-connection-label button,
+  main.creative-canvas-page .creative-connection-label input,
+  main.creative-canvas-page .creative-role-grid button,
+  main.creative-canvas-page .creative-inspector-actions button,
+  main.creative-canvas-page .creative-context-menu button,
+  main.creative-canvas-page .creative-reference-actions button,
+  main.creative-canvas-page .creative-composer-tools select,
+  main.creative-canvas-page .creative-composer-tools input,
+  main.creative-canvas-page .creative-icon-action,
+  main.creative-canvas-page .creative-submit-action {
+    min-height: 44px;
+  }
+
+  main.creative-canvas-page .creative-reference-remove,
+  main.creative-canvas-page .creative-icon-action,
+  main.creative-canvas-page .creative-submit-action {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  main.creative-canvas-page .creative-reference-remove {
+    display: grid;
+    place-items: center;
+  }
+}
