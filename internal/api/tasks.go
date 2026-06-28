@@ -8,24 +8,27 @@ import (
 	"strings"
 	"time"
 
+	"github.com/y08lin4/lyra-image-workbench/internal/config"
 	"github.com/y08lin4/lyra-image-workbench/internal/events"
 	"github.com/y08lin4/lyra-image-workbench/internal/jobs"
 	"github.com/y08lin4/lyra-image-workbench/internal/output"
+	"github.com/y08lin4/lyra-image-workbench/internal/spaceconfig"
 	"github.com/y08lin4/lyra-image-workbench/internal/users"
 )
 
 type TaskHandler struct {
-	manager *jobs.Manager
-	output  *output.Store
-	users   *users.Store
+	manager     *jobs.Manager
+	output      *output.Store
+	spaceConfig *spaceconfig.Store
+	users       *users.Store
 }
 
-func NewTaskHandler(manager *jobs.Manager, outputStore *output.Store, userStores ...*users.Store) TaskHandler {
+func NewTaskHandler(manager *jobs.Manager, outputStore *output.Store, spaceConfigStore *spaceconfig.Store, userStores ...*users.Store) TaskHandler {
 	var userStore *users.Store
 	if len(userStores) > 0 {
 		userStore = userStores[0]
 	}
-	return TaskHandler{manager: manager, output: outputStore, users: userStore}
+	return TaskHandler{manager: manager, output: outputStore, spaceConfig: spaceConfigStore, users: userStore}
 }
 
 func (h TaskHandler) Create(w http.ResponseWriter, r *http.Request) {
@@ -37,13 +40,15 @@ func (h TaskHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 	payload.RuntimeSecrets = runtimeSecretsFromRequest(r)
 	payload.Source = jobs.JobSourceWeb
+	spaceToken := r.Header.Get("X-Space-Token")
 	username := r.Header.Get("X-User-Name")
-	if err := h.ensureTaskCredits(username, jobs.CreditCostForRequest(payload)); err != nil {
+	payload.WaiveCredits = h.waiveTaskCredits(spaceToken, payload)
+	if err := h.ensureTaskCredits(username, billableTaskCredits(payload)); err != nil {
 		writeUserCreditError(w, err)
 		return
 	}
 	payload.BeforeEnqueue = func(job jobs.Job) error { return h.chargeTask(username, job) }
-	job, err := h.manager.Create(r.Header.Get("X-Space-Token"), payload)
+	job, err := h.manager.Create(spaceToken, payload)
 	if err != nil {
 		if isUserCreditError(err) {
 			writeUserCreditError(w, err)
@@ -89,8 +94,11 @@ func (h TaskHandler) Get(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h TaskHandler) Retry(w http.ResponseWriter, r *http.Request) {
+	spaceToken := r.Header.Get("X-Space-Token")
 	username := r.Header.Get("X-User-Name")
-	job, err := h.manager.Retry(r.Header.Get("X-Space-Token"), r.PathValue("id"), runtimeSecretsFromRequest(r), func(job jobs.Job) error { return h.chargeTask(username, job) })
+	secrets := runtimeSecretsFromRequest(r)
+	waiveCredits := h.waiveRetryCredits(spaceToken, r.PathValue("id"), secrets)
+	job, err := h.manager.Retry(spaceToken, r.PathValue("id"), secrets, waiveCredits, func(job jobs.Job) error { return h.chargeTask(username, job) })
 	if err != nil {
 		if isUserCreditError(err) {
 			writeUserCreditError(w, err)
@@ -243,6 +251,18 @@ func (h TaskHandler) chargeTask(username string, job jobs.Job) error {
 	return chargeTaskCredits(h.users, username, job)
 }
 
+func (h TaskHandler) waiveTaskCredits(spaceToken string, req jobs.CreateRequest) bool {
+	return requestHasInvalidProvider(req.Provider) || requestUsesPersonalUpstreamKey(h.spaceConfig, spaceToken, req)
+}
+
+func (h TaskHandler) waiveRetryCredits(spaceToken string, id string, secrets jobs.RuntimeSecrets) bool {
+	old, ok, err := h.manager.Get(spaceToken, id)
+	if err != nil || !ok {
+		return false
+	}
+	return requestHasInvalidProvider(old.Provider) || requestUsesPersonalUpstreamKey(h.spaceConfig, spaceToken, jobs.CreateRequest{RuntimeSecrets: secrets, Provider: old.Provider, Model: old.Model, Mode: old.Mode})
+}
+
 func ensureTaskCredits(userStore *users.Store, username string, amount int) error {
 	if userStore == nil {
 		return nil
@@ -252,7 +272,7 @@ func ensureTaskCredits(userStore *users.Store, username string, amount int) erro
 		return users.NewError("USER_AUTH_REQUIRED", "请先登录")
 	}
 	if amount <= 0 {
-		amount = 1
+		return nil
 	}
 	profile, err := userStore.Profile(username)
 	if err != nil {
@@ -274,12 +294,74 @@ func chargeTaskCredits(userStore *users.Store, username string, job jobs.Job) er
 	}
 	amount := job.ConsumedCredits
 	if amount <= 0 {
-		amount = jobs.CreditCostForCount(job.Count)
+		return nil
 	}
 	_, err := userStore.ChargeTaskCredits(username, amount, job.ID, taskChargeReason(job))
 	return err
 }
 
+func billableTaskCredits(req jobs.CreateRequest) int {
+	if req.WaiveCredits {
+		return 0
+	}
+	return jobs.CreditCostForRequest(req)
+}
+
+func requestUsesPersonalUpstreamKey(spaceConfigStore *spaceconfig.Store, spaceToken string, req jobs.CreateRequest) bool {
+	if req.Mode == jobs.ModeGIF {
+		return true
+	}
+	provider := requestProvider(req.Provider)
+	if runtimeAPIKeyForProvider(req.RuntimeSecrets, provider) != "" {
+		return true
+	}
+	if spaceConfigStore == nil {
+		return false
+	}
+	cfg, err := spaceConfigStore.Get(spaceToken)
+	if err != nil {
+		return false
+	}
+	return cloudAPIKeyForProvider(cfg, provider) != ""
+}
+
+func requestProvider(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case config.BananaProvider, "banana-nano", "nano-banana":
+		return config.BananaProvider
+	default:
+		return config.DefaultProvider
+	}
+}
+
+func requestHasInvalidProvider(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "", config.DefaultProvider, "image2", "gpt-image-2", config.BananaProvider, "banana-nano", "nano-banana":
+		return false
+	default:
+		return true
+	}
+}
+
+func runtimeAPIKeyForProvider(secrets jobs.RuntimeSecrets, provider string) string {
+	if provider == config.BananaProvider {
+		return strings.TrimSpace(secrets.BananaAPIKey)
+	}
+	return strings.TrimSpace(secrets.APIKey)
+}
+
+func cloudAPIKeyForProvider(cfg spaceconfig.Config, provider string) string {
+	if provider == config.BananaProvider {
+		if cfg.CloudBananaAPIKeyEnabled {
+			return strings.TrimSpace(cfg.BananaAPIKey)
+		}
+		return ""
+	}
+	if cfg.CloudAPIKeyEnabled {
+		return strings.TrimSpace(cfg.APIKey)
+	}
+	return ""
+}
 func taskChargeReason(job jobs.Job) string {
 	label := "生成任务扣减"
 	if job.Source == jobs.JobSourceAPI {

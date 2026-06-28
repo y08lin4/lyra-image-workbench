@@ -4,15 +4,17 @@ import (
 	"encoding/json"
 	"net/http"
 
+	"github.com/y08lin4/lyra-image-workbench/internal/settings"
 	"github.com/y08lin4/lyra-image-workbench/internal/spaceconfig"
 )
 
 type UserConfigHandler struct {
-	store *spaceconfig.Store
+	store    *spaceconfig.Store
+	settings *settings.FileStore
 }
 
-func NewUserConfigHandler(store *spaceconfig.Store) UserConfigHandler {
-	return UserConfigHandler{store: store}
+func NewUserConfigHandler(store *spaceconfig.Store, settingsStore *settings.FileStore) UserConfigHandler {
+	return UserConfigHandler{store: store, settings: settingsStore}
 }
 
 func (h UserConfigHandler) Get(w http.ResponseWriter, r *http.Request) {
@@ -23,7 +25,7 @@ func (h UserConfigHandler) Get(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"ok":     true,
-		"config": cfg,
+		"config": h.withSystemKeyStatus(cfg),
 	})
 }
 
@@ -41,6 +43,29 @@ func (h UserConfigHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"ok":     true,
-		"config": cfg,
+		"config": h.withSystemKeyStatus(cfg),
 	})
+}
+
+func (h UserConfigHandler) withSystemKeyStatus(cfg spaceconfig.PublicConfig) map[string]any {
+	payload := map[string]any{
+		"apiKeySet":                cfg.APIKeySet,
+		"apiKeyPreview":            cfg.APIKeyPreview,
+		"bananaApiKeySet":          cfg.BananaAPIKeySet,
+		"bananaApiKeyPreview":      cfg.BananaAPIKeyPreview,
+		"cloudApiKeySet":           cfg.CloudAPIKeySet,
+		"cloudApiKeyPreview":       cfg.CloudAPIKeyPreview,
+		"cloudBananaApiKeySet":     cfg.CloudBananaAPIKeySet,
+		"cloudBananaApiKeyPreview": cfg.CloudBananaAPIKeyPreview,
+		"defaultCount":             cfg.DefaultCount,
+		"defaultConcurrency":       cfg.DefaultConcurrency,
+		"autoUploadPixhost":        cfg.AutoUploadPixhost,
+		"updatedAt":                cfg.UpdatedAt,
+	}
+	if h.settings != nil {
+		site := h.settings.Public()
+		payload["systemApiKeySet"] = site.SystemAPIKeySet
+		payload["systemBananaApiKeySet"] = site.SystemBananaKeySet
+	}
+	return payload
 }

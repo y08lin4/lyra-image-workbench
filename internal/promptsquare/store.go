@@ -35,31 +35,34 @@ var (
 )
 
 type Item struct {
-	ID                string            `json:"id"`
-	Title             string            `json:"title"`
-	Prompt            string            `json:"prompt"`
-	Negative          string            `json:"negativePrompt,omitempty"`
-	Model             string            `json:"model,omitempty"`
-	Ratio             string            `json:"ratio,omitempty"`
-	Quality           string            `json:"quality,omitempty"`
-	OutputFormat      string            `json:"outputFormat,omitempty"`
-	Params            map[string]string `json:"params,omitempty"`
-	ImageURL          string            `json:"imageUrl,omitempty"`
-	ThumbnailURL      string            `json:"thumbnailUrl,omitempty"`
-	Tags              []string          `json:"tags,omitempty"`
-	Author            AuthorName        `json:"author"`
-	AuthorDisplayName string            `json:"authorDisplayName,omitempty"`
-	AuthorURL         string            `json:"authorUrl,omitempty"`
-	Source            Source            `json:"source"`
-	Status            string            `json:"status"`
-	LikeCount         int               `json:"likeCount"`
-	LikedByMe         bool              `json:"likedByMe"`
-	DailyRank         int               `json:"dailyRank"`
-	Permanent         bool              `json:"permanent"`
-	SourceTaskID      string            `json:"sourceTaskId,omitempty"`
-	LikedBy           []string          `json:"likedBy,omitempty"`
-	CreatedAt         string            `json:"createdAt"`
-	UpdatedAt         string            `json:"updatedAt"`
+	ID                 string            `json:"id"`
+	Title              string            `json:"title"`
+	Prompt             string            `json:"prompt"`
+	Negative           string            `json:"negativePrompt,omitempty"`
+	Model              string            `json:"model,omitempty"`
+	Ratio              string            `json:"ratio,omitempty"`
+	Quality            string            `json:"quality,omitempty"`
+	OutputFormat       string            `json:"outputFormat,omitempty"`
+	Params             map[string]string `json:"params,omitempty"`
+	ReferenceUploadIDs []string          `json:"referenceUploadIds,omitempty"`
+	References         []Reference       `json:"references,omitempty"`
+	ReferenceUsageNote string            `json:"referenceUsageNote,omitempty"`
+	ImageURL           string            `json:"imageUrl,omitempty"`
+	ThumbnailURL       string            `json:"thumbnailUrl,omitempty"`
+	Tags               []string          `json:"tags,omitempty"`
+	Author             AuthorName        `json:"author"`
+	AuthorDisplayName  string            `json:"authorDisplayName,omitempty"`
+	AuthorURL          string            `json:"authorUrl,omitempty"`
+	Source             Source            `json:"source"`
+	Status             string            `json:"status"`
+	LikeCount          int               `json:"likeCount"`
+	LikedByMe          bool              `json:"likedByMe"`
+	DailyRank          int               `json:"dailyRank"`
+	Permanent          bool              `json:"permanent"`
+	SourceTaskID       string            `json:"sourceTaskId,omitempty"`
+	LikedBy            []string          `json:"likedBy,omitempty"`
+	CreatedAt          string            `json:"createdAt"`
+	UpdatedAt          string            `json:"updatedAt"`
 }
 
 type AuthorName string
@@ -94,6 +97,19 @@ type Source struct {
 	License string `json:"license,omitempty"`
 }
 
+type Reference struct {
+	ReferenceID    string `json:"referenceId,omitempty"`
+	ImageURL       string `json:"imageUrl,omitempty"`
+	ThumbnailURL   string `json:"thumbnailUrl,omitempty"`
+	OriginalName   string `json:"originalName,omitempty"`
+	Mime           string `json:"mime,omitempty"`
+	Size           int64  `json:"size,omitempty"`
+	UsageNote      string `json:"usageNote,omitempty"`
+	SourceUploadID string `json:"sourceUploadId,omitempty"`
+	SourceTaskID   string `json:"sourceTaskId,omitempty"`
+	SourcePath     string `json:"-"`
+}
+
 type CreateRequest struct {
 	Title             string
 	Prompt            string
@@ -113,20 +129,23 @@ type CreateRequest struct {
 }
 
 type SubmitFromResultRequest struct {
-	Title             string
-	Prompt            string
-	Negative          string
-	Model             string
-	Ratio             string
-	ActualSize        string
-	Quality           string
-	OutputFormat      string
-	Tags              []string
-	Author            string
-	AuthorDisplayName string
-	SourceTaskID      string
-	SourceImagePath   string
-	SourceImageMime   string
+	Title              string
+	Prompt             string
+	Negative           string
+	Model              string
+	Ratio              string
+	ActualSize         string
+	Quality            string
+	OutputFormat       string
+	Tags               []string
+	Author             string
+	AuthorDisplayName  string
+	SourceTaskID       string
+	SourceImagePath    string
+	SourceImageMime    string
+	ReferenceUploadIDs []string
+	References         []Reference
+	ReferenceUsageNote string
 }
 
 type Store struct {
@@ -138,6 +157,9 @@ type Store struct {
 func NewStore(dataDir string) (*Store, error) {
 	root := filepath.Join(dataDir, "prompt_square")
 	if err := os.MkdirAll(filepath.Join(root, "images"), 0o755); err != nil {
+		return nil, err
+	}
+	if err := os.MkdirAll(filepath.Join(root, "references"), 0o755); err != nil {
 		return nil, err
 	}
 	return &Store{root: root, now: time.Now}, nil
@@ -260,6 +282,8 @@ func (s *Store) SubmitFromResult(req SubmitFromResultRequest) (Item, error) {
 	item.Permanent = true
 	item.SourceTaskID = strings.TrimSpace(req.SourceTaskID)
 	item.Source = Source{Type: "task_result", Name: item.SourceTaskID, License: "user_submitted"}
+	item.ReferenceUploadIDs = normalizeReferenceUploadIDs(req.ReferenceUploadIDs, req.References)
+	item.ReferenceUsageNote = strings.TrimSpace(req.ReferenceUsageNote)
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -270,15 +294,24 @@ func (s *Store) SubmitFromResult(req SubmitFromResultRequest) (Item, error) {
 	}
 	item.ImageURL = url
 	item.ThumbnailURL = url
+	references, err := s.copyReferencesLocked(item.ID, req.References, item.ReferenceUsageNote)
+	if err != nil {
+		_ = s.removeImageURLLocked(item.ImageURL)
+		_ = s.removeReferenceDirLocked(item.ID)
+		return Item{}, err
+	}
+	item.References = references
 
 	items, err := s.loadLocked()
 	if err != nil {
 		_ = s.removeImageURLLocked(item.ImageURL)
+		_ = s.removeReferenceDirLocked(item.ID)
 		return Item{}, err
 	}
 	items = append(items, item)
 	if err := s.saveLocked(items); err != nil {
 		_ = s.removeImageURLLocked(item.ImageURL)
+		_ = s.removeReferenceDirLocked(item.ID)
 		return Item{}, err
 	}
 	return publicItem(item, string(item.Author)), nil
@@ -448,6 +481,18 @@ func (s *Store) ResolveImage(file string) (string, string, error) {
 	}
 	path := filepath.Join(s.root, "images", clean)
 	info, err := os.Stat(path)
+	if err == nil && !info.IsDir() {
+		mime := mimeFromExt(filepath.Ext(clean))
+		return path, mime, nil
+	}
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return "", "", err
+	}
+	path, ok := s.referencePathFromImageName(clean)
+	if !ok {
+		return "", "", os.ErrNotExist
+	}
+	info, err = os.Stat(path)
 	if err != nil {
 		return "", "", err
 	}
@@ -511,12 +556,158 @@ func (s *Store) copyImageLocked(id string, sourcePath string, sourceMime string)
 	return "/api/prompt-square/images/" + name, nil
 }
 
+func (s *Store) copyReferencesLocked(itemID string, refs []Reference, fallbackUsageNote string) ([]Reference, error) {
+	if len(refs) == 0 {
+		return nil, nil
+	}
+	dir := filepath.Join(s.root, "references", itemID)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return nil, err
+	}
+	out := make([]Reference, 0, len(refs))
+	for index, ref := range refs {
+		copied, err := s.copyReferenceLocked(itemID, dir, index, ref, fallbackUsageNote)
+		if err != nil {
+			_ = os.RemoveAll(dir)
+			return nil, err
+		}
+		out = append(out, copied)
+	}
+	if len(out) == 0 {
+		return nil, nil
+	}
+	return out, nil
+}
+
+func (s *Store) copyReferenceLocked(itemID string, dir string, index int, ref Reference, fallbackUsageNote string) (Reference, error) {
+	referenceID := fmt.Sprintf("%s_ref_%02d", itemID, index+1)
+	out := Reference{
+		ReferenceID:    referenceID,
+		OriginalName:   strings.TrimSpace(ref.OriginalName),
+		Mime:           normalizeImageMime(ref.Mime),
+		Size:           ref.Size,
+		UsageNote:      firstNonEmpty(ref.UsageNote, fallbackUsageNote),
+		SourceUploadID: strings.TrimSpace(ref.SourceUploadID),
+		SourceTaskID:   strings.TrimSpace(ref.SourceTaskID),
+	}
+	sourcePath, err := s.resolveReferenceSourcePath(ref.SourcePath)
+	if err != nil {
+		return Reference{}, err
+	}
+	if sourcePath == "" {
+		return out, nil
+	}
+	info, err := os.Stat(sourcePath)
+	if err != nil {
+		return Reference{}, err
+	}
+	if info.IsDir() {
+		return Reference{}, errors.New("任务参考图不存在")
+	}
+	if info.Size() > MaxImageBytes {
+		return Reference{}, fmt.Errorf("参考图不能超过 %dMB", MaxImageBytes/1024/1024)
+	}
+
+	src, err := os.Open(sourcePath)
+	if err != nil {
+		return Reference{}, err
+	}
+	defer src.Close()
+
+	head := make([]byte, 512)
+	n, _ := io.ReadFull(src, head)
+	head = head[:n]
+	mime := normalizeImageMime(ref.Mime)
+	if mime == "" {
+		mime = normalizeImageMime(http.DetectContentType(head))
+	}
+	ext, ok := allowedImageTypes[mime]
+	if !ok {
+		return Reference{}, errors.New("参考图仅支持 PNG、JPG、WEBP、GIF、AVIF")
+	}
+	if _, err := src.Seek(0, io.SeekStart); err != nil {
+		return Reference{}, err
+	}
+
+	name := referenceID + ext
+	dstPath := filepath.Join(dir, name)
+	dst, err := os.OpenFile(dstPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o644)
+	if err != nil {
+		return Reference{}, err
+	}
+	defer dst.Close()
+
+	limited := &io.LimitedReader{R: src, N: MaxImageBytes + 1}
+	written, err := io.Copy(dst, limited)
+	if err != nil {
+		return Reference{}, err
+	}
+	if written > MaxImageBytes {
+		_ = os.Remove(dstPath)
+		return Reference{}, fmt.Errorf("参考图不能超过 %dMB", MaxImageBytes/1024/1024)
+	}
+	out.Mime = mime
+	out.Size = written
+	out.ImageURL = "/api/prompt-square/images/" + name
+	out.ThumbnailURL = out.ImageURL
+	return out, nil
+}
+
+func (s *Store) resolveReferenceSourcePath(sourcePath string) (string, error) {
+	trimmed := strings.TrimSpace(sourcePath)
+	if trimmed == "" {
+		return "", nil
+	}
+	if filepath.IsAbs(trimmed) {
+		return trimmed, nil
+	}
+	rel := filepath.Clean(filepath.FromSlash(trimmed))
+	if rel == "." || rel == "" || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", errors.New("参考图路径无效")
+	}
+	dataRoot := filepath.Dir(s.root)
+	root, err := filepath.Abs(dataRoot)
+	if err != nil {
+		return "", err
+	}
+	abs, err := filepath.Abs(filepath.Join(dataRoot, rel))
+	if err != nil {
+		return "", err
+	}
+	if abs != root && !strings.HasPrefix(abs, root+string(filepath.Separator)) {
+		return "", errors.New("参考图路径越界")
+	}
+	return abs, nil
+}
+
 func (s *Store) removeImageURLLocked(imageURL string) error {
 	name := filepath.Base(strings.TrimSpace(imageURL))
 	if name == "." || name == "" || strings.Contains(name, "..") {
 		return nil
 	}
 	return os.Remove(filepath.Join(s.root, "images", name))
+}
+
+func (s *Store) removeReferenceDirLocked(itemID string) error {
+	itemID = strings.TrimSpace(itemID)
+	if itemID == "" || strings.Contains(itemID, "..") || filepath.Base(itemID) != itemID {
+		return nil
+	}
+	return os.RemoveAll(filepath.Join(s.root, "references", itemID))
+}
+
+func (s *Store) referencePathFromImageName(name string) (string, bool) {
+	ext := filepath.Ext(name)
+	stem := strings.TrimSuffix(name, ext)
+	idx := strings.LastIndex(stem, "_ref_")
+	if idx <= 0 || ext == "" {
+		return "", false
+	}
+	itemID := stem[:idx]
+	if filepath.Base(itemID) != itemID || strings.Contains(itemID, "..") {
+		return "", false
+	}
+	return filepath.Join(s.root, "references", itemID, name), true
 }
 
 func publicItems(items []Item, username string) []Item {
@@ -539,7 +730,33 @@ func publicItem(item Item, username string) Item {
 	item.Ratio = firstNonEmpty(item.Ratio, item.Params["ratio"])
 	item.Quality = firstNonEmpty(item.Quality, item.Params["quality"])
 	item.OutputFormat = firstNonEmpty(item.OutputFormat, item.Params["outputFormat"])
+	if len(item.ReferenceUploadIDs) == 0 && len(item.References) > 0 {
+		item.ReferenceUploadIDs = normalizeReferenceUploadIDs(nil, item.References)
+	}
 	return item
+}
+
+func normalizeReferenceUploadIDs(ids []string, refs []Reference) []string {
+	seen := map[string]bool{}
+	out := make([]string, 0, len(ids)+len(refs))
+	add := func(value string) {
+		trimmed := strings.TrimSpace(value)
+		if trimmed == "" || seen[trimmed] || len(out) >= 12 {
+			return
+		}
+		seen[trimmed] = true
+		out = append(out, trimmed)
+	}
+	for _, id := range ids {
+		add(id)
+	}
+	for _, ref := range refs {
+		add(ref.SourceUploadID)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 func normalizeLikedBy(users []string) []string {

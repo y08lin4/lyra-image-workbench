@@ -125,19 +125,15 @@ func (m *Manager) Create(spaceToken string, req CreateRequest) (Job, error) {
 	if err != nil {
 		return Job{}, err
 	}
-	apiKey := runtimeAPIKey(req.RuntimeSecrets, provider)
-	if apiKey == "" {
-		apiKey = cloudAPIKey(spaceCfg, provider)
-	}
-	if apiKey == "" {
-		if provider == config.BananaProvider {
-			return Job{}, errors.New("banana API key is not configured; save it locally or upload it to cloud after enabling account protection")
-		}
-		return Job{}, errors.New("codex-key is not configured; save it locally or upload it to cloud after enabling account protection")
-	}
-	if req.Mode == ModeImageToImage {
-		if len(req.UploadIDs) == 0 && len(req.References) == 0 {
+	if modeRequiresReference(req.Mode) {
+		if effectiveReferenceCount(req) == 0 {
+			if req.Mode == ModeGIF {
+				return Job{}, errors.New("GIF 动图需要先选择一张参考图")
+			}
 			return Job{}, errors.New("图生图需要先上传参考图")
+		}
+		if req.Mode == ModeGIF && effectiveReferenceCount(req) != 1 {
+			return Job{}, errors.New("GIF 动图只能选择一张参考图")
 		}
 		if len(req.References) == 0 {
 			for _, id := range req.UploadIDs {
@@ -147,13 +143,29 @@ func (m *Manager) Create(spaceToken string, req CreateRequest) (Job, error) {
 			}
 		}
 	}
+	apiKey := ""
+	if req.Mode != ModeGIF {
+		apiKey = runtimeAPIKey(req.RuntimeSecrets, provider)
+		if apiKey == "" {
+			apiKey = cloudAPIKey(spaceCfg, provider)
+		}
+		if apiKey == "" {
+			apiKey = settings.SystemAPIKeyForProvider(m.settings.Get(), provider)
+		}
+		if apiKey == "" {
+			if provider == config.BananaProvider {
+				return Job{}, errors.New("banana API key is not configured; save it locally or upload it to cloud after enabling account protection")
+			}
+			return Job{}, errors.New("codex-key is not configured; save it locally or upload it to cloud after enabling account protection")
+		}
+	}
 	now := time.Now()
 	id, err := newJobID()
 	if err != nil {
 		return Job{}, err
 	}
 	var references []ReferenceSnapshot
-	if req.Mode == ModeImageToImage {
+	if modeRequiresReference(req.Mode) {
 		if len(req.References) > 0 {
 			references, err = m.copyReferenceSnapshots(spaceToken, id, req.References)
 		} else {
@@ -169,7 +181,14 @@ func (m *Manager) Create(spaceToken string, req CreateRequest) (Job, error) {
 	quality := normalizeQuality(req.Quality)
 	outputFormat := normalizeOutputFormat(req.OutputFormat)
 	size := imageSize(ratio, resolution)
-	if provider == config.BananaProvider {
+	if req.Mode == ModeGIF {
+		ratio = "auto"
+		resolution = "auto"
+		quality = "auto"
+		outputFormat = "gif"
+		size = "自动"
+	}
+	if provider == config.BananaProvider && req.Mode != ModeGIF {
 		spec := bananaModelSpec(model)
 		ratio = spec.Ratio
 		resolution = spec.Resolution
@@ -178,6 +197,13 @@ func (m *Manager) Create(spaceToken string, req CreateRequest) (Job, error) {
 		size = spec.Size
 	}
 	count := clamp(req.Count, 1, 24, 1)
+	if req.Mode == ModeGIF {
+		count = 1
+	}
+	consumedCredits := CreditCostForCount(count)
+	if req.Mode == ModeGIF || req.WaiveCredits {
+		consumedCredits = 0
+	}
 	job := Job{
 		ID:              id,
 		SpaceToken:      spaceToken,
@@ -193,7 +219,7 @@ func (m *Manager) Create(spaceToken string, req CreateRequest) (Job, error) {
 		OutputFormat:    outputFormat,
 		Size:            size,
 		Count:           count,
-		ConsumedCredits: CreditCostForCount(count),
+		ConsumedCredits: consumedCredits,
 		Concurrency:     clamp(req.Concurrency, 1, 0, 1),
 		UploadIDs:       append([]string{}, req.UploadIDs...),
 		References:      references,
@@ -231,7 +257,9 @@ func (m *Manager) Create(spaceToken string, req CreateRequest) (Job, error) {
 			return Job{}, err
 		}
 	}
-	m.setJobSecret(job.ID, apiKey)
+	if apiKey != "" {
+		m.setJobSecret(job.ID, apiKey)
+	}
 	m.enqueue(spaceToken, job.ID)
 	m.publish(job.ID, "progress", eventPayload(job))
 	return job, nil
@@ -325,7 +353,7 @@ func (m *Manager) UploadResultToPixhost(ctx context.Context, spaceToken string, 
 	return job, updated, nil
 }
 
-func (m *Manager) Retry(spaceToken string, id string, secrets RuntimeSecrets, beforeEnqueue ...func(Job) error) (Job, error) {
+func (m *Manager) Retry(spaceToken string, id string, secrets RuntimeSecrets, waiveCredits bool, beforeEnqueue ...func(Job) error) (Job, error) {
 	old, ok, err := m.store.Get(spaceToken, id)
 	if err != nil {
 		return Job{}, err
@@ -353,6 +381,7 @@ func (m *Manager) Retry(spaceToken string, id string, secrets RuntimeSecrets, be
 		Concurrency:    old.Concurrency,
 		UploadIDs:      old.UploadIDs,
 		References:     old.References,
+		WaiveCredits:   waiveCredits,
 		BeforeEnqueue:  callback,
 	})
 }
@@ -540,6 +569,9 @@ func (m *Manager) generateOne(ctx context.Context, spaceToken string, jobID stri
 	m.publish(jobID, "progress", eventPayload(job))
 	admin := m.settings.Get()
 	prompt := promptForImage(job, index)
+	if job.Mode == ModeGIF {
+		return m.generateGIF(ctx, spaceToken, job, index, prompt, started)
+	}
 	spaceCfg, err := m.spaceConfig.Get(spaceToken)
 	if err != nil {
 		return NewResult(index, StatusFailed, err.Error())
@@ -556,6 +588,9 @@ func (m *Manager) generateOne(ctx context.Context, spaceToken string, jobID stri
 	skipImageParams := provider == config.BananaProvider
 	if apiKey == "" {
 		apiKey = cloudAPIKey(spaceCfg, provider)
+		if apiKey == "" {
+			apiKey = settings.SystemAPIKeyForProvider(admin, provider)
+		}
 		if apiKey != "" {
 			m.setJobSecret(jobID, apiKey)
 		}
@@ -1150,16 +1185,27 @@ func validateCreate(req CreateRequest) error {
 	if _, err := resolveModel(provider, req.Model); err != nil {
 		return err
 	}
-	if req.Mode != ModeTextToImage && req.Mode != ModeImageToImage {
+	if req.Mode != ModeTextToImage && req.Mode != ModeImageToImage && req.Mode != ModeGIF {
 		return errors.New("任务模式无效")
 	}
-	if req.Mode == ModeImageToImage && len(req.UploadIDs) > uploads.MaxReferenceImages {
-		return fmt.Errorf("图生图参考图最多 %d 张", uploads.MaxReferenceImages)
+	if modeRequiresReference(req.Mode) && len(req.UploadIDs) > uploads.MaxReferenceImages {
+		return fmt.Errorf("参考图最多 %d 张", uploads.MaxReferenceImages)
 	}
-	if req.Mode == ModeImageToImage && len(req.References) > uploads.MaxReferenceImages {
-		return fmt.Errorf("图生图参考图最多 %d 张", uploads.MaxReferenceImages)
+	if modeRequiresReference(req.Mode) && len(req.References) > uploads.MaxReferenceImages {
+		return fmt.Errorf("参考图最多 %d 张", uploads.MaxReferenceImages)
 	}
 	return nil
+}
+
+func modeRequiresReference(mode Mode) bool {
+	return mode == ModeImageToImage || mode == ModeGIF
+}
+
+func effectiveReferenceCount(req CreateRequest) int {
+	if len(req.References) > 0 {
+		return len(req.References)
+	}
+	return len(req.UploadIDs)
 }
 
 func withElapsed(result Result, started time.Time) Result {

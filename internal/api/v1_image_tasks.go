@@ -10,6 +10,7 @@ import (
 	"github.com/y08lin4/lyra-image-workbench/internal/config"
 	"github.com/y08lin4/lyra-image-workbench/internal/jobs"
 	"github.com/y08lin4/lyra-image-workbench/internal/output"
+	"github.com/y08lin4/lyra-image-workbench/internal/settings"
 	"github.com/y08lin4/lyra-image-workbench/internal/spaceconfig"
 	"github.com/y08lin4/lyra-image-workbench/internal/users"
 )
@@ -17,17 +18,18 @@ import (
 type V1ImageTaskHandler struct {
 	apiKeys     *apikeys.Store
 	spaceConfig *spaceconfig.Store
+	settings    *settings.FileStore
 	manager     *jobs.Manager
 	output      *output.Store
 	users       *users.Store
 }
 
-func NewV1ImageTaskHandler(apiKeyStore *apikeys.Store, spaceConfigStore *spaceconfig.Store, manager *jobs.Manager, outputStore *output.Store, userStores ...*users.Store) V1ImageTaskHandler {
+func NewV1ImageTaskHandler(apiKeyStore *apikeys.Store, spaceConfigStore *spaceconfig.Store, settingsStore *settings.FileStore, manager *jobs.Manager, outputStore *output.Store, userStores ...*users.Store) V1ImageTaskHandler {
 	var userStore *users.Store
 	if len(userStores) > 0 {
 		userStore = userStores[0]
 	}
-	return V1ImageTaskHandler{apiKeys: apiKeyStore, spaceConfig: spaceConfigStore, manager: manager, output: outputStore, users: userStore}
+	return V1ImageTaskHandler{apiKeys: apiKeyStore, spaceConfig: spaceConfigStore, settings: settingsStore, manager: manager, output: outputStore, users: userStore}
 }
 
 func (h V1ImageTaskHandler) Create(w http.ResponseWriter, r *http.Request) {
@@ -47,8 +49,9 @@ func (h V1ImageTaskHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 	payload.RuntimeSecrets = jobs.RuntimeSecrets{}
 	payload.Source = jobs.JobSourceAPI
+	payload.WaiveCredits = h.waiveTaskCredits(scope.storageToken, payload)
 	payload.BeforeEnqueue = func(job jobs.Job) error { return h.chargeTask(scope.username, job) }
-	if err := h.ensureTaskCredits(scope.username, jobs.CreditCostForRequest(payload)); err != nil {
+	if err := h.ensureTaskCredits(scope.username, billableTaskCredits(payload)); err != nil {
 		writeUserCreditError(w, err)
 		return
 	}
@@ -88,8 +91,9 @@ func (h V1ImageTaskHandler) CreateGeneration(w http.ResponseWriter, r *http.Requ
 	}
 	createPayload := payload.createRequest()
 	createPayload.Source = jobs.JobSourceAPI
+	createPayload.WaiveCredits = h.waiveTaskCredits(scope.storageToken, createPayload)
 	createPayload.BeforeEnqueue = func(job jobs.Job) error { return h.chargeTask(scope.username, job) }
-	if err := h.ensureTaskCredits(scope.username, jobs.CreditCostForRequest(createPayload)); err != nil {
+	if err := h.ensureTaskCredits(scope.username, billableTaskCredits(createPayload)); err != nil {
 		writeUserCreditError(w, err)
 		return
 	}
@@ -122,6 +126,10 @@ func (h V1ImageTaskHandler) ensureTaskCredits(username string, amount int) error
 
 func (h V1ImageTaskHandler) chargeTask(username string, job jobs.Job) error {
 	return chargeTaskCredits(h.users, username, job)
+}
+
+func (h V1ImageTaskHandler) waiveTaskCredits(spaceToken string, req jobs.CreateRequest) bool {
+	return requestHasInvalidProvider(req.Provider) || requestUsesPersonalUpstreamKey(h.spaceConfig, spaceToken, req)
 }
 
 type v1ImageGenerationRequest struct {
@@ -331,16 +339,19 @@ func (h V1ImageTaskHandler) requireCloudUpstreamKey(storageToken string, provide
 	if err != nil {
 		return err
 	}
+	if h.settings != nil && settings.HasSystemAPIKeyForProvider(h.settings.Get(), provider) {
+		return nil
+	}
 	if provider == config.BananaProvider {
 		if cfg.CloudBananaAPIKeyEnabled && strings.TrimSpace(cfg.BananaAPIKey) != "" {
 			return nil
 		}
-		return errUpstreamKeyRequired("请先在设置中确认保存 Banana 云端上游 Key，再使用外部 API 创建任务")
+		return errUpstreamKeyRequired("请先由管理员配置系统 Banana 上游 Key，或在设置中保存个人 Banana 云端上游 Key，再使用外部 API 创建任务")
 	}
 	if cfg.CloudAPIKeyEnabled && strings.TrimSpace(cfg.APIKey) != "" {
 		return nil
 	}
-	return errUpstreamKeyRequired("请先在设置中确认保存 codex-key 云端上游 Key，再使用外部 API 创建任务")
+	return errUpstreamKeyRequired("请先由管理员配置系统 codex-key 上游 Key，或在设置中保存个人 codex-key 云端上游 Key，再使用外部 API 创建任务")
 }
 
 type v1Scope struct {

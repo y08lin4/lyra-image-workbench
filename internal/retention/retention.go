@@ -154,7 +154,11 @@ func buildJobIndex(cfg Config, cutoff time.Time) (jobIndex, error) {
 
 func cleanupOutputs(root string, cutoff time.Time, index jobIndex) (Report, error) {
 	var report Report
-	entries, err := os.ReadDir(root)
+	guard, err := newPathGuard(root)
+	if err != nil {
+		return report, err
+	}
+	entries, err := os.ReadDir(guard.root)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return report, nil
@@ -170,7 +174,7 @@ func cleanupOutputs(root string, cutoff time.Time, index jobIndex) (Report, erro
 			report.Skipped++
 			continue
 		}
-		tokenDir := filepath.Join(root, token)
+		tokenDir := filepath.Join(guard.root, token)
 		dateEntries, err := os.ReadDir(tokenDir)
 		if err != nil {
 			return report, err
@@ -185,20 +189,28 @@ func cleanupOutputs(root string, cutoff time.Time, index jobIndex) (Report, erro
 				continue
 			}
 			dateDir := filepath.Join(tokenDir, dateEntry.Name())
-			if err := cleanupOutputDateDir(dateDir, token, dateEntry.Name(), cutoff, index, &report); err != nil {
+			if err := cleanupOutputDateDir(guard, dateDir, token, dateEntry.Name(), cutoff, index, &report); err != nil {
 				return report, err
 			}
-			if removeEmptyDir(dateDir) {
+			removed, err := removeEmptyChildDir(guard, dateDir)
+			if err != nil {
+				return report, err
+			}
+			if removed {
 				report.OutputDirsDeleted++
 			}
 		}
-		_ = removeEmptyDir(tokenDir)
+		_, _ = removeEmptyChildDir(guard, tokenDir)
 	}
 	return report, nil
 }
 
-func cleanupOutputDateDir(dir string, token string, date string, cutoff time.Time, index jobIndex, report *Report) error {
-	entries, err := os.ReadDir(dir)
+func cleanupOutputDateDir(guard pathGuard, dir string, token string, date string, cutoff time.Time, index jobIndex, report *Report) error {
+	checkedDir, err := guard.childPath(dir)
+	if err != nil {
+		return err
+	}
+	entries, err := os.ReadDir(checkedDir)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil
@@ -215,12 +227,15 @@ func cleanupOutputDateDir(dir string, token string, date string, cutoff time.Tim
 			report.Skipped++
 			continue
 		}
-		path := filepath.Join(dir, name)
+		path, err := guard.childPath(filepath.Join(checkedDir, name))
+		if err != nil {
+			return err
+		}
 		if !isOldFile(path, cutoff) {
 			report.Skipped++
 			continue
 		}
-		if err := os.Remove(path); err != nil {
+		if err := removeFile(guard, path); err != nil {
 			return err
 		}
 		report.OutputFilesDeleted++
@@ -245,7 +260,7 @@ func cleanupSpaceTempAssets(store *spaces.FileStore, cutoff time.Time, index job
 		if err != nil {
 			return report, err
 		}
-		next, err = cleanupJobRefs(filepath.Join(spaceDir, "job_refs"), token, cutoff, index.jobsBySpace[token])
+		next, err = cleanupJobRefs(filepath.Join(spaceDir, "job_refs"), token, cutoff, index.jobsBySpace[token], index.squareTaskIDs)
 		report.add(next)
 		if err != nil {
 			return report, err
@@ -256,7 +271,11 @@ func cleanupSpaceTempAssets(store *spaces.FileStore, cutoff time.Time, index job
 
 func cleanupUploads(uploadDir string, token string, cutoff time.Time, active map[string]map[string]struct{}) (Report, error) {
 	var report Report
-	entries, err := os.ReadDir(uploadDir)
+	guard, err := newPathGuard(uploadDir)
+	if err != nil {
+		return report, err
+	}
+	entries, err := os.ReadDir(guard.root)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return report, nil
@@ -267,7 +286,10 @@ func cleanupUploads(uploadDir string, token string, cutoff time.Time, active map
 		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
 			continue
 		}
-		metaPath := filepath.Join(uploadDir, entry.Name())
+		metaPath, err := guard.childPath(filepath.Join(guard.root, entry.Name()))
+		if err != nil {
+			return report, err
+		}
 		meta, err := readReferenceMeta(metaPath)
 		if err != nil {
 			report.Skipped++
@@ -281,13 +303,20 @@ func cleanupUploads(uploadDir string, token string, cutoff time.Time, active map
 		if err != nil || !createdAt.Before(cutoff) {
 			continue
 		}
-		imagePath := filepath.Join(uploadDir, filepath.Base(meta.FileName))
+		imagePath, err := guard.childPath(filepath.Join(guard.root, filepath.Base(meta.FileName)))
+		if err != nil {
+			return report, err
+		}
 		if !isOldFile(metaPath, cutoff) || (fileExists(imagePath) && !isOldFile(imagePath, cutoff)) {
 			report.Skipped++
 			continue
 		}
-		_ = os.Remove(imagePath)
-		if err := os.Remove(metaPath); err != nil && !os.IsNotExist(err) {
+		if fileExists(imagePath) {
+			if err := removeFile(guard, imagePath); err != nil && !os.IsNotExist(err) {
+				return report, err
+			}
+		}
+		if err := removeFile(guard, metaPath); err != nil && !os.IsNotExist(err) {
 			return report, err
 		}
 		report.UploadsDeleted++
@@ -295,9 +324,13 @@ func cleanupUploads(uploadDir string, token string, cutoff time.Time, active map
 	return report, nil
 }
 
-func cleanupJobRefs(root string, token string, cutoff time.Time, list []jobs.Job) (Report, error) {
+func cleanupJobRefs(root string, token string, cutoff time.Time, list []jobs.Job, squareTaskIDs map[string]struct{}) (Report, error) {
 	var report Report
-	entries, err := os.ReadDir(root)
+	guard, err := newPathGuard(root)
+	if err != nil {
+		return report, err
+	}
+	entries, err := os.ReadDir(guard.root)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return report, nil
@@ -313,7 +346,14 @@ func cleanupJobRefs(root string, token string, cutoff time.Time, list []jobs.Job
 			report.Skipped++
 			continue
 		}
-		dir := filepath.Join(root, entry.Name())
+		dir, err := guard.childPath(filepath.Join(guard.root, entry.Name()))
+		if err != nil {
+			return report, err
+		}
+		if _, ok := squareTaskIDs[entry.Name()]; ok {
+			report.Skipped++
+			continue
+		}
 		job, ok := byID[entry.Name()]
 		if ok && !eligibleOldFinalJob(job, cutoff) {
 			report.Skipped++
@@ -323,7 +363,7 @@ func cleanupJobRefs(root string, token string, cutoff time.Time, list []jobs.Job
 			report.Skipped++
 			continue
 		}
-		if err := os.RemoveAll(dir); err != nil {
+		if err := removeDirTree(guard, dir); err != nil {
 			return report, fmt.Errorf("remove job refs %s/%s: %w", token, entry.Name(), err)
 		}
 		report.JobRefDirsDeleted++
@@ -402,11 +442,93 @@ func fileExists(path string) bool {
 	return err == nil && !info.IsDir()
 }
 
-func removeEmptyDir(dir string) bool {
-	if err := os.Remove(dir); err == nil {
-		return true
+type pathGuard struct {
+	root string
+}
+
+func newPathGuard(root string) (pathGuard, error) {
+	if strings.TrimSpace(root) == "" {
+		return pathGuard{}, fmt.Errorf("delete root is empty")
 	}
-	return false
+	absRoot, err := filepath.Abs(filepath.Clean(root))
+	if err != nil {
+		return pathGuard{}, err
+	}
+	return pathGuard{root: filepath.Clean(absRoot)}, nil
+}
+
+func (g pathGuard) childPath(path string) (string, error) {
+	absPath, err := filepath.Abs(filepath.Clean(path))
+	if err != nil {
+		return "", err
+	}
+	rel, err := filepath.Rel(g.root, absPath)
+	if err != nil {
+		return "", err
+	}
+	if rel == "." || rel == ".." || filepath.IsAbs(rel) || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("delete path %q is outside root %q", absPath, g.root)
+	}
+	return filepath.Clean(absPath), nil
+}
+
+func removeFile(guard pathGuard, path string) error {
+	checkedPath, err := guard.childPath(path)
+	if err != nil {
+		return err
+	}
+	return os.Remove(checkedPath)
+}
+
+func removeDirTree(guard pathGuard, dir string) error {
+	checkedDir, err := guard.childPath(dir)
+	if err != nil {
+		return err
+	}
+	var paths []string
+	if err := filepath.WalkDir(checkedDir, func(path string, _ os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		checkedPath, err := guard.childPath(path)
+		if err != nil {
+			return err
+		}
+		paths = append(paths, checkedPath)
+		return nil
+	}); err != nil {
+		return err
+	}
+	for i := len(paths) - 1; i >= 0; i-- {
+		if err := os.Remove(paths[i]); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+	}
+	return nil
+}
+
+func removeEmptyChildDir(guard pathGuard, dir string) (bool, error) {
+	checkedDir, err := guard.childPath(dir)
+	if err != nil {
+		return false, err
+	}
+	entries, err := os.ReadDir(checkedDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, err
+	}
+	if len(entries) != 0 {
+		return false, nil
+	}
+	if err := os.Remove(checkedDir); err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
 }
 
 func (r *Report) add(next Report) {

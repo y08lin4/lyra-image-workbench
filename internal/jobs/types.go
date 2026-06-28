@@ -16,6 +16,7 @@ type Mode string
 const (
 	ModeTextToImage  Mode = "text-to-image"
 	ModeImageToImage Mode = "image-to-image"
+	ModeGIF          Mode = "gif"
 
 	JobSourceWeb = "web"
 	JobSourceAPI = "api"
@@ -142,6 +143,7 @@ type CreateRequest struct {
 	Concurrency   int                 `json:"concurrency"`
 	UploadIDs     []string            `json:"uploadIds"`
 	References    []ReferenceSnapshot `json:"-"`
+	WaiveCredits  bool                `json:"-"`
 	BeforeEnqueue func(Job) error     `json:"-"`
 }
 
@@ -221,6 +223,9 @@ func ErrorMeta(raw string) Meta {
 	}
 	if strings.Contains(lower, "unsupported parameter") || strings.Contains(lower, "unsupported_param") || strings.Contains(lower, "unknown parameter") || strings.Contains(lower, "invalid parameter") {
 		return Meta{"E_PROVIDER_UNSUPPORTED_PARAM", "provider_unsupported_parameter", "上游不支持当前参数"}
+	}
+	if strings.Contains(lower, "gif backend") || strings.Contains(raw, "GIF 动图生成后端尚未接入") {
+		return Meta{"E_GIF_BACKEND_UNAVAILABLE", "gif_backend_unavailable", "GIF 动图生成后端尚未接入"}
 	}
 	if strings.Contains(lower, "unsupported output") || strings.Contains(lower, "output_format") || strings.Contains(lower, "unsupported format") {
 		return Meta{"E_OUTPUT_FORMAT_UNSUPPORTED", "output_format_unsupported", "上游不支持当前输出格式"}
@@ -393,6 +398,9 @@ func CreditCostForCount(count int) int {
 }
 
 func CreditCostForRequest(req CreateRequest) int {
+	if req.Mode == ModeGIF {
+		return 0
+	}
 	return CreditCostForCount(req.Count)
 }
 

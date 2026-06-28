@@ -18,6 +18,8 @@ import (
 type RuntimeConfig struct {
 	SiteName              string   `json:"siteName"`
 	NewAPIBaseURL         string   `json:"newApiBaseUrl"`
+	SystemAPIKey          string   `json:"systemApiKey,omitempty"`
+	SystemBananaAPIKey    string   `json:"systemBananaApiKey,omitempty"`
 	PublicBaseURL         string   `json:"publicBaseUrl"`
 	DebugEnabled          bool     `json:"debugEnabled"`
 	TimeoutSec            int      `json:"timeoutSec"`
@@ -43,37 +45,41 @@ type RuntimeConfig struct {
 }
 
 type PublicRuntimeConfig struct {
-	SiteName              string              `json:"siteName"`
-	NewAPIBaseURL         string              `json:"newApiBaseUrl"`
-	PublicBaseURL         string              `json:"publicBaseUrl"`
-	DebugEnabled          bool                `json:"debugEnabled"`
-	TimeoutSec            int                 `json:"timeoutSec"`
-	Model                 string              `json:"model"`
-	ModelLocked           bool                `json:"modelLocked"`
-	EpayEnabled           bool                `json:"epayEnabled"`
-	EpayAPIURL            string              `json:"epayApiUrl"`
-	EpayPID               string              `json:"epayPid"`
-	EpayKeySet            bool                `json:"epayKeySet"`
-	EpayKeyPreview        string              `json:"epayKeyPreview"`
-	EpayMethods           []string            `json:"epayMethods"`
-	CreditPriceCents      int                 `json:"creditPriceCents"`
-	MinTopUpCredits       int                 `json:"minTopUpCredits"`
-	ReferralRewardCredits int                 `json:"referralRewardCredits"`
-	SMTPEnabled           bool                `json:"smtpEnabled"`
-	SMTPHost              string              `json:"smtpHost"`
-	SMTPPort              int                 `json:"smtpPort"`
-	SMTPUser              string              `json:"smtpUser"`
-	SMTPPasswordSet       bool                `json:"smtpPasswordSet"`
-	SMTPPasswordPreview   string              `json:"smtpPasswordPreview"`
-	SMTPFrom              string              `json:"smtpFrom"`
-	SMTPSecure            bool                `json:"smtpSecure"`
-	Email                 PublicEmailConfig   `json:"email"`
-	NewUserInitialCredits int                 `json:"newUserInitialCredits"`
-	DailyFreeCredits      int                 `json:"dailyFreeCredits"`
-	Billing               PublicBillingConfig `json:"billing"`
-	TimeoutCode           string              `json:"timeoutCode"`
-	UpdatedAt             string              `json:"updatedAt"`
-	Limits                Limits              `json:"limits"`
+	SiteName               string              `json:"siteName"`
+	NewAPIBaseURL          string              `json:"newApiBaseUrl"`
+	SystemAPIKeySet        bool                `json:"systemApiKeySet"`
+	SystemAPIKeyPreview    string              `json:"systemApiKeyPreview"`
+	SystemBananaKeySet     bool                `json:"systemBananaApiKeySet"`
+	SystemBananaKeyPreview string              `json:"systemBananaApiKeyPreview"`
+	PublicBaseURL          string              `json:"publicBaseUrl"`
+	DebugEnabled           bool                `json:"debugEnabled"`
+	TimeoutSec             int                 `json:"timeoutSec"`
+	Model                  string              `json:"model"`
+	ModelLocked            bool                `json:"modelLocked"`
+	EpayEnabled            bool                `json:"epayEnabled"`
+	EpayAPIURL             string              `json:"epayApiUrl"`
+	EpayPID                string              `json:"epayPid"`
+	EpayKeySet             bool                `json:"epayKeySet"`
+	EpayKeyPreview         string              `json:"epayKeyPreview"`
+	EpayMethods            []string            `json:"epayMethods"`
+	CreditPriceCents       int                 `json:"creditPriceCents"`
+	MinTopUpCredits        int                 `json:"minTopUpCredits"`
+	ReferralRewardCredits  int                 `json:"referralRewardCredits"`
+	SMTPEnabled            bool                `json:"smtpEnabled"`
+	SMTPHost               string              `json:"smtpHost"`
+	SMTPPort               int                 `json:"smtpPort"`
+	SMTPUser               string              `json:"smtpUser"`
+	SMTPPasswordSet        bool                `json:"smtpPasswordSet"`
+	SMTPPasswordPreview    string              `json:"smtpPasswordPreview"`
+	SMTPFrom               string              `json:"smtpFrom"`
+	SMTPSecure             bool                `json:"smtpSecure"`
+	Email                  PublicEmailConfig   `json:"email"`
+	NewUserInitialCredits  int                 `json:"newUserInitialCredits"`
+	DailyFreeCredits       int                 `json:"dailyFreeCredits"`
+	Billing                PublicBillingConfig `json:"billing"`
+	TimeoutCode            string              `json:"timeoutCode"`
+	UpdatedAt              string              `json:"updatedAt"`
+	Limits                 Limits              `json:"limits"`
 }
 
 type PublicBillingConfig struct {
@@ -109,6 +115,10 @@ type Limits struct {
 type Update struct {
 	SiteName              *string  `json:"siteName"`
 	NewAPIBaseURL         *string  `json:"newApiBaseUrl"`
+	SystemAPIKey          *string  `json:"systemApiKey"`
+	SystemBananaAPIKey    *string  `json:"systemBananaApiKey"`
+	ClearSystemAPIKey     bool     `json:"clearSystemApiKey"`
+	ClearSystemBananaKey  bool     `json:"clearSystemBananaApiKey"`
 	PublicBaseURL         *string  `json:"publicBaseUrl"`
 	DebugEnabled          *bool    `json:"debugEnabled"`
 	TimeoutSec            *int     `json:"timeoutSec"`
@@ -212,6 +222,18 @@ func (s *FileStore) Update(update Update) (RuntimeConfig, error) {
 	}
 	if update.NewAPIBaseURL != nil {
 		next.NewAPIBaseURL = strings.TrimSpace(*update.NewAPIBaseURL)
+	}
+	if update.SystemAPIKey != nil {
+		next.SystemAPIKey = strings.TrimSpace(*update.SystemAPIKey)
+	}
+	if update.SystemBananaAPIKey != nil {
+		next.SystemBananaAPIKey = strings.TrimSpace(*update.SystemBananaAPIKey)
+	}
+	if update.ClearSystemAPIKey {
+		next.SystemAPIKey = ""
+	}
+	if update.ClearSystemBananaKey {
+		next.SystemBananaAPIKey = ""
 	}
 	if update.PublicBaseURL != nil {
 		next.PublicBaseURL = strings.TrimSpace(*update.PublicBaseURL)
@@ -319,6 +341,12 @@ func merge(base RuntimeConfig, loaded RuntimeConfig) RuntimeConfig {
 	if strings.TrimSpace(loaded.PublicBaseURL) != "" {
 		base.PublicBaseURL = loaded.PublicBaseURL
 	}
+	if strings.TrimSpace(loaded.SystemAPIKey) != "" {
+		base.SystemAPIKey = loaded.SystemAPIKey
+	}
+	if strings.TrimSpace(loaded.SystemBananaAPIKey) != "" {
+		base.SystemBananaAPIKey = loaded.SystemBananaAPIKey
+	}
 	base.DebugEnabled = loaded.DebugEnabled
 	if loaded.TimeoutSec != 0 {
 		base.TimeoutSec = loaded.TimeoutSec
@@ -413,6 +441,8 @@ func validate(value RuntimeConfig) (RuntimeConfig, error) {
 	if value.TimeoutSec < config.MinTimeoutSec || value.TimeoutSec > config.MaxTimeoutSec {
 		return RuntimeConfig{}, fmt.Errorf("超时时间必须在 %d 到 %d 秒之间", config.MinTimeoutSec, config.MaxTimeoutSec)
 	}
+	systemAPIKey := strings.TrimSpace(value.SystemAPIKey)
+	systemBananaAPIKey := strings.TrimSpace(value.SystemBananaAPIKey)
 	epayAPIURL, err := normalizeOptionalHTTPURL(value.EpayAPIURL, "易支付网关地址")
 	if err != nil {
 		return RuntimeConfig{}, err
@@ -470,6 +500,8 @@ func validate(value RuntimeConfig) (RuntimeConfig, error) {
 		SiteName:              siteName,
 		NewAPIBaseURL:         baseURL,
 		PublicBaseURL:         publicBaseURL,
+		SystemAPIKey:          systemAPIKey,
+		SystemBananaAPIKey:    systemBananaAPIKey,
 		DebugEnabled:          value.DebugEnabled,
 		TimeoutSec:            value.TimeoutSec,
 		Model:                 config.DefaultModel,
@@ -604,6 +636,20 @@ func defaultEpayMethods() []string {
 	return []string{"alipay", "wxpay"}
 }
 
+func SystemAPIKeyForProvider(value RuntimeConfig, provider string) string {
+	if provider == config.BananaProvider {
+		return strings.TrimSpace(value.SystemBananaAPIKey)
+	}
+	return strings.TrimSpace(value.SystemAPIKey)
+}
+
+func HasSystemAPIKeyForProvider(value RuntimeConfig, provider string) bool {
+	return SystemAPIKeyForProvider(value, provider) != ""
+}
+
+func HasAnySystemAPIKey(value RuntimeConfig) bool {
+	return strings.TrimSpace(value.SystemAPIKey) != "" || strings.TrimSpace(value.SystemBananaAPIKey) != ""
+}
 func MaskSecret(value string) string {
 	value = strings.TrimSpace(value)
 	if value == "" {
@@ -616,6 +662,8 @@ func MaskSecret(value string) string {
 }
 
 func toPublic(value RuntimeConfig) PublicRuntimeConfig {
+	systemAPIKeyPreview := MaskSecret(value.SystemAPIKey)
+	systemBananaKeyPreview := MaskSecret(value.SystemBananaAPIKey)
 	epayKeyPreview := MaskSecret(value.EpayKey)
 	smtpPasswordPreview := MaskSecret(value.SMTPPassword)
 	billing := PublicBillingConfig{
@@ -642,36 +690,40 @@ func toPublic(value RuntimeConfig) PublicRuntimeConfig {
 		SMTPSecure:          value.SMTPSecure,
 	}
 	return PublicRuntimeConfig{
-		SiteName:              value.SiteName,
-		NewAPIBaseURL:         value.NewAPIBaseURL,
-		PublicBaseURL:         value.PublicBaseURL,
-		DebugEnabled:          value.DebugEnabled,
-		TimeoutSec:            value.TimeoutSec,
-		Model:                 config.DefaultModel,
-		ModelLocked:           true,
-		EpayEnabled:           billing.EpayEnabled,
-		EpayAPIURL:            billing.EpayAPIURL,
-		EpayPID:               billing.EpayPID,
-		EpayKeySet:            billing.EpayKeySet,
-		EpayKeyPreview:        billing.EpayKeyPreview,
-		EpayMethods:           append([]string{}, billing.EpayMethods...),
-		CreditPriceCents:      billing.CreditPriceCents,
-		MinTopUpCredits:       billing.MinTopUpCredits,
-		ReferralRewardCredits: billing.ReferralRewardCredits,
-		SMTPEnabled:           email.SMTPEnabled,
-		SMTPHost:              email.SMTPHost,
-		SMTPPort:              email.SMTPPort,
-		SMTPUser:              email.SMTPUser,
-		SMTPPasswordSet:       email.SMTPPasswordSet,
-		SMTPPasswordPreview:   email.SMTPPasswordPreview,
-		SMTPFrom:              email.SMTPFrom,
-		SMTPSecure:            email.SMTPSecure,
-		Email:                 email,
-		NewUserInitialCredits: billing.NewUserInitialCredits,
-		DailyFreeCredits:      billing.DailyFreeCredits,
-		Billing:               billing,
-		TimeoutCode:           fmt.Sprintf("TIMEOUT_%dS", value.TimeoutSec),
-		UpdatedAt:             value.UpdatedAt,
+		SiteName:               value.SiteName,
+		NewAPIBaseURL:          value.NewAPIBaseURL,
+		SystemAPIKeySet:        value.SystemAPIKey != "",
+		SystemAPIKeyPreview:    systemAPIKeyPreview,
+		SystemBananaKeySet:     value.SystemBananaAPIKey != "",
+		SystemBananaKeyPreview: systemBananaKeyPreview,
+		PublicBaseURL:          value.PublicBaseURL,
+		DebugEnabled:           value.DebugEnabled,
+		TimeoutSec:             value.TimeoutSec,
+		Model:                  config.DefaultModel,
+		ModelLocked:            true,
+		EpayEnabled:            billing.EpayEnabled,
+		EpayAPIURL:             billing.EpayAPIURL,
+		EpayPID:                billing.EpayPID,
+		EpayKeySet:             billing.EpayKeySet,
+		EpayKeyPreview:         billing.EpayKeyPreview,
+		EpayMethods:            append([]string{}, billing.EpayMethods...),
+		CreditPriceCents:       billing.CreditPriceCents,
+		MinTopUpCredits:        billing.MinTopUpCredits,
+		ReferralRewardCredits:  billing.ReferralRewardCredits,
+		SMTPEnabled:            email.SMTPEnabled,
+		SMTPHost:               email.SMTPHost,
+		SMTPPort:               email.SMTPPort,
+		SMTPUser:               email.SMTPUser,
+		SMTPPasswordSet:        email.SMTPPasswordSet,
+		SMTPPasswordPreview:    email.SMTPPasswordPreview,
+		SMTPFrom:               email.SMTPFrom,
+		SMTPSecure:             email.SMTPSecure,
+		Email:                  email,
+		NewUserInitialCredits:  billing.NewUserInitialCredits,
+		DailyFreeCredits:       billing.DailyFreeCredits,
+		Billing:                billing,
+		TimeoutCode:            fmt.Sprintf("TIMEOUT_%dS", value.TimeoutSec),
+		UpdatedAt:              value.UpdatedAt,
 		Limits: Limits{
 			MinTimeoutSec: config.MinTimeoutSec,
 			MaxTimeoutSec: config.MaxTimeoutSec,

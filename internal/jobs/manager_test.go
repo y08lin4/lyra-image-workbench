@@ -6,10 +6,15 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"image"
+	"image/color"
+	"image/png"
 	"io"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync/atomic"
@@ -130,6 +135,101 @@ func TestManagerCreateReturnsQueuedAndCompletesInBackground(t *testing.T) {
 	}
 }
 
+func TestManagerSendsExpectedImage2SizesForAllRatiosAndResolutions(t *testing.T) {
+	type upstreamRequest struct {
+		size string
+	}
+	captured := make(chan upstreamRequest, 63)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/images/generations" {
+			t.Errorf("unexpected path: %s", r.URL.Path)
+			http.Error(w, "unexpected path", http.StatusNotFound)
+			return
+		}
+		var payload map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Errorf("decode body: %v", err)
+			http.Error(w, "bad json", http.StatusBadRequest)
+			return
+		}
+		size, _ := payload["size"].(string)
+		captured <- upstreamRequest{size: size}
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": []map[string]string{{
+			"b64_json": base64.StdEncoding.EncodeToString([]byte("image")),
+			"size":     size,
+		}}})
+	}))
+	defer server.Close()
+	env := newManagerTestEnv(t, server.URL+"/v1")
+
+	cases := []struct {
+		ratio      string
+		resolution string
+		wantSize   string
+	}{
+		{ratio: "1:1", resolution: "standard", wantSize: "1024x1024"},
+		{ratio: "2:3", resolution: "standard", wantSize: "1024x1536"},
+		{ratio: "3:2", resolution: "standard", wantSize: "1536x1024"},
+		{ratio: "3:4", resolution: "standard", wantSize: "768x1024"},
+		{ratio: "4:3", resolution: "standard", wantSize: "1024x768"},
+		{ratio: "9:16", resolution: "standard", wantSize: "1008x1792"},
+		{ratio: "16:9", resolution: "standard", wantSize: "1792x1008"},
+		{ratio: "1:1", resolution: "2k", wantSize: "2048x2048"},
+		{ratio: "2:3", resolution: "2k", wantSize: "1344x2016"},
+		{ratio: "3:2", resolution: "2k", wantSize: "2016x1344"},
+		{ratio: "3:4", resolution: "2k", wantSize: "1536x2048"},
+		{ratio: "4:3", resolution: "2k", wantSize: "2048x1536"},
+		{ratio: "9:16", resolution: "2k", wantSize: "1152x2048"},
+		{ratio: "16:9", resolution: "2k", wantSize: "2048x1152"},
+		{ratio: "1:1", resolution: "4k", wantSize: "2880x2880"},
+		{ratio: "2:3", resolution: "4k", wantSize: "2336x3504"},
+		{ratio: "3:2", resolution: "4k", wantSize: "3504x2336"},
+		{ratio: "3:4", resolution: "4k", wantSize: "2448x3264"},
+		{ratio: "4:3", resolution: "4k", wantSize: "3264x2448"},
+		{ratio: "9:16", resolution: "4k", wantSize: "2160x3840"},
+		{ratio: "16:9", resolution: "4k", wantSize: "3840x2160"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.resolution+"_"+strings.ReplaceAll(tc.ratio, ":", "x"), func(t *testing.T) {
+			for run := 1; run <= 3; run++ {
+				t.Run(fmt.Sprintf("run_%d", run), func(t *testing.T) {
+					created, err := env.manager.Create(env.token, CreateRequest{
+						RuntimeSecrets: RuntimeSecrets{APIKey: "sk-test"},
+						Mode:           ModeTextToImage,
+						Prompt:         "size mapping",
+						Ratio:          tc.ratio,
+						Resolution:     tc.resolution,
+						OutputFormat:   "png",
+						Count:          1,
+						Concurrency:    1,
+					})
+					if err != nil {
+						t.Fatalf("Create() error = %v", err)
+					}
+					if created.Size != tc.wantSize {
+						t.Fatalf("created.Size = %q, want %q", created.Size, tc.wantSize)
+					}
+					final := waitForJobStatus(t, env.store, env.token, created.ID, StatusSucceeded, 3*time.Second)
+					if len(final.Results) != 1 || !final.Results[0].OK {
+						t.Fatalf("unexpected final result: %+v", final.Results)
+					}
+					if final.Results[0].ActualSize != tc.wantSize {
+						t.Fatalf("actual size = %q, want %q", final.Results[0].ActualSize, tc.wantSize)
+					}
+					select {
+					case request := <-captured:
+						if request.size != tc.wantSize {
+							t.Fatalf("upstream size = %q, want %q", request.size, tc.wantSize)
+						}
+					case <-time.After(2 * time.Second):
+						t.Fatal("timed out waiting for captured upstream request")
+					}
+				})
+			}
+		})
+	}
+}
 func TestManagerUsesCloudKeyWhenRuntimeKeyMissing(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got := r.Header.Get("Authorization"); got != "Bearer sk-cloud" {
@@ -350,6 +450,61 @@ func TestManagerSnapshotsImageReferencesForSubmittedTask(t *testing.T) {
 	}
 	if editCalls.Load() != 1 {
 		t.Fatalf("expected one edit call, got %d", editCalls.Load())
+	}
+}
+
+func TestManagerGeneratesGIFWithoutUpstream(t *testing.T) {
+	var requests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		t.Fatalf("GIF task should not call upstream, got %s", r.URL.Path)
+	}))
+	defer server.Close()
+	env := newManagerTestEnv(t, server.URL)
+	reference := savePNGReference(t, env.uploads, env.token)
+
+	created, err := env.manager.Create(env.token, CreateRequest{
+		Mode:         ModeGIF,
+		Prompt:       "animate hair with gentle wind",
+		FramePrompts: []string{"motion strength: standard", "loop rhythm: smooth"},
+		OutputFormat: "gif",
+		Count:        3,
+		Concurrency:  2,
+		UploadIDs:    []string{reference.ID},
+	})
+	if err != nil {
+		t.Fatalf("Create() GIF task error = %v", err)
+	}
+	if created.Mode != ModeGIF || created.OutputFormat != "gif" || created.Count != 1 || created.ConsumedCredits != 0 {
+		t.Fatalf("unexpected GIF create fields: %+v", created)
+	}
+	if len(created.References) != 1 {
+		t.Fatalf("GIF task should snapshot one reference: %+v", created)
+	}
+	if err := env.uploads.DeleteReferenceImage(env.token, reference.ID); err != nil {
+		t.Fatalf("DeleteReferenceImage() error = %v", err)
+	}
+
+	final := waitForJobStatus(t, env.store, env.token, created.ID, StatusSucceeded, 3*time.Second)
+	if requests.Load() != 0 {
+		t.Fatalf("GIF task should not call upstream, got %d requests", requests.Load())
+	}
+	if len(final.Results) != 1 || !final.Results[0].OK || final.Results[0].Mime != "image/gif" || final.Results[0].OutputFormat != "gif" {
+		t.Fatalf("unexpected GIF final result: %+v", final.Results)
+	}
+	path, mime, err := env.output.Resolve(env.token, final.Results[0].OutputDate, final.Results[0].OutputFileName)
+	if err != nil {
+		t.Fatalf("Resolve() GIF output error = %v", err)
+	}
+	if mime != "image/gif" || filepath.Ext(path) != ".gif" {
+		t.Fatalf("unexpected GIF output path/mime: %s %s", path, mime)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile() GIF output error = %v", err)
+	}
+	if !bytes.HasPrefix(data, []byte("GIF")) {
+		t.Fatalf("saved GIF output has unexpected prefix: %x", data[:min(8, len(data))])
 	}
 }
 
@@ -645,7 +800,7 @@ func savePNGReference(t *testing.T, store *uploads.Store, token string) uploads.
 	if err != nil {
 		t.Fatalf("CreateFormFile() error = %v", err)
 	}
-	if _, err := part.Write(append(pngHeader(), []byte("reference")...)); err != nil {
+	if _, err := part.Write(validPNGBytes(t)); err != nil {
 		t.Fatalf("write reference image: %v", err)
 	}
 	if err := writer.Close(); err != nil {
@@ -668,6 +823,21 @@ func savePNGReference(t *testing.T, store *uploads.Store, token string) uploads.
 
 func pngHeader() []byte {
 	return []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'}
+}
+
+func validPNGBytes(t *testing.T) []byte {
+	t.Helper()
+	img := image.NewRGBA(image.Rect(0, 0, 40, 24))
+	for y := 0; y < 24; y++ {
+		for x := 0; x < 40; x++ {
+			img.SetRGBA(x, y, color.RGBA{R: uint8(x * 5), G: uint8(y * 8), B: 180, A: 255})
+		}
+	}
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, img); err != nil {
+		t.Fatalf("png.Encode() error = %v", err)
+	}
+	return buf.Bytes()
 }
 
 func closeOnce(ch chan struct{}) {

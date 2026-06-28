@@ -49,11 +49,15 @@ func TestCleanupConservativelyRemovesOnlyExpiredTemporaryAssets(t *testing.T) {
 
 	oldRefDir := filepath.Join(spaceDir, "job_refs", "img_old")
 	activeRefDir := filepath.Join(spaceDir, "job_refs", "img_active")
+	squareRefDir := filepath.Join(spaceDir, "job_refs", "img_square")
 	if err := os.MkdirAll(oldRefDir, 0o700); err != nil {
 		t.Fatalf("mkdir old refs: %v", err)
 	}
 	if err := os.MkdirAll(activeRefDir, 0o700); err != nil {
 		t.Fatalf("mkdir active refs: %v", err)
+	}
+	if err := os.MkdirAll(squareRefDir, 0o700); err != nil {
+		t.Fatalf("mkdir square refs: %v", err)
 	}
 
 	mustSaveJob(t, jobStore, jobs.Job{
@@ -139,7 +143,30 @@ func TestCleanupConservativelyRemovesOnlyExpiredTemporaryAssets(t *testing.T) {
 	assertExists(t, activeUploadMeta)
 	assertMissing(t, oldRefDir)
 	assertExists(t, activeRefDir)
+	assertExists(t, squareRefDir)
 	assertExists(t, squareImage)
+}
+
+func TestCleanupOutputDateDirRejectsOutsideOutputRoot(t *testing.T) {
+	root := t.TempDir()
+	outputRoot := filepath.Join(root, "outputs")
+	outsideDir := filepath.Join(root, "outside", "2026-05-01")
+	now := time.Date(2026, 6, 27, 12, 0, 0, 0, time.Local)
+	outsideFile := writeOldFile(t, filepath.Join(outsideDir, "outside.png"), "outside", now.AddDate(0, 0, -40))
+
+	guard, err := newPathGuard(outputRoot)
+	if err != nil {
+		t.Fatalf("newPathGuard() error = %v", err)
+	}
+	report := Report{}
+	err = cleanupOutputDateDir(guard, outsideDir, "space", "2026-05-01", now.Add(-DefaultTTL), jobIndex{}, &report)
+	if err == nil {
+		t.Fatalf("cleanupOutputDateDir() succeeded for path outside output root")
+	}
+	if report.OutputFilesDeleted != 0 {
+		t.Fatalf("unexpected deleted count for rejected path: %+v", report)
+	}
+	assertExists(t, outsideFile)
 }
 
 func mustSaveJob(t *testing.T, store *jobs.Store, job jobs.Job) {

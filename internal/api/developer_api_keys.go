@@ -6,16 +6,18 @@ import (
 	"strings"
 
 	"github.com/y08lin4/lyra-image-workbench/internal/apikeys"
+	"github.com/y08lin4/lyra-image-workbench/internal/settings"
 	"github.com/y08lin4/lyra-image-workbench/internal/spaceconfig"
 )
 
 type DeveloperAPIKeyHandler struct {
 	store       *apikeys.Store
 	spaceConfig *spaceconfig.Store
+	settings    *settings.FileStore
 }
 
-func NewDeveloperAPIKeyHandler(store *apikeys.Store, spaceConfigStore *spaceconfig.Store) DeveloperAPIKeyHandler {
-	return DeveloperAPIKeyHandler{store: store, spaceConfig: spaceConfigStore}
+func NewDeveloperAPIKeyHandler(store *apikeys.Store, spaceConfigStore *spaceconfig.Store, settingsStore *settings.FileStore) DeveloperAPIKeyHandler {
+	return DeveloperAPIKeyHandler{store: store, spaceConfig: spaceConfigStore, settings: settingsStore}
 }
 
 func (h DeveloperAPIKeyHandler) List(w http.ResponseWriter, r *http.Request) {
@@ -46,8 +48,8 @@ func (h DeveloperAPIKeyHandler) Create(w http.ResponseWriter, r *http.Request) {
 		writeSpaceError(w, err)
 		return
 	}
-	if !hasAnyCloudUpstreamKey(cfg) {
-		writeError(w, http.StatusBadRequest, "UPSTREAM_KEY_REQUIRED", "请先在设置中确认保存云端上游 Key，再生成 Bearer API Key")
+	if !hasAnyCloudUpstreamKey(cfg) && !settings.HasAnySystemAPIKey(h.settings.Get()) {
+		writeError(w, http.StatusBadRequest, "UPSTREAM_KEY_REQUIRED", "请先由管理员配置系统上游 Key，或在设置中保存个人云端上游 Key，再生成 Bearer API Key")
 		return
 	}
 	record, secret, err := h.store.Create(payload.Name, scope.username, scope.storageToken)

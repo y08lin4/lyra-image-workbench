@@ -43,8 +43,8 @@ func TestV1ImagesGenerationsCreatesImageTask(t *testing.T) {
 	if task.Source != jobs.JobSourceAPI {
 		t.Fatalf("task source=%q, want %q", task.Source, jobs.JobSourceAPI)
 	}
-	if task.Count != 2 || task.Concurrency != 2 || task.ConsumedCredits != 2 || response.ConsumedCredits != 2 {
-		t.Fatalf("unexpected task count/concurrency/credits: task=%+v response=%+v", task, response)
+	if task.Count != 2 || task.Concurrency != 2 || task.ConsumedCredits != 0 || response.ConsumedCredits != 0 {
+		t.Fatalf("personal-key task should keep count/concurrency and consume zero credits: task=%+v response=%+v", task, response)
 	}
 	if task.Ratio != "3:2" || task.Resolution != "standard" || task.Size != "1536x1024" {
 		t.Fatalf("unexpected size mapping: %+v", task)
@@ -52,7 +52,7 @@ func TestV1ImagesGenerationsCreatesImageTask(t *testing.T) {
 	if task.Quality != "high" || task.OutputFormat != "webp" {
 		t.Fatalf("unexpected output settings: %+v", task)
 	}
-	requireUserCredits(t, env, "testuser01", 2)
-	requireLatestTaskCharge(t, env, "testuser01", task.ID, -2, 2)
+	requireUserCredits(t, env, "testuser01", 4)
+	requireNoTaskCharge(t, env, "testuser01", task.ID)
 	waitForTestTaskFinal(t, router, token, task.ID)
 }

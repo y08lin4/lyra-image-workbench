@@ -236,3 +236,51 @@ func TestFileStoreSMTPSettingsMaskAndClearPassword(t *testing.T) {
 		t.Fatalf("smtp password should be cleared: %+v", cleared)
 	}
 }
+
+func TestFileStoreSystemUpstreamKeysMaskAndClear(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.local.json")
+	store, err := NewFileStore(path, RuntimeConfig{
+		NewAPIBaseURL: config.DefaultNewAPIBaseURL,
+		TimeoutSec:    config.DefaultTimeoutSec,
+		Model:         config.DefaultModel,
+	})
+	if err != nil {
+		t.Fatalf("NewFileStore() error = %v", err)
+	}
+
+	imageKey := "sk-system-image-1234567890"
+	bananaKey := "sk-system-banana-0987654321"
+	updated, err := store.Update(Update{SystemAPIKey: &imageKey, SystemBananaAPIKey: &bananaKey})
+	if err != nil {
+		t.Fatalf("Update(system keys) error = %v", err)
+	}
+	if updated.SystemAPIKey != imageKey || updated.SystemBananaAPIKey != bananaKey {
+		t.Fatalf("system keys not persisted privately: %+v", updated)
+	}
+	public := store.Public()
+	if !public.SystemAPIKeySet || !public.SystemBananaKeySet || public.SystemAPIKeyPreview == "" || public.SystemBananaKeyPreview == "" {
+		t.Fatalf("system key public status invalid: %+v", public)
+	}
+	payload, err := json.Marshal(public)
+	if err != nil {
+		t.Fatalf("Marshal public config: %v", err)
+	}
+	if strings.Contains(string(payload), imageKey) || strings.Contains(string(payload), bananaKey) || strings.Contains(string(payload), `"systemApiKey":`) || strings.Contains(string(payload), `"systemBananaApiKey":`) {
+		t.Fatalf("public config leaked system upstream key: %s", payload)
+	}
+
+	reopened, err := NewFileStore(path, DefaultsFromConfig(config.Load()))
+	if err != nil {
+		t.Fatalf("reopen NewFileStore() error = %v", err)
+	}
+	if reopened.Get().SystemAPIKey != imageKey || reopened.Get().SystemBananaAPIKey != bananaKey {
+		t.Fatalf("private system keys not persisted")
+	}
+	if _, err := reopened.Update(Update{ClearSystemAPIKey: true, ClearSystemBananaKey: true}); err != nil {
+		t.Fatalf("Update(clear system keys) error = %v", err)
+	}
+	cleared := reopened.Public()
+	if cleared.SystemAPIKeySet || cleared.SystemBananaKeySet || cleared.SystemAPIKeyPreview != "" || cleared.SystemBananaKeyPreview != "" {
+		t.Fatalf("system keys should be cleared: %+v", cleared)
+	}
+}

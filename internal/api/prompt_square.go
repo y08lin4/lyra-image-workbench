@@ -5,6 +5,7 @@ import (
 	"errors"
 	"mime/multipart"
 	"net/http"
+	"path/filepath"
 	"strings"
 
 	"github.com/y08lin4/lyra-image-workbench/internal/jobs"
@@ -90,10 +91,23 @@ func (h PromptSquareHandler) Create(w http.ResponseWriter, r *http.Request) {
 }
 
 type promptSquareFromResultRequest struct {
-	TaskID     string   `json:"taskId"`
-	ImageIndex int      `json:"imageIndex"`
-	Title      string   `json:"title"`
-	Tags       []string `json:"tags"`
+	TaskID             string                            `json:"taskId"`
+	ImageIndex         int                               `json:"imageIndex"`
+	Title              string                            `json:"title"`
+	Tags               []string                          `json:"tags"`
+	ReferenceUploadIDs []string                          `json:"referenceUploadIds"`
+	References         []promptSquareFromResultReference `json:"references"`
+	ReferenceUsageNote string                            `json:"referenceUsageNote"`
+}
+
+type promptSquareFromResultReference struct {
+	UploadID       string `json:"uploadId"`
+	SourceUploadID string `json:"sourceUploadId"`
+	OriginalName   string `json:"originalName"`
+	FileName       string `json:"fileName"`
+	Mime           string `json:"mime"`
+	Size           int64  `json:"size"`
+	UsageNote      string `json:"usageNote"`
 }
 
 func (h PromptSquareHandler) FromResult(w http.ResponseWriter, r *http.Request) {
@@ -133,22 +147,30 @@ func (h PromptSquareHandler) FromResult(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusNotFound, "PROMPT_SQUARE_RESULT_IMAGE_NOT_FOUND", "任务图片文件不存在")
 		return
 	}
+	references, err := promptSquareReferencesForSubmit(job, payload, spaceToken)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "PROMPT_SQUARE_REFERENCE_INVALID", "任务参考图无效")
+		return
+	}
 
 	username := promptSquareUsername(r)
 	item, err := h.store.SubmitFromResult(promptsquare.SubmitFromResultRequest{
-		Title:             payload.Title,
-		Prompt:            firstPromptSquareText(result.RevisedPrompt, job.Prompt),
-		Model:             job.Model,
-		Ratio:             job.Ratio,
-		ActualSize:        result.ActualSize,
-		Quality:           firstPromptSquareText(result.ActualQuality, job.Quality),
-		OutputFormat:      firstPromptSquareText(result.OutputFormat, job.OutputFormat),
-		Tags:              payload.Tags,
-		Author:            username,
-		AuthorDisplayName: promptSquareDisplayName(r, username),
-		SourceTaskID:      job.ID,
-		SourceImagePath:   path,
-		SourceImageMime:   firstPromptSquareText(mime, result.Mime),
+		Title:              payload.Title,
+		Prompt:             firstPromptSquareText(result.RevisedPrompt, job.Prompt),
+		Model:              job.Model,
+		Ratio:              job.Ratio,
+		ActualSize:         result.ActualSize,
+		Quality:            firstPromptSquareText(result.ActualQuality, job.Quality),
+		OutputFormat:       firstPromptSquareText(result.OutputFormat, job.OutputFormat),
+		Tags:               payload.Tags,
+		Author:             username,
+		AuthorDisplayName:  promptSquareDisplayName(r, username),
+		SourceTaskID:       job.ID,
+		SourceImagePath:    path,
+		SourceImageMime:    firstPromptSquareText(mime, result.Mime),
+		ReferenceUploadIDs: payload.ReferenceUploadIDs,
+		References:         references,
+		ReferenceUsageNote: payload.ReferenceUsageNote,
 	})
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "PROMPT_SQUARE_FROM_RESULT_FAILED", err.Error())
@@ -210,6 +232,89 @@ func (h PromptSquareHandler) resolveResultImage(job jobs.Job, result jobs.Result
 		return h.output.Resolve(job.SpaceToken, result.OutputDate, result.OutputFileName)
 	}
 	return h.output.ResolveURL(result.ImageURL)
+}
+
+func promptSquareReferencesForSubmit(job jobs.Job, payload promptSquareFromResultRequest, spaceToken string) ([]promptsquare.Reference, error) {
+	if len(job.References) == 0 {
+		return fallbackPromptSquareReferences(payload), nil
+	}
+	usageByUpload := map[string]string{}
+	usageByFile := map[string]string{}
+	for _, ref := range payload.References {
+		usage := strings.TrimSpace(ref.UsageNote)
+		if usage == "" {
+			continue
+		}
+		if id := firstPromptSquareText(ref.UploadID, ref.SourceUploadID); id != "" {
+			usageByUpload[id] = usage
+		}
+		if file := strings.TrimSpace(ref.FileName); file != "" {
+			usageByFile[filepath.ToSlash(filepath.Clean(filepath.FromSlash(file)))] = usage
+		}
+	}
+	sourceSpaceToken := firstPromptSquareText(job.SpaceToken, spaceToken)
+	out := make([]promptsquare.Reference, 0, len(job.References))
+	for _, ref := range job.References {
+		rel, err := cleanPromptSquareJobReferencePath(job.ID, ref.FileName)
+		if err != nil {
+			return nil, err
+		}
+		usage := firstPromptSquareText(usageByUpload[ref.UploadID], usageByFile[filepath.ToSlash(rel)], payload.ReferenceUsageNote)
+		out = append(out, promptsquare.Reference{
+			OriginalName:   ref.OriginalName,
+			Mime:           ref.Mime,
+			Size:           ref.Size,
+			UsageNote:      usage,
+			SourceUploadID: ref.UploadID,
+			SourceTaskID:   job.ID,
+			SourcePath:     filepath.ToSlash(filepath.Join("spaces", sourceSpaceToken, rel)),
+		})
+	}
+	return out, nil
+}
+
+func fallbackPromptSquareReferences(payload promptSquareFromResultRequest) []promptsquare.Reference {
+	seen := map[string]bool{}
+	out := make([]promptsquare.Reference, 0, len(payload.References)+len(payload.ReferenceUploadIDs))
+	add := func(ref promptsquare.Reference) {
+		key := firstPromptSquareText(ref.SourceUploadID, ref.OriginalName)
+		if key == "" || seen[key] || len(out) >= 12 {
+			return
+		}
+		seen[key] = true
+		out = append(out, ref)
+	}
+	for _, ref := range payload.References {
+		add(promptsquare.Reference{
+			OriginalName:   strings.TrimSpace(ref.OriginalName),
+			Mime:           strings.TrimSpace(ref.Mime),
+			Size:           ref.Size,
+			UsageNote:      firstPromptSquareText(ref.UsageNote, payload.ReferenceUsageNote),
+			SourceUploadID: firstPromptSquareText(ref.UploadID, ref.SourceUploadID),
+		})
+	}
+	for _, id := range payload.ReferenceUploadIDs {
+		add(promptsquare.Reference{
+			UsageNote:      strings.TrimSpace(payload.ReferenceUsageNote),
+			SourceUploadID: strings.TrimSpace(id),
+		})
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func cleanPromptSquareJobReferencePath(jobID string, value string) (string, error) {
+	rel := filepath.Clean(filepath.FromSlash(strings.TrimSpace(value)))
+	if rel == "." || rel == "" || filepath.IsAbs(rel) || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", errors.New("参考图快照路径无效")
+	}
+	prefix := filepath.Join("job_refs", strings.TrimSpace(jobID))
+	if prefix == "job_refs" || rel != prefix && !strings.HasPrefix(rel, prefix+string(filepath.Separator)) {
+		return "", errors.New("参考图快照路径无效")
+	}
+	return rel, nil
 }
 
 func promptSquareResultByIndex(job jobs.Job, index int) (jobs.Result, bool) {

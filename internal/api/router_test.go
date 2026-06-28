@@ -72,6 +72,38 @@ func TestConfigAPIOptionallyPersistsCloudKeys(t *testing.T) {
 	}
 }
 
+func TestUserConfigShowsSystemKeyStatusWithoutPreview(t *testing.T) {
+	env := newTestAPIEnv(t)
+	token := createTestSession(t, env.Router)
+	imageKey := "sk-system-config-preview-hidden-123456"
+	bananaKey := "sk-system-banana-preview-hidden-123456"
+	if _, err := env.Settings.Update(settings.Update{SystemAPIKey: &imageKey, SystemBananaAPIKey: &bananaKey}); err != nil {
+		t.Fatalf("settings.Update() system keys error = %v", err)
+	}
+
+	body := doJSON(t, env.Router, http.MethodGet, "/api/config", token, nil)
+	if !strings.Contains(body, `"systemApiKeySet":true`) || !strings.Contains(body, `"systemBananaApiKeySet":true`) {
+		t.Fatalf("user config missing system key status: %s", body)
+	}
+	if strings.Contains(body, imageKey) || strings.Contains(body, bananaKey) || strings.Contains(body, "systemApiKeyPreview") || strings.Contains(body, "systemBananaApiKeyPreview") {
+		t.Fatalf("user config leaked system key preview: %s", body)
+	}
+}
+
+func TestDeveloperAPIKeysAllowSystemUpstreamKey(t *testing.T) {
+	env := newTestAPIEnv(t)
+	token := createTestSession(t, env.Router)
+	systemKey := "sk-system-for-developer-key-123456"
+	if _, err := env.Settings.Update(settings.Update{SystemAPIKey: &systemKey}); err != nil {
+		t.Fatalf("settings.Update() system key error = %v", err)
+	}
+
+	body := doJSON(t, env.Router, http.MethodPost, "/api/developer/api-keys", token, map[string]string{"name": "system sdk"})
+	if strings.Contains(body, systemKey) || !strings.Contains(body, "lyra_sk_") {
+		t.Fatalf("developer key with system upstream invalid or leaked upstream key: %s", body)
+	}
+}
+
 func TestDeveloperAPIKeysRequireCloudUpstreamKey(t *testing.T) {
 	router := newTestRouter(t)
 	token := createTestSession(t, router)
@@ -169,11 +201,11 @@ func TestV1ImageTasksUseBearerAndCloudKey(t *testing.T) {
 	if err := json.Unmarshal([]byte(body), &taskResponse); err != nil || taskResponse.Task.ID == "" {
 		t.Fatalf("decode v1 task response error=%v body=%s", err, body)
 	}
-	if taskResponse.TaskID != taskResponse.Task.ID || taskResponse.Task.ConsumedCredits != 1 || taskResponse.ConsumedCredits != 1 {
-		t.Fatalf("v1 create task id/credits mismatch: %+v", taskResponse)
+	if taskResponse.TaskID != taskResponse.Task.ID || taskResponse.Task.ConsumedCredits != 0 || taskResponse.ConsumedCredits != 0 {
+		t.Fatalf("v1 personal-key task should not consume credits: %+v", taskResponse)
 	}
-	requireUserCredits(t, env, "testuser01", 2)
-	requireLatestTaskCharge(t, env, "testuser01", taskResponse.Task.ID, -1, 2)
+	requireUserCredits(t, env, "testuser01", 3)
+	requireNoTaskCharge(t, env, "testuser01", taskResponse.Task.ID)
 
 	code, body = doJSONStatus(t, router, http.MethodGet, "/v1/image-tasks/"+taskResponse.Task.ID, "", nil, "Bearer "+created.Secret)
 	if code != http.StatusOK || !strings.Contains(body, taskResponse.Task.ID) {
@@ -186,7 +218,30 @@ func TestV1ImageTasksUseBearerAndCloudKey(t *testing.T) {
 	if code != http.StatusBadRequest || !strings.Contains(body, "UPSTREAM_KEY_REQUIRED") {
 		t.Fatalf("v1 create after clearing cloud key code=%d body=%s", code, body)
 	}
+	requireUserCredits(t, env, "testuser01", 3)
+
+	systemKey := "sk-system-v1-charge-1234567890"
+	if _, err := env.Settings.Update(settings.Update{SystemAPIKey: &systemKey}); err != nil {
+		t.Fatalf("settings.Update() system key error = %v", err)
+	}
+	code, body = doJSONStatus(t, router, http.MethodPost, "/v1/image-tasks", "", createPayload, "Bearer "+created.Secret)
+	if code != http.StatusOK || !strings.Contains(body, `"status":"queued"`) {
+		t.Fatalf("v1 create with system key code=%d body=%s", code, body)
+	}
+	var systemTaskResponse struct {
+		Task            jobs.Job `json:"task"`
+		TaskID          string   `json:"taskId"`
+		ConsumedCredits int      `json:"consumedCredits"`
+	}
+	if err := json.Unmarshal([]byte(body), &systemTaskResponse); err != nil || systemTaskResponse.Task.ID == "" {
+		t.Fatalf("decode v1 system-key task response error=%v body=%s", err, body)
+	}
+	if systemTaskResponse.Task.ConsumedCredits != 1 || systemTaskResponse.ConsumedCredits != 1 {
+		t.Fatalf("v1 system-key task should consume credits: %+v", systemTaskResponse)
+	}
 	requireUserCredits(t, env, "testuser01", 2)
+	requireLatestTaskCharge(t, env, "testuser01", systemTaskResponse.Task.ID, -1, 2)
+	waitForTestTaskFinal(t, router, token, systemTaskResponse.Task.ID)
 
 	_ = doJSON(t, router, http.MethodDelete, "/api/developer/api-keys/"+created.APIKey.ID, token, nil)
 	code, body = doJSONStatus(t, router, http.MethodGet, "/v1/image-tasks/"+taskResponse.Task.ID, "", nil, "Bearer "+created.Secret)

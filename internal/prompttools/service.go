@@ -454,8 +454,11 @@ func (s *Service) apiKey(spaceToken string, runtimeAPIKey string) (string, error
 	if apiKey == "" {
 		apiKey = strings.TrimSpace(cfg.APIKey)
 	}
+	if apiKey == "" && s.settings != nil {
+		apiKey = strings.TrimSpace(s.settings.Get().SystemAPIKey)
+	}
 	if apiKey == "" {
-		return "", errors.New("codex-key is not configured; save it locally or upload it to cloud after enabling account protection")
+		return "", errors.New("codex-key is not configured; save it locally, upload it to cloud, or ask an admin to configure the system upstream key")
 	}
 	return apiKey, nil
 }

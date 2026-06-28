@@ -6,6 +6,9 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -120,6 +123,137 @@ func TestPromptSquareRoutesUseAuthenticatedUserAndResultDependencies(t *testing.
 	listBody := doJSON(t, env.Router, http.MethodGet, "/api/prompt-square/items", token, nil)
 	if !strings.Contains(listBody, legacyItemID) || !strings.Contains(listBody, fromResultID) {
 		t.Fatalf("legacy list response missing prompt-square items: %s", listBody)
+	}
+}
+
+func TestPromptSquareFromResultCopiesReferenceSnapshotsPermanently(t *testing.T) {
+	env := newTestAPIEnv(t)
+	token := createTestSession(t, env.Router)
+	session, ok := env.Users.Current(token)
+	if !ok {
+		t.Fatal("test session missing")
+	}
+
+	jobID := "img_prompt_square_refs"
+	saved, err := env.Output.Save(session.StorageToken, jobID, 0, []byte("prompt-square-result-with-reference"), "image/png")
+	if err != nil {
+		t.Fatalf("Output.Save() error = %v", err)
+	}
+
+	spaceDir, err := env.Spaces.SpaceDir(session.StorageToken)
+	if err != nil {
+		t.Fatalf("SpaceDir() error = %v", err)
+	}
+	refDir := filepath.Join(spaceDir, "job_refs", jobID)
+	if err := os.MkdirAll(refDir, 0o700); err != nil {
+		t.Fatalf("MkdirAll(refDir) error = %v", err)
+	}
+	refData := []byte("prompt-square-permanent-reference")
+	refRel := filepath.ToSlash(filepath.Join("job_refs", jobID, "01-ref.png"))
+	if err := os.WriteFile(filepath.Join(refDir, "01-ref.png"), refData, 0o600); err != nil {
+		t.Fatalf("write job reference: %v", err)
+	}
+
+	result := jobs.NewResult(0, jobs.StatusSucceeded, "")
+	result.ImageURL = saved.URL
+	result.OutputDate = saved.Date
+	result.OutputFileName = saved.FileName
+	result.Mime = saved.Mime
+	result.RevisedPrompt = "reference route prompt"
+	result.ActualSize = "1024x1024"
+	result.OutputFormat = "png"
+	now := time.Now()
+	job := jobs.Job{
+		ID:           jobID,
+		SpaceToken:   session.StorageToken,
+		Provider:     "image-2",
+		Model:        "gpt-image-2",
+		Mode:         jobs.ModeImageToImage,
+		Prompt:       "reference route original prompt",
+		Ratio:        "1:1",
+		Resolution:   "standard",
+		Quality:      "high",
+		OutputFormat: "png",
+		Count:        1,
+		Concurrency:  1,
+		Progress:     100,
+		References: []jobs.ReferenceSnapshot{{
+			UploadID:     "upload-ref-01",
+			OriginalName: "pose.png",
+			FileName:     refRel,
+			Mime:         "image/png",
+			Size:         int64(len(refData)),
+		}},
+		Results:    []jobs.Result{result},
+		CreatedAt:  now,
+		UpdatedAt:  now,
+		FinishedAt: now,
+	}
+	jobs.ApplyStatus(&job, jobs.StatusSucceeded)
+	jobs.ApplyStage(&job, jobs.StageSucceeded)
+	if err := env.Jobs.Save(job); err != nil {
+		t.Fatalf("Jobs.Save() error = %v", err)
+	}
+
+	body := doJSON(t, env.Router, http.MethodPost, "/api/prompt-square/from-result", token, map[string]any{
+		"taskId":             job.ID,
+		"imageIndex":         0,
+		"title":              "reference from result route",
+		"tags":               []string{"refs"},
+		"referenceUploadIds": []string{"upload-ref-01"},
+		"referenceUsageNote": "pose and lighting",
+		"references": []map[string]any{{
+			"uploadId":  "upload-ref-01",
+			"fileName":  refRel,
+			"usageNote": "pose and lighting",
+		}},
+	})
+	var payload struct {
+		Item struct {
+			ReferenceUploadIDs []string `json:"referenceUploadIds"`
+			ReferenceUsageNote string   `json:"referenceUsageNote"`
+			References         []struct {
+				ReferenceID    string `json:"referenceId"`
+				ImageURL       string `json:"imageUrl"`
+				ThumbnailURL   string `json:"thumbnailUrl"`
+				OriginalName   string `json:"originalName"`
+				Mime           string `json:"mime"`
+				Size           int64  `json:"size"`
+				UsageNote      string `json:"usageNote"`
+				SourceUploadID string `json:"sourceUploadId"`
+				SourceTaskID   string `json:"sourceTaskId"`
+			} `json:"references"`
+		} `json:"item"`
+	}
+	if err := json.Unmarshal([]byte(body), &payload); err != nil {
+		t.Fatalf("decode from-result response: %v body=%s", err, body)
+	}
+	if payload.Item.ReferenceUsageNote != "pose and lighting" || len(payload.Item.ReferenceUploadIDs) != 1 || payload.Item.ReferenceUploadIDs[0] != "upload-ref-01" {
+		t.Fatalf("response reference upload metadata mismatch: %+v", payload.Item)
+	}
+	if len(payload.Item.References) != 1 {
+		t.Fatalf("response should include one permanent reference: %s", body)
+	}
+	ref := payload.Item.References[0]
+	if ref.ReferenceID == "" || ref.ImageURL == "" || ref.ThumbnailURL != ref.ImageURL {
+		t.Fatalf("reference should include permanent image URLs: %+v", ref)
+	}
+	if ref.OriginalName != "pose.png" || ref.Mime != "image/png" || ref.Size != int64(len(refData)) || ref.UsageNote != "pose and lighting" || ref.SourceUploadID != "upload-ref-01" || ref.SourceTaskID != jobID {
+		t.Fatalf("reference metadata mismatch: %+v", ref)
+	}
+
+	if err := os.RemoveAll(refDir); err != nil {
+		t.Fatalf("remove source job_refs: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/prompt-square/images/"+path.Base(ref.ImageURL), nil)
+	req.AddCookie(&http.Cookie{Name: userSessionCookie, Value: token})
+	res := httptest.NewRecorder()
+	env.Router.ServeHTTP(res, req)
+	if res.Code != http.StatusOK {
+		t.Fatalf("GET permanent reference code=%d body=%s", res.Code, res.Body.String())
+	}
+	if got := res.Body.String(); got != string(refData) {
+		t.Fatalf("permanent reference data mismatch: got %q want %q", got, refData)
 	}
 }
 

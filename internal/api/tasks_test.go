@@ -7,9 +7,10 @@ import (
 	"time"
 
 	"github.com/y08lin4/lyra-image-workbench/internal/jobs"
+	"github.com/y08lin4/lyra-image-workbench/internal/settings"
 )
 
-func TestBackgroundTaskCreateRecordsWebSourceAndConsumedCredits(t *testing.T) {
+func TestBackgroundTaskWithPersonalCloudKeyDoesNotConsumeCredits(t *testing.T) {
 	env := newTestAPIEnv(t)
 	router := env.Router
 	token := createTestSession(t, router)
@@ -46,11 +47,11 @@ func TestBackgroundTaskCreateRecordsWebSourceAndConsumedCredits(t *testing.T) {
 	if response.Job.Source != jobs.JobSourceWeb {
 		t.Fatalf("web task source=%q, want %q", response.Job.Source, jobs.JobSourceWeb)
 	}
-	if response.Job.ConsumedCredits != 3 || response.ConsumedCredits != 3 {
-		t.Fatalf("consumed credits mismatch: %+v", response)
+	if response.Job.ConsumedCredits != 0 || response.ConsumedCredits != 0 {
+		t.Fatalf("personal-key task should not consume credits: %+v", response)
 	}
-	requireUserCredits(t, env, "testuser01", 3)
-	requireLatestTaskCharge(t, env, "testuser01", response.TaskID, -3, 3)
+	requireUserCredits(t, env, "testuser01", 6)
+	requireNoTaskCharge(t, env, "testuser01", response.TaskID)
 
 	waitForTestTaskFinal(t, router, token, response.TaskID)
 	time.Sleep(200 * time.Millisecond)
@@ -73,13 +74,58 @@ func TestBackgroundTaskCreateRecordsWebSourceAndConsumedCredits(t *testing.T) {
 	if retryResponse.Job.Source != jobs.JobSourceWeb {
 		t.Fatalf("retry task source=%q, want %q", retryResponse.Job.Source, jobs.JobSourceWeb)
 	}
-	if retryResponse.Job.ConsumedCredits != 3 || retryResponse.ConsumedCredits != 3 {
-		t.Fatalf("retry consumed credits mismatch: %+v", retryResponse)
+	if retryResponse.Job.ConsumedCredits != 0 || retryResponse.ConsumedCredits != 0 {
+		t.Fatalf("personal-key retry should not consume credits: %+v", retryResponse)
 	}
-	requireUserCredits(t, env, "testuser01", 0)
-	requireLatestTaskCharge(t, env, "testuser01", retryResponse.TaskID, -3, 0)
+	requireUserCredits(t, env, "testuser01", 6)
+	requireNoTaskCharge(t, env, "testuser01", retryResponse.TaskID)
 	waitForTestTaskFinal(t, router, token, retryResponse.TaskID)
 	time.Sleep(200 * time.Millisecond)
+}
+
+func TestAdminBackgroundTaskWithSystemKeyConsumesCredits(t *testing.T) {
+	env := newTestAPIEnv(t)
+	router := env.Router
+	token := createTestSession(t, router)
+	if _, err := env.Users.SetAdmin("testuser01", true); err != nil {
+		t.Fatalf("SetAdmin() error = %v", err)
+	}
+	systemKey := "sk-system-admin-task-1234567890"
+	if _, err := env.Settings.Update(settings.Update{SystemAPIKey: &systemKey}); err != nil {
+		t.Fatalf("settings.Update() system key error = %v", err)
+	}
+	grantTestCredits(t, router, token, "testuser01", 3)
+
+	code, body := doJSONStatus(t, router, http.MethodPost, "/api/background-tasks", token, map[string]any{
+		"mode":         "text-to-image",
+		"prompt":       "admin task should use system key and credits",
+		"ratio":        "1:1",
+		"resolution":   "standard",
+		"quality":      "auto",
+		"outputFormat": "png",
+		"count":        2,
+		"concurrency":  1,
+	}, "")
+	if code != http.StatusOK {
+		t.Fatalf("admin web task create code=%d body=%s", code, body)
+	}
+	var response struct {
+		Job             jobs.Job `json:"job"`
+		TaskID          string   `json:"taskId"`
+		ConsumedCredits int      `json:"consumedCredits"`
+	}
+	if err := json.Unmarshal([]byte(body), &response); err != nil {
+		t.Fatalf("decode admin web task response: %v body=%s", err, body)
+	}
+	if response.TaskID == "" || response.TaskID != response.Job.ID {
+		t.Fatalf("task id mismatch: %+v", response)
+	}
+	if response.Job.ConsumedCredits != 2 || response.ConsumedCredits != 2 {
+		t.Fatalf("system-key task should consume credits even for admin: %+v", response)
+	}
+	requireUserCredits(t, env, "testuser01", 1)
+	requireLatestTaskCharge(t, env, "testuser01", response.TaskID, -2, 1)
+	waitForTestTaskFinal(t, router, token, response.TaskID)
 }
 
 func requireUserCredits(t *testing.T, env testAPIEnv, username string, want int) {
@@ -90,6 +136,19 @@ func requireUserCredits(t *testing.T, env testAPIEnv, username string, want int)
 	}
 	if profile.CreditsBalance != want {
 		t.Fatalf("creditsBalance=%d, want %d", profile.CreditsBalance, want)
+	}
+}
+
+func requireNoTaskCharge(t *testing.T, env testAPIEnv, username string, taskID string) {
+	t.Helper()
+	ledger, err := env.Users.ListCreditLedger(username)
+	if err != nil {
+		t.Fatalf("ListCreditLedger(%q) error = %v", username, err)
+	}
+	for _, entry := range ledger {
+		if entry.Type == "task_charge" && entry.SourceID == taskID {
+			t.Fatalf("unexpected task charge for %s: %+v", taskID, entry)
+		}
 	}
 }
 

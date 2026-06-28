@@ -96,21 +96,36 @@ func TestPromptSquareStoreSubmitFromResultCreatesPermanentCopy(t *testing.T) {
 	if err := os.WriteFile(sourcePath, sourceData, 0o644); err != nil {
 		t.Fatalf("write source image: %v", err)
 	}
+	refPath := filepath.Join(sourceDir, "job-ref.png")
+	refData := []byte("not-a-real-png-but-reference-owned")
+	if err := os.WriteFile(refPath, refData, 0o644); err != nil {
+		t.Fatalf("write source reference: %v", err)
+	}
 
 	item, err := store.SubmitFromResult(SubmitFromResultRequest{
-		Title:             "result title",
-		Prompt:            "result prompt",
-		Model:             "gpt-image-2",
-		Ratio:             "auto",
-		ActualSize:        "1536x1024",
-		Quality:           "high",
-		OutputFormat:      "png",
-		Tags:              []string{"daily", "result"},
-		Author:            "Alice",
-		AuthorDisplayName: "Alice A.",
-		SourceTaskID:      "img_task_01",
-		SourceImagePath:   sourcePath,
-		SourceImageMime:   "image/png",
+		Title:              "result title",
+		Prompt:             "result prompt",
+		Model:              "gpt-image-2",
+		Ratio:              "auto",
+		ActualSize:         "1536x1024",
+		Quality:            "high",
+		OutputFormat:       "png",
+		Tags:               []string{"daily", "result"},
+		Author:             "Alice",
+		AuthorDisplayName:  "Alice A.",
+		SourceTaskID:       "img_task_01",
+		SourceImagePath:    sourcePath,
+		SourceImageMime:    "image/png",
+		ReferenceUploadIDs: []string{"upload_ref_01"},
+		ReferenceUsageNote: "lighting and pose",
+		References: []Reference{{
+			SourcePath:     refPath,
+			SourceUploadID: "upload_ref_01",
+			SourceTaskID:   "img_task_01",
+			OriginalName:   "portrait.png",
+			Mime:           "image/png",
+			Size:           int64(len(refData)),
+		}},
 	})
 	if err != nil {
 		t.Fatalf("SubmitFromResult() error = %v", err)
@@ -124,6 +139,19 @@ func TestPromptSquareStoreSubmitFromResultCreatesPermanentCopy(t *testing.T) {
 
 	if item.ImageURL == "" || path.Dir(item.ImageURL) != "/api/prompt-square/images" {
 		t.Fatalf("submitted item should point at prompt-square copy, got %q", item.ImageURL)
+	}
+	if item.ReferenceUsageNote != "lighting and pose" || len(item.ReferenceUploadIDs) != 1 || item.ReferenceUploadIDs[0] != "upload_ref_01" {
+		t.Fatalf("submitted item reference metadata mismatch: %+v", item)
+	}
+	if len(item.References) != 1 {
+		t.Fatalf("submitted item should include one reference, got %+v", item.References)
+	}
+	reference := item.References[0]
+	if reference.SourcePath != "" || reference.SourceUploadID != "upload_ref_01" || reference.SourceTaskID != "img_task_01" || reference.OriginalName != "portrait.png" {
+		t.Fatalf("reference metadata mismatch: %+v", reference)
+	}
+	if reference.ImageURL == "" || reference.ThumbnailURL != reference.ImageURL || path.Dir(reference.ImageURL) != "/api/prompt-square/images" {
+		t.Fatalf("reference should point at prompt-square copy, got %+v", reference)
 	}
 
 	copyPath, mime, err := store.ResolveImage(filepath.Base(item.ImageURL))
@@ -141,11 +169,32 @@ func TestPromptSquareStoreSubmitFromResultCreatesPermanentCopy(t *testing.T) {
 		t.Fatalf("copied image data mismatch: got %q want %q", copied, sourceData)
 	}
 
+	refCopyPath, refMime, err := store.ResolveImage(filepath.Base(reference.ImageURL))
+	if err != nil {
+		t.Fatalf("ResolveImage(reference copy) error = %v", err)
+	}
+	if refMime != "image/png" {
+		t.Fatalf("reference copy mime = %q, want image/png", refMime)
+	}
+	refCopied, err := os.ReadFile(refCopyPath)
+	if err != nil {
+		t.Fatalf("read copied reference: %v", err)
+	}
+	if string(refCopied) != string(refData) {
+		t.Fatalf("copied reference data mismatch: got %q want %q", refCopied, refData)
+	}
+
 	if err := os.Remove(sourcePath); err != nil {
 		t.Fatalf("remove source image: %v", err)
 	}
 	if _, _, err := store.ResolveImage(filepath.Base(item.ImageURL)); err != nil {
 		t.Fatalf("permanent copy should remain after source removal: %v", err)
+	}
+	if err := os.Remove(refPath); err != nil {
+		t.Fatalf("remove source reference: %v", err)
+	}
+	if _, _, err := store.ResolveImage(filepath.Base(reference.ImageURL)); err != nil {
+		t.Fatalf("permanent reference copy should remain after source removal: %v", err)
 	}
 }
 
