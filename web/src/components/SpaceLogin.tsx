@@ -71,7 +71,7 @@ export function SpaceLogin({ onSession, theme, onToggleTheme }: { onSession: (se
         <GitHubLink compact />
         <ThemeToggle theme={theme} onToggle={onToggleTheme} />
       </div>
-      <form className="login-panel" onSubmit={submit}>
+      <form className="login-panel" onSubmit={submit} autoComplete="on">
         <div className="brand login-brand">
           <div className="brand-mark">Ly</div>
           <div>
@@ -92,35 +92,41 @@ export function SpaceLogin({ onSession, theme, onToggleTheme }: { onSession: (se
         </div>
         {isRegister ? (
           <>
-            <input value={username} onChange={(e) => setUsername(e.target.value)} placeholder="用户名，大小写字母/数字/._-" autoComplete="username" autoFocus />
-            <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="邮箱，用于账号和通知" autoComplete="email" />
-            <input value={referralCode} onChange={(e) => setReferralCode(e.target.value)} placeholder="邀请码，可留空" autoComplete="off" />
+            <input name="username" value={username} onChange={(e) => setUsername(e.target.value)} placeholder="用户名，大小写字母/数字/._-" autoComplete="username" autoCapitalize="none" spellCheck={false} autoFocus />
+            <input name="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="邮箱，用于账号和通知" autoComplete="email" autoCapitalize="none" spellCheck={false} />
+            <input name="referral-code" value={referralCode} onChange={(e) => setReferralCode(e.target.value)} placeholder="邀请码，可留空" autoComplete="off" autoCapitalize="none" spellCheck={false} />
           </>
         ) : (
-          <input value={identifier} onChange={(e) => setIdentifier(e.target.value)} placeholder="用户名或邮箱" autoComplete="username" autoFocus />
+          <input name="username" value={identifier} onChange={(e) => setIdentifier(e.target.value)} placeholder="用户名或邮箱" autoComplete="username" autoCapitalize="none" spellCheck={false} autoFocus />
         )}
         <PasswordField
+          name="password"
           value={password}
           onChange={setPassword}
           visible={passwordVisible}
           onToggle={() => setPasswordVisible((current) => !current)}
           placeholder="复杂密码，至少 10 位"
+          autoComplete={isRegister ? 'new-password' : 'current-password'}
         />
         {isRegister ? (
           <PasswordField
+            name="password-confirm"
             value={confirmPassword}
             onChange={setConfirmPassword}
             visible={confirmPasswordVisible}
             onToggle={() => setConfirmPasswordVisible((current) => !current)}
             placeholder="再次输入密码"
+            autoComplete="new-password"
           />
         ) : null}
         {!isRegister && twoFactorRequired ? (
           <input
+            name="one-time-code"
             inputMode="numeric"
             value={twoFactorCode}
             onChange={(e) => setTwoFactorCode(e.target.value)}
             placeholder="2FA 验证码"
+            autoComplete="one-time-code"
           />
         ) : null}
         {isRegister ? (
@@ -130,7 +136,7 @@ export function SpaceLogin({ onSession, theme, onToggleTheme }: { onSession: (se
           </label>
         ) : null}
         {isRegister && importLegacy ? (
-          <input type="password" value={legacySpacePassword} onChange={(e) => setLegacySpacePassword(e.target.value)} placeholder="旧空间密码" />
+          <input name="legacy-space-password" type="password" value={legacySpacePassword} onChange={(e) => setLegacySpacePassword(e.target.value)} placeholder="旧空间密码" autoComplete="current-password" />
         ) : null}
         <button className="primary" type="submit">{isRegister ? '注册并进入' : '登录'}</button>
         <button type="button" onClick={() => { setMode(isRegister ? 'login' : 'register'); setError(''); setConfirmPassword(''); setTwoFactorCode(''); setTwoFactorRequired(false) }}>
@@ -147,14 +153,34 @@ function readReferralCodeFromUrl() {
   return (params.get('ref') || params.get('referralCode') || params.get('invite') || '').trim()
 }
 
-function PasswordField({ value, onChange, visible, onToggle, placeholder }: { value: string; onChange: (value: string) => void; visible: boolean; onToggle: () => void; placeholder: string }) {
+function PasswordField({
+  name,
+  value,
+  onChange,
+  visible,
+  onToggle,
+  placeholder,
+  autoComplete,
+}: {
+  name: string
+  value: string
+  onChange: (value: string) => void
+  visible: boolean
+  onToggle: () => void
+  placeholder: string
+  autoComplete: 'current-password' | 'new-password'
+}) {
   return (
     <div className="password-field">
       <input
+        name={name}
         type={visible ? 'text' : 'password'}
         value={value}
         onChange={(event) => onChange(event.target.value)}
         placeholder={placeholder}
+        autoComplete={autoComplete}
+        autoCapitalize="none"
+        spellCheck={false}
       />
       <button type="button" className="password-toggle" onClick={onToggle} aria-label={visible ? '隐藏密码' : '显示密码'} title={visible ? '隐藏密码' : '显示密码'}>
         {visible ? <EyeOffIcon /> : <EyeIcon />}
