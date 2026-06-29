@@ -15,6 +15,7 @@ import (
 	"github.com/y08lin4/lyra-image-workbench/internal/adminauth"
 	"github.com/y08lin4/lyra-image-workbench/internal/apikeys"
 	"github.com/y08lin4/lyra-image-workbench/internal/billing"
+	"github.com/y08lin4/lyra-image-workbench/internal/canvas"
 	"github.com/y08lin4/lyra-image-workbench/internal/config"
 	"github.com/y08lin4/lyra-image-workbench/internal/events"
 	"github.com/y08lin4/lyra-image-workbench/internal/jobs"
@@ -431,6 +432,187 @@ func TestPromptLibraryAPIRequiresLogin(t *testing.T) {
 		if res.Code != http.StatusUnauthorized {
 			t.Fatalf("%s %s without login code=%d body=%s", tc.method, tc.path, res.Code, res.Body.String())
 		}
+	}
+}
+
+func TestCanvasAPIsRequireLogin(t *testing.T) {
+	router := newTestRouter(t)
+	for _, tc := range []struct {
+		method string
+		path   string
+		body   any
+	}{
+		{http.MethodGet, "/api/canvas/projects", nil},
+		{http.MethodPost, "/api/canvas/projects", map[string]string{"title": "anonymous"}},
+		{http.MethodGet, "/api/canvas/projects/cvp_missing", nil},
+		{http.MethodPatch, "/api/canvas/projects/cvp_missing", map[string]any{"revision": 1, "title": "patch"}},
+		{http.MethodPut, "/api/canvas/projects/cvp_missing", map[string]any{"revision": 1, "title": "put"}},
+		{http.MethodDelete, "/api/canvas/projects/cvp_missing", nil},
+		{http.MethodPost, "/api/canvas/projects/cvp_missing/snapshots", map[string]any{}},
+	} {
+		code, body := doJSONStatus(t, router, tc.method, tc.path, "", tc.body, "")
+		if code != http.StatusUnauthorized || !strings.Contains(body, "USER_AUTH_REQUIRED") {
+			t.Fatalf("%s %s without login code=%d body=%s", tc.method, tc.path, code, body)
+		}
+	}
+}
+
+func requireNoCanvasSpaceToken(t *testing.T, body string) {
+	t.Helper()
+	if strings.Contains(body, "spaceToken") {
+		t.Fatalf("canvas response leaked spaceToken: %s", body)
+	}
+}
+
+func canvasSnapshotPayload(revision int64) map[string]any {
+	return map[string]any{
+		"revision":         revision,
+		"generationNodeId": "gen-1",
+		"resolvedPrompt":   "a compact canvas prompt",
+		"parameters": map[string]any{
+			"mode": "text-to-image",
+		},
+	}
+}
+
+func TestCanvasUpdateAcceptsPutAndPatch(t *testing.T) {
+	router := newTestRouter(t)
+	token := createTestSession(t, router)
+	created := doJSON(t, router, http.MethodPost, "/api/canvas/projects", token, map[string]any{"title": "canvas update"})
+	requireNoCanvasSpaceToken(t, created)
+	var createPayload struct {
+		Project struct {
+			ID       string `json:"id"`
+			Revision int64  `json:"revision"`
+		} `json:"project"`
+	}
+	if err := json.Unmarshal([]byte(created), &createPayload); err != nil || createPayload.Project.ID == "" || createPayload.Project.Revision == 0 {
+		t.Fatalf("decode canvas create response err=%v body=%s", err, created)
+	}
+
+	patchBody := doJSON(t, router, http.MethodPatch, "/api/canvas/projects/"+createPayload.Project.ID, token, map[string]any{
+		"revision": createPayload.Project.Revision,
+		"title":    "patched canvas",
+	})
+	requireNoCanvasSpaceToken(t, patchBody)
+	var patchPayload struct {
+		Project struct {
+			Title    string `json:"title"`
+			Revision int64  `json:"revision"`
+		} `json:"project"`
+	}
+	if err := json.Unmarshal([]byte(patchBody), &patchPayload); err != nil || patchPayload.Project.Title != "patched canvas" || patchPayload.Project.Revision <= createPayload.Project.Revision {
+		t.Fatalf("PATCH canvas update invalid err=%v body=%s", err, patchBody)
+	}
+
+	putBody := doJSON(t, router, http.MethodPut, "/api/canvas/projects/"+createPayload.Project.ID, token, map[string]any{
+		"revision": patchPayload.Project.Revision,
+		"title":    "put canvas",
+	})
+	requireNoCanvasSpaceToken(t, putBody)
+	if !strings.Contains(putBody, `"title":"put canvas"`) {
+		t.Fatalf("PUT canvas update did not update title: %s", putBody)
+	}
+
+	deleteBody := doJSON(t, router, http.MethodDelete, "/api/canvas/projects/"+createPayload.Project.ID, token, nil)
+	requireNoCanvasSpaceToken(t, deleteBody)
+}
+
+func TestCanvasProjectsAreScopedByUserSpaceToken(t *testing.T) {
+	env := newTestAPIEnv(t)
+	ownerToken := createNamedUserSession(t, env.Router, "canvasowner01", "R7!Owner#Vault$2026", "")
+	intruderToken := createNamedUserSession(t, env.Router, "canvasintruder01", "R7!Intruder#Vault$2026", "")
+	created := doJSON(t, env.Router, http.MethodPost, "/api/canvas/projects", ownerToken, map[string]any{"title": "private canvas"})
+	requireNoCanvasSpaceToken(t, created)
+	var createPayload struct {
+		Project struct {
+			ID string `json:"id"`
+		} `json:"project"`
+	}
+	if err := json.Unmarshal([]byte(created), &createPayload); err != nil || createPayload.Project.ID == "" {
+		t.Fatalf("decode canvas create response err=%v body=%s", err, created)
+	}
+
+	getBody := doJSON(t, env.Router, http.MethodGet, "/api/canvas/projects/"+createPayload.Project.ID, ownerToken, nil)
+	requireNoCanvasSpaceToken(t, getBody)
+
+	ownerListBody := doJSON(t, env.Router, http.MethodGet, "/api/canvas/projects", ownerToken, nil)
+	requireNoCanvasSpaceToken(t, ownerListBody)
+	if !strings.Contains(ownerListBody, createPayload.Project.ID) {
+		t.Fatalf("owner list missed created canvas: %s", ownerListBody)
+	}
+
+	listBody := doJSON(t, env.Router, http.MethodGet, "/api/canvas/projects", intruderToken, nil)
+	if strings.Contains(listBody, createPayload.Project.ID) || strings.Contains(listBody, "private canvas") {
+		t.Fatalf("intruder list leaked owner canvas: %s", listBody)
+	}
+	code, body := doJSONStatus(t, env.Router, http.MethodGet, "/api/canvas/projects/"+createPayload.Project.ID, intruderToken, nil, "")
+	if code != http.StatusNotFound || !strings.Contains(body, "CANVAS_PROJECT_NOT_FOUND") {
+		t.Fatalf("intruder get owner canvas code=%d body=%s", code, body)
+	}
+	code, body = doJSONStatus(t, env.Router, http.MethodPatch, "/api/canvas/projects/"+createPayload.Project.ID, intruderToken, map[string]any{"revision": 1, "title": "hijacked canvas"}, "")
+	if code != http.StatusNotFound || !strings.Contains(body, "CANVAS_PROJECT_NOT_FOUND") {
+		t.Fatalf("intruder update owner canvas code=%d body=%s", code, body)
+	}
+	code, body = doJSONStatus(t, env.Router, http.MethodDelete, "/api/canvas/projects/"+createPayload.Project.ID, intruderToken, nil, "")
+	if code != http.StatusNotFound || !strings.Contains(body, "CANVAS_PROJECT_NOT_FOUND") {
+		t.Fatalf("intruder delete owner canvas code=%d body=%s", code, body)
+	}
+	code, body = doJSONStatus(t, env.Router, http.MethodPost, "/api/canvas/projects/"+createPayload.Project.ID+"/snapshots", intruderToken, canvasSnapshotPayload(1), "")
+	if code != http.StatusNotFound || !strings.Contains(body, "CANVAS_PROJECT_NOT_FOUND") {
+		t.Fatalf("intruder snapshot owner canvas code=%d body=%s", code, body)
+	}
+}
+
+func TestCanvasSnapshotRequiresCurrentRevision(t *testing.T) {
+	router := newTestRouter(t)
+	token := createTestSession(t, router)
+	created := doJSON(t, router, http.MethodPost, "/api/canvas/projects", token, map[string]any{"title": "snapshot contract"})
+	requireNoCanvasSpaceToken(t, created)
+	var createPayload struct {
+		Project struct {
+			ID       string `json:"id"`
+			Revision int64  `json:"revision"`
+		} `json:"project"`
+	}
+	if err := json.Unmarshal([]byte(created), &createPayload); err != nil || createPayload.Project.ID == "" || createPayload.Project.Revision == 0 {
+		t.Fatalf("decode canvas create response err=%v body=%s", err, created)
+	}
+
+	missingRevision := canvasSnapshotPayload(createPayload.Project.Revision)
+	delete(missingRevision, "revision")
+	code, body := doJSONStatus(t, router, http.MethodPost, "/api/canvas/projects/"+createPayload.Project.ID+"/snapshots", token, missingRevision, "")
+	if code != http.StatusBadRequest || !strings.Contains(body, "CANVAS_PROJECT_INVALID") {
+		t.Fatalf("snapshot without revision code=%d body=%s", code, body)
+	}
+
+	code, body = doJSONStatus(t, router, http.MethodPost, "/api/canvas/projects/"+createPayload.Project.ID+"/snapshots", token, canvasSnapshotPayload(createPayload.Project.Revision+1), "")
+	if code != http.StatusConflict || !strings.Contains(body, "CANVAS_REVISION_CONFLICT") {
+		t.Fatalf("snapshot with mismatched revision code=%d body=%s", code, body)
+	}
+
+	body = doJSON(t, router, http.MethodPost, "/api/canvas/projects/"+createPayload.Project.ID+"/snapshots", token, canvasSnapshotPayload(createPayload.Project.Revision))
+	requireNoCanvasSpaceToken(t, body)
+	var snapshotPayload struct {
+		Snapshot canvas.Snapshot `json:"snapshot"`
+	}
+	if err := json.Unmarshal([]byte(body), &snapshotPayload); err != nil || snapshotPayload.Snapshot.ID == "" || snapshotPayload.Snapshot.ProjectRevision != createPayload.Project.Revision {
+		t.Fatalf("decode snapshot response err=%v body=%s", err, body)
+	}
+
+	getBody := doJSON(t, router, http.MethodGet, "/api/canvas/projects/"+createPayload.Project.ID, token, nil)
+	requireNoCanvasSpaceToken(t, getBody)
+	var getPayload struct {
+		Project struct {
+			Revision  int64             `json:"revision"`
+			Snapshots []canvas.Snapshot `json:"snapshots"`
+		} `json:"project"`
+	}
+	if err := json.Unmarshal([]byte(getBody), &getPayload); err != nil {
+		t.Fatalf("decode canvas get response err=%v body=%s", err, getBody)
+	}
+	if getPayload.Project.Revision != createPayload.Project.Revision+1 || len(getPayload.Project.Snapshots) != 1 || getPayload.Project.Snapshots[0].ID != snapshotPayload.Snapshot.ID {
+		t.Fatalf("snapshot was not persisted on project: %+v", getPayload.Project)
 	}
 }
 
@@ -1004,6 +1186,7 @@ func newTestAPIEnv(t *testing.T) testAPIEnv {
 	if err != nil {
 		t.Fatalf("spaces.NewFileStore() error = %v", err)
 	}
+	canvasService := canvas.NewService(canvas.NewFileStore(spaceStore))
 	spaceConfigStore := spaceconfig.NewStore(spaceStore)
 	uploadStore := uploads.NewStore(spaceStore)
 	outputStore, err := output.NewStore(filepath.Join(root, "outputs"))
@@ -1034,6 +1217,7 @@ func newTestAPIEnv(t *testing.T) testAPIEnv {
 		Users:         userStore,
 		APIKeys:       apiKeyStore,
 		Billing:       billingStore,
+		Canvas:        canvasService,
 		Settings:      settingsStore,
 		Spaces:        spaceStore,
 		SpaceConfig:   spaceConfigStore,

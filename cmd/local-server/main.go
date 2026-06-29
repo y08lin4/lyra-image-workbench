@@ -8,9 +8,11 @@ import (
 	"path/filepath"
 
 	"github.com/y08lin4/lyra-image-workbench/internal/adminauth"
+	"github.com/y08lin4/lyra-image-workbench/internal/agents"
 	"github.com/y08lin4/lyra-image-workbench/internal/api"
 	"github.com/y08lin4/lyra-image-workbench/internal/apikeys"
 	"github.com/y08lin4/lyra-image-workbench/internal/billing"
+	"github.com/y08lin4/lyra-image-workbench/internal/canvas"
 	"github.com/y08lin4/lyra-image-workbench/internal/config"
 	"github.com/y08lin4/lyra-image-workbench/internal/events"
 	"github.com/y08lin4/lyra-image-workbench/internal/jobs"
@@ -64,6 +66,7 @@ func main() {
 	}
 	spaceConfigStore := spaceconfig.NewStore(spaceStore)
 	uploadStore := uploads.NewStore(spaceStore)
+	canvasService := canvas.NewService(canvas.NewFileStore(spaceStore))
 	outputRoot := "outputs"
 	outputStore, err := output.NewStore(outputRoot)
 	if err != nil {
@@ -86,6 +89,8 @@ func main() {
 	llmClient := llm.NewClient()
 	promptStore := prompttools.NewStore(spaceStore)
 	promptService := prompttools.NewService(promptStore, settingsStore, spaceConfigStore, uploadStore, jobManager, outputStore, llmClient)
+	agentStore := agents.NewStore(spaceStore)
+	agentService := agents.NewService(agentStore, settingsStore, spaceConfigStore, llmClient)
 	promptLibraryService := promptlibrary.NewService(filepath.Join(cfg.DataDir, "cache", "prompt-library"))
 	if err := jobManager.Recover(jobs.RecoverOptions{RefundQueued: func(job jobs.Job) error {
 		owner, ok := userStore.FindByStorageToken(job.SpaceToken)
@@ -116,6 +121,7 @@ func main() {
 		Users:         userStore,
 		APIKeys:       apiKeyStore,
 		Billing:       billingStore,
+		Canvas:        canvasService,
 		Settings:      settingsStore,
 		Spaces:        spaceStore,
 		SpaceConfig:   spaceConfigStore,
@@ -125,6 +131,7 @@ func main() {
 		PromptLibrary: promptLibraryService,
 		PromptSquare:  promptSquareStore,
 		PromptTools:   promptService,
+		Agents:        agentService,
 		LLM:           llmClient,
 		Activity:      activityStore})
 	httpServer := server.New(cfg, router)

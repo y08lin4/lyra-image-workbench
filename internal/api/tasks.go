@@ -367,6 +367,9 @@ func taskChargeReason(job jobs.Job) string {
 	if job.Source == jobs.JobSourceAPI {
 		label = "API 生成任务扣减"
 	}
+	if job.Source == jobs.JobSourceAgent {
+		label = "Agent 生成任务扣减"
+	}
 	if job.Count > 1 {
 		return fmt.Sprintf("%s（%d 张）", label, job.Count)
 	}

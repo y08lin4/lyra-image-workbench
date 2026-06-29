@@ -18,8 +18,10 @@ const (
 	ModeImageToImage Mode = "image-to-image"
 	ModeGIF          Mode = "gif"
 
-	JobSourceWeb = "web"
-	JobSourceAPI = "api"
+	JobSourceWeb    = "web"
+	JobSourceAPI    = "api"
+	JobSourceAgent  = "agent"
+	JobSourceCanvas = "canvas"
 
 	StatusQueued        Status = "queued"
 	StatusRunning       Status = "running"
@@ -427,6 +429,10 @@ func normalizeSource(value string) string {
 	switch strings.ToLower(strings.TrimSpace(value)) {
 	case JobSourceAPI:
 		return JobSourceAPI
+	case JobSourceAgent:
+		return JobSourceAgent
+	case JobSourceCanvas:
+		return JobSourceCanvas
 	default:
 		return JobSourceWeb
 	}

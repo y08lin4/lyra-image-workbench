@@ -5,8 +5,10 @@ import (
 
 	"github.com/y08lin4/lyra-image-workbench/internal/activitylog"
 	"github.com/y08lin4/lyra-image-workbench/internal/adminauth"
+	"github.com/y08lin4/lyra-image-workbench/internal/agents"
 	"github.com/y08lin4/lyra-image-workbench/internal/apikeys"
 	"github.com/y08lin4/lyra-image-workbench/internal/billing"
+	"github.com/y08lin4/lyra-image-workbench/internal/canvas"
 	"github.com/y08lin4/lyra-image-workbench/internal/config"
 	"github.com/y08lin4/lyra-image-workbench/internal/jobs"
 	"github.com/y08lin4/lyra-image-workbench/internal/llm"
@@ -27,6 +29,7 @@ type Dependencies struct {
 	Users         *users.Store
 	APIKeys       *apikeys.Store
 	Billing       *billing.Store
+	Canvas        *canvas.Service
 	Settings      *settings.FileStore
 	Spaces        *spaces.FileStore
 	SpaceConfig   *spaceconfig.Store
@@ -36,6 +39,7 @@ type Dependencies struct {
 	PromptLibrary *promptlibrary.Service
 	PromptSquare  *promptsquare.Store
 	PromptTools   *prompttools.Service
+	Agents        *agents.Service
 	LLM           *llm.Client
 	Activity      *activitylog.Store
 }
@@ -55,10 +59,12 @@ func NewRouter(deps Dependencies) http.Handler {
 	taskHandler := NewTaskHandler(deps.Jobs, deps.Output, deps.SpaceConfig, deps.Users)
 	v1ImageTaskHandler := NewV1ImageTaskHandler(deps.APIKeys, deps.SpaceConfig, deps.Settings, deps.Jobs, deps.Output, deps.Users)
 	promptToolsHandler := NewPromptToolsHandler(deps.PromptTools)
+	agentHandler := NewAgentHandler(deps.Agents, taskHandler)
 	promptLibraryHandler := NewPromptLibraryHandler(deps.PromptLibrary)
 	outputHandler := NewOutputHandler(deps.Output)
 	promptSquareHandler := NewPromptSquareHandlerWithResults(deps.PromptSquare, deps.Jobs, deps.Output)
 	billingHandler := NewBillingHandler(deps.Settings, deps.Billing, deps.Users, deps.Activity)
+	canvasHandler := NewCanvasHandler(deps.Canvas)
 	staticHandler := NewStaticHandler(deps.Config.WebDir)
 
 	mux.HandleFunc("GET /api/health", health.ServeHTTP)
@@ -103,6 +109,13 @@ func NewRouter(deps Dependencies) http.Handler {
 	mux.HandleFunc("GET /api/uploads/reference", uploadHandler.ListReferenceImages)
 	mux.HandleFunc("GET /api/uploads/reference/{id}/image", uploadHandler.ServeReferenceImage)
 	mux.HandleFunc("DELETE /api/uploads/reference/{id}", uploadHandler.DeleteReferenceImage)
+	mux.HandleFunc("GET /api/canvas/projects", canvasHandler.ListProjects)
+	mux.HandleFunc("POST /api/canvas/projects", canvasHandler.CreateProject)
+	mux.HandleFunc("GET /api/canvas/projects/{projectId}", canvasHandler.GetProject)
+	mux.HandleFunc("PATCH /api/canvas/projects/{projectId}", canvasHandler.UpdateProject)
+	mux.HandleFunc("PUT /api/canvas/projects/{projectId}", canvasHandler.UpdateProject)
+	mux.HandleFunc("DELETE /api/canvas/projects/{projectId}", canvasHandler.DeleteProject)
+	mux.HandleFunc("POST /api/canvas/projects/{projectId}/snapshots", canvasHandler.CreateSnapshot)
 	mux.HandleFunc("POST /api/background-tasks", taskHandler.Create)
 	mux.HandleFunc("GET /api/background-tasks", taskHandler.List)
 	mux.HandleFunc("GET /api/background-tasks/{id}", taskHandler.Get)
@@ -126,6 +139,12 @@ func NewRouter(deps Dependencies) http.Handler {
 	mux.HandleFunc("GET /api/prompt-tools/sessions/{id}", promptToolsHandler.Session)
 	mux.HandleFunc("POST /api/prompt-tools/sessions/{id}/messages", promptToolsHandler.RefineSession)
 	mux.HandleFunc("DELETE /api/prompt-tools/sessions/{id}", promptToolsHandler.DeleteSession)
+	mux.HandleFunc("GET /api/agents/sessions", agentHandler.ListSessions)
+	mux.HandleFunc("POST /api/agents/sessions", agentHandler.CreateSession)
+	mux.HandleFunc("GET /api/agents/sessions/{sessionId}", agentHandler.GetSession)
+	mux.HandleFunc("DELETE /api/agents/sessions/{sessionId}", agentHandler.DeleteSession)
+	mux.HandleFunc("POST /api/agents/sessions/{sessionId}/messages", agentHandler.SubmitMessage)
+	mux.HandleFunc("POST /api/agents/sessions/{sessionId}/rounds/{roundId}/confirm", agentHandler.ConfirmRound)
 	mux.HandleFunc("POST /api/prompt-tools/inspiration/ideas", promptToolsHandler.InspirationIdeas)
 	mux.HandleFunc("POST /api/prompt-tools/inspiration/expand", promptToolsHandler.InspirationExpand)
 	mux.HandleFunc("GET /api/prompt-tools/history", promptToolsHandler.History)
