@@ -43,7 +43,27 @@ export type {
   EpayOrder,
   BillingTopUp,
 } from './api/contracts/billing'
-
+export type {
+  AgentSessionStatus,
+  AgentRoundStatus,
+  AgentAction,
+  AgentMessageRole,
+  AgentReferenceSourceType,
+  AgentBlockType,
+  AgentMessage,
+  AgentSession,
+  AgentRound,
+  AgentBlock,
+  AgentPlan,
+  AgentVisualPlan,
+  AgentParameters,
+  AgentReferenceUsage,
+  AgentReference,
+  AgentSessionListOptions,
+  CreateAgentSessionRequest,
+  SendAgentMessageRequest,
+  ConfirmAgentRoundRequest,
+} from './api/contracts/agents'
 export interface UserConfig {
   apiKeySet: boolean
   apiKeyPreview: string

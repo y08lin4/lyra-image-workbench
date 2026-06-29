@@ -29,26 +29,16 @@ export function canvasItemStyle(item: CanvasItem): CSSProperties {
   return {
     width: item.width,
     height: item.height,
-    transform: `translate(${item.x}px, ${item.y}px)`,
+    transform: `translate(${item.x}px, ${item.y}px) rotate(${item.rotation}deg)`,
   }
 }
 
-export function canvasItemContentStyle(item: CanvasItem): CSSProperties {
-  return {
-    transform: `rotate(${item.rotation}deg)`,
-  }
+export function canvasItemContentStyle(_item: CanvasItem): CSSProperties {
+  return {}
 }
 
-export function canvasControlStyle(item: CanvasItem): CSSProperties {
-  const bounds = rotatedItemBounds(item)
-  return {
-    left: bounds.x,
-    top: bounds.y,
-    right: 'auto',
-    bottom: 'auto',
-    width: bounds.width,
-    height: bounds.height,
-  }
+export function canvasControlStyle(_item: CanvasItem): CSSProperties {
+  return {}
 }
 
 export function scaleCanvasItemByWheel(item: CanvasItem, deltaY: number, stage: HTMLElement | null): CanvasItem {

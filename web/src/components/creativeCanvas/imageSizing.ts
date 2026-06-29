@@ -32,6 +32,27 @@ export async function canvasImageSizeFromSrc(src?: string): Promise<CanvasImageD
   return fitCanvasImageSize(naturalSize?.width, naturalSize?.height)
 }
 
+export async function canvasImageSizeFromFile(file: File): Promise<CanvasImageDisplaySize> {
+  if (typeof createImageBitmap === 'function') {
+    try {
+      const bitmap = await createImageBitmap(file)
+      const size = fitCanvasImageSize(bitmap.width, bitmap.height)
+      bitmap.close()
+      return size
+    } catch {
+      // Fall back to an object URL decode below.
+    }
+  }
+
+  if (typeof URL === 'undefined') return DEFAULT_CANVAS_IMAGE_SIZE
+  const url = URL.createObjectURL(file)
+  try {
+    return await canvasImageSizeFromSrc(url)
+  } finally {
+    URL.revokeObjectURL(url)
+  }
+}
+
 export function fitCanvasImageSize(naturalWidth?: number, naturalHeight?: number): CanvasImageDisplaySize {
   const width = Number(naturalWidth)
   const height = Number(naturalHeight)

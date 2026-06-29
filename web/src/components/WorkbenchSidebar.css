@@ -837,3 +837,33 @@
   min-height: 34px;
   max-height: 34px;
 }
+
+
+/* Final sidebar popover pass: keep the theme menu complete and open upward from the footer. */
+.workbench-sidebar,
+:root[data-theme] .workbench-sidebar {
+  overflow: visible;
+}
+
+.workbench-sidebar-footer,
+.workbench-sidebar-tools,
+.workbench-sidebar .workbench-sidebar-tools .theme-toggle {
+  position: relative;
+  overflow: visible;
+  z-index: 40;
+}
+
+.workbench-sidebar .workbench-sidebar-tools .theme-toggle .theme-toggle-trigger::after {
+  transform: translateY(-35%) rotate(225deg);
+}
+
+.workbench-sidebar .workbench-sidebar-tools .theme-toggle-menu {
+  top: auto !important;
+  right: 0 !important;
+  bottom: calc(100% + 8px) !important;
+  left: auto !important;
+  z-index: 120;
+  width: min(176px, calc(100vw - 24px));
+  max-height: min(360px, calc(100vh - 36px));
+  overflow-y: auto;
+}

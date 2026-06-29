@@ -1,4 +1,4 @@
-import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { type ComponentProps, type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { cancelTask, createTask, deleteTask, listTasks, retryTask, setTaskFavorite, uploadTaskImageToPixhost } from '../api/tasks'
 import { createGifTask, type GifTaskDraft } from '../api/gifTasks'
 import { getCurrentUser, logoutUser } from '../api/users'
@@ -52,6 +52,21 @@ const MAX_REFERENCE_IMAGES = 8
 const MAX_REFERENCE_IMAGE_BYTES = 12 * 1024 * 1024
 const MAX_REFERENCE_UPLOAD_BYTES = 50 * 1024 * 1024
 const ALLOWED_REFERENCE_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp'])
+
+type AgentTaskBackflowPayload = Task | Task[] | {
+  task?: Task
+  job?: Task
+  tasks?: Task[]
+  taskId?: string
+  taskIds?: string[]
+}
+
+type AgentPageBridgeProps = ComponentProps<typeof AgentPage> & {
+  onTaskConfirmed?: (payload: AgentTaskBackflowPayload) => void
+  onTaskCreated?: (payload: AgentTaskBackflowPayload) => void
+  onConfirmTask?: (payload: AgentTaskBackflowPayload) => void
+  onConfirmedTasks?: (payload: AgentTaskBackflowPayload) => void
+}
 
 export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onToggleTheme: () => void }) {
   const [session, setSession] = useState<UserSession | null>(null)
@@ -415,6 +430,21 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
     setPrompt('')
     void refreshSession()
     setMessage('创作画布任务已提交，右侧预览会持续更新')
+  }
+
+  function handleAgentTaskBackflow(payload: AgentTaskBackflowPayload) {
+    const confirmedTasks = agentTasksFromBackflow(payload)
+    const confirmedIds = agentTaskIdsFromBackflow(payload)
+    confirmedTasks.forEach(upsertTask)
+
+    const activeTaskId = confirmedTasks[0]?.id || confirmedIds[0]
+    if (activeTaskId) setActiveId(activeTaskId)
+    goToTab('result')
+    void refreshTasks()
+    void refreshSession()
+
+    const total = confirmedTasks.length || confirmedIds.length
+    setMessage(total > 1 ? `Agent 已创建 ${total} 个任务，已进入结果历史` : 'Agent 已创建任务，已进入结果历史')
   }
 
   async function handleUpload(files: File[]) {
@@ -808,6 +838,16 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
 
   if (!session) return <SpaceLogin theme={theme} onToggleTheme={onToggleTheme} onSession={(next) => { setSession(next); setSpaceReady(true) }} />
 
+  const agentPageProps: AgentPageBridgeProps = {
+    provider,
+    model: provider === BANANA_PROVIDER ? bananaModel : DEFAULT_IMAGE2_MODEL,
+    onCopyPrompt: () => setMessage('Agent 提示词已复制'),
+    onTaskConfirmed: handleAgentTaskBackflow,
+    onTaskCreated: handleAgentTaskBackflow,
+    onConfirmTask: handleAgentTaskBackflow,
+    onConfirmedTasks: handleAgentTaskBackflow,
+  }
+
   return (
     <div className="app-shell gallery-shell tabbed-workbench workbench-with-sidebar">
       <div className="workbench-desktop-frame">
@@ -918,16 +958,7 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
 
         {activeTab === 'agent' ? (
           <section className="workflow-page agent-workflow-page">
-            <AgentPage
-              provider={provider}
-              model={provider === BANANA_PROVIDER ? bananaModel : DEFAULT_IMAGE2_MODEL}
-              onCopyPrompt={() => setMessage('Agent 提示词已复制')}
-              onSendToCanvas={(payload) => handleUseAgentPromptToCanvas(payload.prompt, payload)}
-              onQuickGenerate={(payload) => {
-                applyPromptToGenerate(payload.prompt, payload)
-                setMessage('Agent 已填入快捷生成')
-              }}
-            />
+            <AgentPage {...agentPageProps} />
           </section>
         ) : null}
 
@@ -1261,4 +1292,25 @@ function formatReferenceUploadError(err: unknown) {
 
 function isFinal(task: Task) {
   return ['succeeded', 'partial_failed', 'failed', 'cancelled', 'interrupted'].includes(task.status)
+}
+
+function agentTasksFromBackflow(payload: AgentTaskBackflowPayload): Task[] {
+  if (Array.isArray(payload)) return payload.filter(isTaskPayload)
+  if (isTaskPayload(payload)) return [payload]
+  return [payload.task, payload.job, ...(Array.isArray(payload.tasks) ? payload.tasks : [])].filter(isTaskPayload)
+}
+
+function agentTaskIdsFromBackflow(payload: AgentTaskBackflowPayload) {
+  const ids = agentTasksFromBackflow(payload).map((task) => task.id)
+  if (!Array.isArray(payload) && !isTaskPayload(payload)) {
+    if (payload.taskId) ids.push(payload.taskId)
+    if (Array.isArray(payload.taskIds)) ids.push(...payload.taskIds)
+  }
+  return Array.from(new Set(ids.map((id) => id.trim()).filter(Boolean)))
+}
+
+function isTaskPayload(value: unknown): value is Task {
+  if (!value || typeof value !== 'object') return false
+  const candidate = value as Partial<Task>
+  return typeof candidate.id === 'string' && typeof candidate.status === 'string' && Array.isArray(candidate.results)
 }

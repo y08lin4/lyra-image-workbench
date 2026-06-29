@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type {
   ClipboardEvent as ReactClipboardEvent,
   DragEvent as ReactDragEvent,
@@ -48,7 +48,7 @@ import {
   spreadPoint,
   updateCanvasItemsForInteraction,
 } from './creativeCanvas/geometry'
-import { aspectRatioValue, canvasImageSizeFromSrc, extensionLabel, modeLabel } from './creativeCanvas/imageSizing'
+import { aspectRatioValue, canvasImageSizeFromFile, canvasImageSizeFromSrc, extensionLabel, modeLabel } from './creativeCanvas/imageSizing'
 import {
   BANANA_MODEL_OPTIONS,
   BANANA_PROVIDER,
@@ -76,6 +76,7 @@ import {
   normalizeConnectionLabel,
 } from './creativeCanvas/connectionPrompt'
 import { loadCreativeCanvasDraft, saveCreativeCanvasDraft } from './creativeCanvas/persistence'
+import { buildCanvasPreviewState, isHistoryPreviewSelected } from './creativeCanvas/preview'
 import { canvasConnectionClassName, canvasConnectionLabelClassName, isEditableTarget } from './creativeCanvas/interaction'
 import './NodeWorkflowPage.css'
 
@@ -144,6 +145,7 @@ export function NodeWorkflowPage({
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null)
   const [selectedConnectionId, setSelectedConnectionId] = useState<string | null>(null)
   const [generatedPromptOverride, setGeneratedPromptOverride] = useState('')
+  const [selectedHistoryImage, setSelectedHistoryImage] = useState<CanvasHistoryImage | null>(null)
   const [connectionDraftFrom, setConnectionDraftFrom] = useState<string | null>(null)
   const [editingConnectionId, setEditingConnectionId] = useState<string | null>(null)
   const [connectionLabelDraft, setConnectionLabelDraft] = useState('')
@@ -200,14 +202,27 @@ export function NodeWorkflowPage({
     return () => window.clearTimeout(handle)
   }, [canvasItems, connections, draftPrompt, mode])
 
-  useEffect(() => () => {
-    saveCreativeCanvasDraft({
-      items: canvasItemsRef.current,
-      connections: connectionsRef.current,
-      prompt: draftPromptRef.current,
-      mode: modeRef.current,
-      hasStoredDraft: true,
-    })
+  useEffect(() => {
+    const saveCurrentDraft = () => {
+      saveCreativeCanvasDraft({
+        items: canvasItemsRef.current,
+        connections: connectionsRef.current,
+        prompt: draftPromptRef.current,
+        mode: modeRef.current,
+        hasStoredDraft: true,
+      })
+    }
+    const saveWhenHidden = () => {
+      if (document.visibilityState === 'hidden') saveCurrentDraft()
+    }
+
+    window.addEventListener('pagehide', saveCurrentDraft)
+    document.addEventListener('visibilitychange', saveWhenHidden)
+    return () => {
+      window.removeEventListener('pagehide', saveCurrentDraft)
+      document.removeEventListener('visibilitychange', saveWhenHidden)
+      saveCurrentDraft()
+    }
   }, [])
 
   useEffect(() => {
@@ -264,7 +279,7 @@ export function NodeWorkflowPage({
     localPreviewUrlsRef.current.forEach((url) => URL.revokeObjectURL(url))
   }, [])
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     canvasItemsRef.current = canvasItems
     connectionsRef.current = connections
     draftPromptRef.current = draftPrompt
@@ -367,13 +382,12 @@ export function NodeWorkflowPage({
   const trimmedSubmissionPrompt = submissionPrompt.trim()
 
   const canCreateTask = hasCanvasPromptContent && (mode === 'text-to-image' || taskUploadIds.length > 0)
-  const latestOkResult = useMemo(() => {
-    const okResults = latestTask?.results.filter((item) => item.ok && item.imageUrl) || []
-    return okResults[okResults.length - 1]
-  }, [latestTask])
-  const selectedItemPreview = selectedImageItem ? imageSrcForCanvasItem(selectedImageItem, previewUrls) : ''
-  const renderPreviewSrc = selectedItemPreview || latestOkResult?.imageUrl || ''
-  const renderPreviewAlt = selectedImageItem ? selectedImageItem.name : latestOkResult ? '最新生成结果' : selectedItem?.name || '画布预览'
+  const previewState = useMemo(() => buildCanvasPreviewState({
+    selectedItem,
+    selectedHistoryImage,
+    latestTask,
+    previewUrls,
+  }), [latestTask, previewUrls, selectedHistoryImage, selectedItem])
   const visibleReferences = referenceUploads.slice(0, 10)
   const visibleHistory = recentResults.slice(0, 12)
   const contextMenuItem = contextMenu?.target === 'item' ? canvasItems.find((item) => item.id === contextMenu.itemId) : null
@@ -492,7 +506,7 @@ export function NodeWorkflowPage({
         localPreviewUrlsRef.current.push(url)
         return url
       })
-      const sizePromises = localUrls.map((url) => canvasImageSizeFromSrc(url))
+      const sizePromises = imageFiles.map((file) => canvasImageSizeFromFile(file))
       const [created, sizes] = await Promise.all([onUploadReferences(imageFiles), Promise.all(sizePromises)])
       if (!created.length) return
       const nextItems = created.map((upload, index) => createCanvasItemFromUpload(upload, spreadPoint(point, index), canvasItems.length + index, localUrls[index], sizes[index]))
@@ -512,6 +526,7 @@ export function NodeWorkflowPage({
       setCanvasItems((items) => items.map((item) => (isCanvasImageItem(item) && item.id === existing.id ? { ...item, isReference: true } : item)))
       setSelectedItemId(existing.id)
       setSelectedConnectionId(null)
+      setSelectedHistoryImage(image)
       setMode('image-to-image')
       setMessage('已选中画布中的历史参考图。')
       return
@@ -527,6 +542,7 @@ export function NodeWorkflowPage({
           setCanvasItems((items) => items.map((item) => (isCanvasImageItem(item) && item.id === existingUpload.id ? { ...item, isReference: true, resultSrc: item.resultSrc || image.src } : item)))
           setSelectedItemId(existingUpload.id)
           setSelectedConnectionId(null)
+          setSelectedHistoryImage(image)
           setMode('image-to-image')
           setMessage('已选中画布中的历史参考图。')
           return
@@ -536,6 +552,7 @@ export function NodeWorkflowPage({
       setCanvasItems((items) => [...items, item])
       setSelectedItemId(item.id)
       setSelectedConnectionId(null)
+      setSelectedHistoryImage(image)
       setMode('image-to-image')
       setMessage('历史结果已加入画布参考。')
     } catch (error) {
@@ -821,6 +838,7 @@ export function NodeWorkflowPage({
     setConnections((items) => items.filter((item) => item.fromId !== itemId && item.toId !== itemId))
     setSelectedItemId((current) => (current === itemId ? null : current))
     setSelectedConnectionId(null)
+    setSelectedHistoryImage(null)
     setConnectionDraftFrom((current) => (current === itemId ? null : current))
     setEditingTextItemId((current) => (current === itemId ? null : current))
     setOptimizingTextItemId((current) => (current === itemId ? null : current))
@@ -895,9 +913,8 @@ export function NodeWorkflowPage({
 
   function handleCanvasKeyDown(event: ReactKeyboardEvent<HTMLElement>) {
     if (event.defaultPrevented || event.nativeEvent.isComposing || isEditableTarget(event.target)) return
-    if (editingConnectionId || editingTextItemId) return
 
-    if ((event.key === 'Enter' || event.key === 'F2') && selectedConnectionId) {
+    if ((event.key === 'Enter' || event.key === 'F2') && selectedConnectionId && !editingConnectionId && !editingTextItemId) {
       const connection = connections.find((item) => item.id === selectedConnectionId)
       if (!connection) return
       event.preventDefault()
@@ -907,6 +924,7 @@ export function NodeWorkflowPage({
     }
 
     if (event.key !== 'Delete' && event.key !== 'Backspace') return
+    if (editingConnectionId) return
 
     if (selectedConnectionId) {
       event.preventDefault()
@@ -949,6 +967,7 @@ export function NodeWorkflowPage({
     setConnections([])
     setSelectedItemId(null)
     setSelectedConnectionId(null)
+    setSelectedHistoryImage(null)
     setGeneratedPromptOverride('')
     setConnectionDraftFrom(null)
     setEditingTextItemId(null)
@@ -977,6 +996,7 @@ export function NodeWorkflowPage({
       onDragLeave={handleCanvasDragLeave}
       onDrop={handleCanvasDrop}
       onPaste={handlePagePaste}
+      onKeyDown={handleCanvasKeyDown}
     >
       <header className="creative-canvas-topbar">
         <div className="creative-canvas-title">
@@ -1130,6 +1150,7 @@ export function NodeWorkflowPage({
                           onPointerDown={(event) => event.stopPropagation()}
                           onClick={(event) => event.stopPropagation()}
                           onKeyDown={(event) => {
+                            event.stopPropagation()
                             if (event.key === 'Escape' || ((event.ctrlKey || event.metaKey) && event.key === 'Enter')) event.currentTarget.blur()
                           }}
                         />
@@ -1193,12 +1214,12 @@ export function NodeWorkflowPage({
         <aside className="creative-render-panel" aria-label="实时预览">
           <section className="creative-render-preview">
             <header>
-              <strong>实时预览</strong>
-              <span>{selectedImageItem ? roleMeta(selectedImageItem.role).label : latestTask ? `${latestTask.statusText} / ${latestTask.progress}%` : selectedTextItem ? '文字块' : '待生成'}</span>
+              <strong>{previewState.title}</strong>
+              <span>{previewState.status}</span>
             </header>
             <div className="creative-render-frame" style={{ aspectRatio: aspectRatioValue(effectiveRatio) }}>
-              {renderPreviewSrc ? (
-                <img src={renderPreviewSrc} alt={renderPreviewAlt} />
+              {previewState.src ? (
+                <img src={previewState.src} alt={previewState.alt} />
               ) : (
                 <span>等待画布内容</span>
               )}
@@ -1262,8 +1283,12 @@ export function NodeWorkflowPage({
                   type="button"
                   draggable
                   onDragStart={(event) => handleHistoryDragStart(event, image)}
-                  onClick={() => void addHistoryImageToCanvas(image, autoItemPosition(canvasItems.length))}
+                  onClick={() => {
+                    setSelectedHistoryImage(image)
+                    void addHistoryImageToCanvas(image, autoItemPosition(canvasItems.length))
+                  }}
                   title={image.title}
+                  aria-pressed={isHistoryPreviewSelected(image, selectedHistoryImage)}
                 >
                   <img src={image.src} alt={image.title} draggable={false} />
                   <span>{image.subtitle}</span>
