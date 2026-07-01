@@ -52,9 +52,7 @@ export function AdminPage({ theme, onToggleTheme, embedded = false }: AdminPageP
   const [url, setUrl] = useState('http://127.0.0.1:3000/v1')
   const [publicBaseUrl, setPublicBaseUrl] = useState('')
   const [systemApiKey, setSystemApiKey] = useState('')
-  const [systemBananaApiKey, setSystemBananaApiKey] = useState('')
   const [clearSystemApiKey, setClearSystemApiKey] = useState(false)
-  const [clearSystemBananaApiKey, setClearSystemBananaApiKey] = useState(false)
   const [debugEnabled, setDiagnosticsEnabled] = useState(false)
   const [timeout, setTimeoutSec] = useState<NumericInputValue>(600)
   const [epayEnabled, setEpayEnabled] = useState(false)
@@ -137,9 +135,7 @@ export function AdminPage({ theme, onToggleTheme, embedded = false }: AdminPageP
       setUrl(cfg.newApiBaseUrl)
       setPublicBaseUrl(cfg.publicBaseUrl || '')
       setSystemApiKey('')
-      setSystemBananaApiKey('')
       setClearSystemApiKey(false)
-      setClearSystemBananaApiKey(false)
       setDiagnosticsEnabled(Boolean(cfg.debugEnabled))
       setTimeoutSec(cfg.timeoutSec)
       applyBillingConfig(cfg)
@@ -215,9 +211,7 @@ export function AdminPage({ theme, onToggleTheme, embedded = false }: AdminPageP
           setUrl(next.config.newApiBaseUrl)
           setPublicBaseUrl(next.config.publicBaseUrl || '')
           setSystemApiKey('')
-          setSystemBananaApiKey('')
           setClearSystemApiKey(false)
-          setClearSystemBananaApiKey(false)
           setDiagnosticsEnabled(Boolean(next.config.debugEnabled))
           setTimeoutSec(next.config.timeoutSec)
           applyBillingConfig(next.config)
@@ -242,17 +236,13 @@ export function AdminPage({ theme, onToggleTheme, embedded = false }: AdminPageP
     try {
       const cfg = await saveAdminConfig(siteName, url, numericOrDefault(timeout, config?.timeoutSec || 600), publicBaseUrl, debugEnabled, {
         ...(systemApiKey.trim() ? { systemApiKey: systemApiKey.trim() } : {}),
-        ...(systemBananaApiKey.trim() ? { systemBananaApiKey: systemBananaApiKey.trim() } : {}),
         clearSystemApiKey,
-        clearSystemBananaApiKey,
       })
       setConfig(cfg)
       setSiteName(cfg.siteName || 'Lyra Image Workbench')
       setPublicBaseUrl(cfg.publicBaseUrl || '')
       setSystemApiKey('')
-      setSystemBananaApiKey('')
       setClearSystemApiKey(false)
-      setClearSystemBananaApiKey(false)
       setDiagnosticsEnabled(Boolean(cfg.debugEnabled))
       applyBillingConfig(cfg)
       applyEmailConfig(cfg)
@@ -608,18 +598,14 @@ export function AdminPage({ theme, onToggleTheme, embedded = false }: AdminPageP
             url={url}
             publicBaseUrl={publicBaseUrl}
             systemApiKey={systemApiKey}
-            systemBananaApiKey={systemBananaApiKey}
             clearSystemApiKey={clearSystemApiKey}
-            clearSystemBananaApiKey={clearSystemBananaApiKey}
             timeout={timeout}
             debugEnabled={debugEnabled}
             onSiteNameChange={setSiteName}
             onUrlChange={setUrl}
             onPublicBaseUrlChange={setPublicBaseUrl}
             onSystemApiKeyChange={setSystemApiKey}
-            onSystemBananaApiKeyChange={setSystemBananaApiKey}
             onClearSystemApiKeyChange={setClearSystemApiKey}
-            onClearSystemBananaApiKeyChange={setClearSystemBananaApiKey}
             onTimeoutChange={setTimeoutSec}
             onDiagnosticsEnabledChange={setDiagnosticsEnabled}
             onSubmit={submit}

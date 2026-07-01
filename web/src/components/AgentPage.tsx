@@ -23,6 +23,7 @@ export type AgentPromptPayload = {
   sessionId?: string
   provider: ModelProvider
   model: string
+  ratio: string
 }
 
 type AgentTaskBackflowPayload = ConfirmAgentRoundResponse | Task | Task[]
@@ -31,7 +32,9 @@ export type AgentPageProps = {
   initialPrompt?: string
   provider?: ModelProvider
   model?: string
+  ratio?: string
   onCopyPrompt?: (payload: AgentPromptPayload) => void
+  onUsePromptToCanvas?: (payload: AgentPromptPayload) => void
   onTaskConfirmed?: (payload: AgentTaskBackflowPayload) => void
   onTaskCreated?: (payload: AgentTaskBackflowPayload) => void
   onConfirmTask?: (payload: AgentTaskBackflowPayload) => void
@@ -54,7 +57,9 @@ export function AgentPage({
   initialPrompt = '',
   provider = IMAGE2_PROVIDER,
   model = DEFAULT_IMAGE2_MODEL,
+  ratio = 'auto',
   onCopyPrompt,
+  onUsePromptToCanvas,
   onTaskConfirmed,
   onTaskCreated,
   onConfirmTask,
@@ -79,9 +84,10 @@ export function AgentPage({
     prompt: activePlan?.generationPrompt?.trim() || buildLocalPrompt(userInputs),
     source: activePlan ? 'session' : 'local',
     sessionId: session?.id,
-    provider,
-    model,
-  }), [activePlan, model, provider, session?.id, userInputs])
+    provider: activePlan?.parameters.provider || provider,
+    model: activePlan?.parameters.model || model,
+    ratio: activePlan?.parameters.ratio || ratio,
+  }), [activePlan, model, provider, ratio, session?.id, userInputs])
   const canUsePrompt = promptPayload.prompt.trim().length > 0
   const canConfirm = Boolean(session?.id && activeRound?.id && activeRound.plan && !confirming)
 
@@ -101,7 +107,7 @@ export function AgentPage({
         content: text,
         provider,
         model,
-        ratio: 'auto',
+        ratio,
         skipQuestions: true,
       })
       setSession(response.session)
@@ -128,7 +134,7 @@ export function AgentPage({
       const response = await confirmAgentRound(session.id, activeRound.id, {
         provider: params.provider || provider,
         model: params.model || model,
-        ratio: params.ratio || 'auto',
+        ratio: params.ratio || ratio,
         resolution: params.resolution || 'standard',
         quality: params.quality || 'auto',
         outputFormat: params.outputFormat || 'png',
@@ -158,6 +164,12 @@ export function AgentPage({
     await navigator.clipboard.writeText(promptPayload.prompt)
     onCopyPrompt?.(promptPayload)
     setStatus('提示词已复制。')
+  }
+
+  function sendPromptToCanvas() {
+    if (!canUsePrompt) return
+    onUsePromptToCanvas?.(promptPayload)
+    setStatus('已发送到创作画布。')
   }
 
   function appendQuickReply(text: string) {
@@ -231,6 +243,7 @@ export function AgentPage({
           </div>
           <div className="agent-action-row">
             <button type="button" onClick={copyPrompt} disabled={!canUsePrompt}>复制提示词</button>
+            <button type="button" onClick={sendPromptToCanvas} disabled={!canUsePrompt || !onUsePromptToCanvas}>发送到画布</button>
             <button type="button" onClick={() => void submitMessage()} disabled={loading || confirming || !input.trim()}>{loading ? '规划中...' : '发送规划'}</button>
             <button type="button" className="primary" onClick={confirmTask} disabled={!canConfirm}>{confirming ? '创建中...' : '确认生成'}</button>
           </div>

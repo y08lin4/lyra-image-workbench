@@ -206,6 +206,43 @@ textarea { resize: vertical; line-height: 1.55; }
   color: var(--text);
   padding: 10px 12px;
 }
+.size-auto-notice {
+  width: 100%;
+  min-height: 58px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-soft);
+  color: var(--text);
+  padding: 10px 12px;
+  cursor: default;
+}
+.size-auto-notice span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.size-auto-notice strong {
+  color: var(--text);
+  font-size: 13px;
+}
+.size-auto-notice small {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+.size-auto-notice b {
+  flex: none;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--primary-2);
+  padding: 4px 8px;
+  font-size: 12px;
+}
 .size-selector-button span {
   display: grid;
   gap: 2px;
@@ -677,6 +714,29 @@ textarea { resize: vertical; line-height: 1.55; }
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.custom-size-section {
+  display: grid;
+  gap: 7px;
+}
+.custom-size-field {
+  display: block;
+}
+.custom-size-field input {
+  width: 100%;
+  height: 42px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--text);
+  padding: 0 12px;
+  font-size: 14px;
+  font-weight: 800;
+}
+.custom-size-section small {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
 }
 .result-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 14px; }
 .result-card {
@@ -1476,6 +1536,7 @@ button:not(.primary) { background: var(--surface-soft); color: #1e3a8a; border: 
   .gallery-shell .composer-control-left .mode-tabs,
   .gallery-shell .composer-control-left .provider-tabs,
   .gallery-shell .composer-control-left .size-selector-button,
+  .gallery-shell .composer-control-left .size-auto-notice,
   .gallery-shell .composer-control-left .banana-model-button,
   .gallery-shell .composer-control-left .quality-list,
   .gallery-shell .composer-control-left .format-list,
@@ -3006,6 +3067,7 @@ button:not(.primary) { background: var(--surface-soft); color: #1e3a8a; border: 
   .gallery-shell .composer-control-left .mode-tabs,
   .gallery-shell .composer-control-left .provider-tabs,
   .gallery-shell .composer-control-left .size-selector-button,
+  .gallery-shell .composer-control-left .size-auto-notice,
   .gallery-shell .composer-control-left .banana-model-button,
   .gallery-shell .composer-control-left .quality-list,
   .gallery-shell .composer-control-left .format-list,
@@ -3611,6 +3673,7 @@ button:not(.primary) { background: var(--surface-soft); color: #1e3a8a; border: 
 .generate-page .composer-control-left .mode-tabs,
 .generate-page .composer-control-left .provider-tabs,
 .generate-page .composer-control-left .size-selector-button,
+.generate-page .composer-control-left .size-auto-notice,
 .generate-page .composer-control-left .banana-model-button,
 .generate-page .composer-control-left .quality-list,
 .generate-page .composer-control-left .format-list,
@@ -4007,6 +4070,7 @@ button:not(.primary) { background: var(--surface-soft); color: #1e3a8a; border: 
 }
 .generate-control-grid .mode-tabs,
 .generate-control-grid .size-selector-button,
+.generate-control-grid .size-auto-notice,
 .generate-control-grid .banana-model-button,
 .generate-control-grid .quality-list,
 .generate-control-grid .format-list {
@@ -5773,6 +5837,7 @@ button:not(.primary) { background: var(--surface-soft); color: #1e3a8a; border: 
 :root[data-theme='light'] select,
 :root[data-theme='light'] textarea,
 :root[data-theme='light'] .size-selector-button,
+:root[data-theme='light'] .size-auto-notice,
 :root[data-theme='light'] .queue-search input,
 :root[data-theme='light'] .composer-prompt textarea {
   background: #ffffff !important;
@@ -10531,6 +10596,7 @@ input,
 select,
 textarea,
 .size-selector-button,
+.size-auto-notice,
 .banana-model-button,
 .mode-tabs,
 .provider-tabs,
@@ -10594,6 +10660,7 @@ button:not(.primary):not(.active):hover,
 :root[data-theme] select,
 :root[data-theme] textarea,
 :root[data-theme] .size-selector-button,
+:root[data-theme] .size-auto-notice,
 :root[data-theme] .banana-model-button,
 :root[data-theme] .mode-tabs,
 :root[data-theme] .provider-tabs,
@@ -11496,6 +11563,7 @@ button:not(.primary):not(.active):hover,
 :root[data-theme='green'] .eyebrow,
 :root[data-theme='green'] .upload-dropzone span,
 :root[data-theme='green'] .size-selector-button b,
+:root[data-theme='green'] .size-auto-notice b,
 :root[data-theme='green'] .debug-log-item header b {
   color: var(--primary-2) !important;
 }

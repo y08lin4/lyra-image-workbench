@@ -1,3 +1,4 @@
+import { canvasPointFromClient } from './geometry'
 import type { CanvasImageItem, CanvasItem, CanvasPoint, CanvasTextItem } from './types'
 
 export const CANVAS_TEXT_ITEM_WIDTH = 280
@@ -33,14 +34,8 @@ export function updateCanvasTextItemText(items: CanvasItem[], itemId: string, te
 }
 
 export function canvasTextPointFromClient(clientX: number, clientY: number, stage: HTMLElement | null): CanvasPoint {
-  const rect = stage?.getBoundingClientRect()
-  if (!rect) return { x: 80, y: 78 }
-  return {
-    x: clamp(clientX - rect.left - CANVAS_TEXT_ITEM_WIDTH / 2, 8, Math.max(8, rect.width - CANVAS_TEXT_ITEM_WIDTH - 8)),
-    y: clamp(clientY - rect.top - CANVAS_TEXT_ITEM_HEIGHT / 2, 8, Math.max(8, rect.height - CANVAS_TEXT_ITEM_HEIGHT - 8)),
-  }
-}
-
-function clamp(value: number, min: number, max: number) {
-  return Math.min(max, Math.max(min, value))
+  return canvasPointFromClient(clientX, clientY, stage, {
+    width: CANVAS_TEXT_ITEM_WIDTH,
+    height: CANVAS_TEXT_ITEM_HEIGHT,
+  })
 }

@@ -67,22 +67,13 @@ export type {
 export interface UserConfig {
   apiKeySet: boolean
   apiKeyPreview: string
-  bananaApiKeySet: boolean
-  bananaApiKeyPreview: string
   localApiKeySet?: boolean
   localApiKeyPreview?: string
-  localBananaApiKeySet?: boolean
-  localBananaApiKeyPreview?: string
   cloudApiKeySet?: boolean
   cloudApiKeyPreview?: string
-  cloudBananaApiKeySet?: boolean
-  cloudBananaApiKeyPreview?: string
   systemApiKeySet?: boolean
   systemApiKeyPreview?: string
-  systemBananaApiKeySet?: boolean
-  systemBananaApiKeyPreview?: string
   apiKeySource?: 'local' | 'cloud' | 'system' | 'none'
-  bananaApiKeySource?: 'local' | 'cloud' | 'system' | 'none'
   defaultCount: number
   defaultConcurrency: number
   autoUploadPixhost: boolean

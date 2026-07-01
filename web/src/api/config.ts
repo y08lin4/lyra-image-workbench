@@ -13,23 +13,19 @@ export async function saveApiKey(apiKey: string) {
 
 export type SaveUserConfigPayload = {
   apiKey?: string
-  bananaApiKey?: string
   saveApiKeyToCloud?: boolean
-  saveBananaKeyToCloud?: boolean
   clearCloudApiKey?: boolean
-  clearCloudBananaApiKey?: boolean
   defaultCount?: number
   defaultConcurrency?: number
   autoUploadPixhost?: boolean
 }
 
 export async function saveUserConfig(payload: SaveUserConfigPayload) {
-  const { apiKey, bananaApiKey, saveApiKeyToCloud, saveBananaKeyToCloud, ...rest } = payload
-  saveLocalApiKeys({ apiKey, bananaApiKey })
+  const { apiKey, saveApiKeyToCloud, ...rest } = payload
+  saveLocalApiKeys({ apiKey })
   const serverPayload = {
     ...rest,
     ...(saveApiKeyToCloud ? { apiKey, saveApiKeyToCloud } : {}),
-    ...(saveBananaKeyToCloud ? { bananaApiKey, saveBananaKeyToCloud } : {}),
   }
   const data = await requestJson<{ ok: boolean; config: UserConfig }>('/api/config', {
     method: 'POST',

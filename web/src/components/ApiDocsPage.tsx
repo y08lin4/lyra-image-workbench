@@ -6,7 +6,7 @@ const DOCS_REPO_URL = 'https://github.com/y08lin4/LyAi-Image-Generation-API-Docu
 const API_BASE_URL = 'https://ai-image.ailinyu.de'
 const API_KEY_PLACEHOLDER = '<API_KEY>'
 const ENV_VAR_NAME = 'LYRA_API_KEY'
-const DEFAULT_MODEL = 'gpt-image-2'
+const DEFAULT_MODEL = 'image-2'
 const WAIT_STATUSES = ['queued', 'running']
 const SUCCESS_STATUSES = ['succeeded', 'partial_failed']
 const FAILURE_STATUSES = ['failed', 'cancelled', 'interrupted']
@@ -41,7 +41,6 @@ type CodeBlockFrameProps = {
 const REQUEST_PAYLOAD = {
   model: DEFAULT_MODEL,
   prompt: 'A clean product photo of a translucent smart speaker on a stone pedestal',
-  size: '1024x1024',
   quality: 'auto',
   output_format: 'png',
   n: 1,
@@ -52,7 +51,7 @@ const REQUEST_BODY_COMPACT = JSON.stringify(REQUEST_PAYLOAD)
 const JAVA_REQUEST_BODY = REQUEST_BODY_PRETTY.split('\n').map((line) => `      ${line}`).join('\n')
 
 const QUICK_STEPS = [
-  ['准备账号', '注册登录 LyAi，在设置页保存 image-2 或 banana 的云端上游 Key。'],
+  ['准备账号', '注册登录 LyAi，在设置页保存 Image-2 云端上游 Key。'],
   ['生成 Bearer Key', `复制 lyra_sk_...，服务端脚本从环境变量 ${ENV_VAR_NAME} 读取；不要写进前端代码。`],
   ['创建、轮询、下载', `POST 创建任务，轮询到 ${TERMINAL_STATUSES.join('/')}，成功或部分成功时下载第一个 ok=true 结果。`],
 ] as const
@@ -367,7 +366,7 @@ const AI_INTEGRATION_PROMPT = [
   '- 备用原生端点: POST /v1/image-tasks',
   '- Header: Content-Type: application/json',
   `- 示例请求体: ${REQUEST_BODY_COMPACT}`,
-  '- /v1/images/generations 中 prompt 必填；model 可省略，image-2 默认 gpt-image-2；size 支持 auto、1024x1024、1024x1536、1536x1024、768x1024、1024x768、1008x1792、1792x1008 以及 2K/4K 对应尺寸。',
+  '- /v1/images/generations 中 prompt 必填；model=image-2 为基础版，不提交 size；model=image-2-4k 为 image-2（满血版），支持 auto、预设尺寸和自定义 WIDTHxHEIGHT。',
   '- 原生端点可传 ratio(auto/1:1/2:3/3:2/3:4/4:3/9:16/16:9)、resolution(auto/standard/2k/4k)、quality(auto/low/medium/high)、outputFormat(png/jpeg/webp/auto)、count(1-24)、concurrency(最小 1)。',
   '- 创建响应里读取 taskId；若没有 taskId，则读取 task.id。保存原始响应，便于错误排查。',
   '',

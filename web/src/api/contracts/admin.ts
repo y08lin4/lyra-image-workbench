@@ -32,18 +32,35 @@ export interface AdminEmailConfig {
   smtpSecure?: boolean
 }
 
+export interface AdminImageChannelModelConfig {
+  id: string
+  label: string
+  enabled: boolean
+  price: number
+  ratioSelectable: boolean
+  defaultResolution: string
+}
+
+export interface AdminImageChannelConfig {
+  type: string
+  name: string
+  baseURL: string
+  keySet?: boolean
+  keyPreview?: string
+  enabled: boolean
+  models: AdminImageChannelModelConfig[]
+}
 export interface AdminConfig {
   siteName: string
   newApiBaseUrl: string
   systemApiKeySet?: boolean
   systemApiKeyPreview?: string
-  systemBananaApiKeySet?: boolean
-  systemBananaApiKeyPreview?: string
   publicBaseUrl: string
   debugEnabled: boolean
   timeoutSec: number
   model: string
   modelLocked: boolean
+  imageChannels?: AdminImageChannelConfig[]
   billing?: AdminBillingConfig
   email?: AdminEmailConfig
   epayEnabled?: boolean

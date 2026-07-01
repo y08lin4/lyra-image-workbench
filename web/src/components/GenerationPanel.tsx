@@ -4,8 +4,7 @@ import { QualityPicker } from './QualityPicker'
 import { ImageSpecPicker } from './ImageSpecPicker'
 import { OutputFormatPicker } from './OutputFormatPicker'
 import { UploadPanel } from './UploadPanel'
-import { BananaModelPicker } from './BananaModelPicker'
-import { BANANA_PROVIDER, providerLabel } from '../lib/models'
+import { IMAGE2_MODEL_OPTIONS, getImage2ModelOption, image2ModelAllowsRatio, providerLabel } from '../lib/models'
 
 type NumericInputValue = number | ''
 
@@ -15,9 +14,10 @@ type Props = {
   prompt: string
   ratio: string
   resolution: string
+  size: string
   quality: string
   outputFormat: string
-  bananaModel: string
+  imageModel: string
   count: NumericInputValue
   concurrency: NumericInputValue
   uploads: ReferenceUpload[]
@@ -26,13 +26,13 @@ type Props = {
   message: string
   error: string
   onModeChange: (mode: Mode) => void
-  onProviderChange: (provider: ModelProvider) => void
+  onImageModelChange: (model: string) => void
   onPromptChange: (value: string) => void
   onRatioChange: (value: string) => void
   onResolutionChange: (value: string) => void
+  onSizeChange: (value: string) => void
   onQualityChange: (value: string) => void
   onOutputFormatChange: (value: string) => void
-  onBananaModelChange: (value: string) => void
   onCountChange: (value: NumericInputValue) => void
   onConcurrencyChange: (value: NumericInputValue) => void
   onOpenSettings: () => void
@@ -47,9 +47,10 @@ export function GenerationPanel({
   prompt,
   ratio,
   resolution,
+  size,
   quality,
   outputFormat,
-  bananaModel,
+  imageModel,
   count,
   concurrency,
   uploads,
@@ -58,13 +59,13 @@ export function GenerationPanel({
   message,
   error,
   onModeChange,
-  onProviderChange,
+  onImageModelChange,
   onPromptChange,
   onRatioChange,
   onResolutionChange,
+  onSizeChange,
   onQualityChange,
   onOutputFormatChange,
-  onBananaModelChange,
   onCountChange,
   onConcurrencyChange,
   onOpenSettings,
@@ -73,6 +74,9 @@ export function GenerationPanel({
   onSubmit,
 }: Props) {
   const isImageToImage = mode === 'image-to-image'
+  const imageModelOption = getImage2ModelOption(imageModel)
+  const ratioSelectable = image2ModelAllowsRatio(imageModel)
+  const specTitleNote = ratioSelectable ? '设置比例、清晰度、质量和输出格式。' : '当前模型自动决定画幅；质量和输出格式仍可设置。'
   const specStep = isImageToImage ? '④' : '③'
   const executeStep = isImageToImage ? '⑤' : '④'
 
@@ -98,12 +102,16 @@ export function GenerationPanel({
         </section>
 
         <section className="generate-step model-step">
-          <StepTitle index="②" title="模型与模式" note="先选模型分组，再选文字生成或参考图生成。" />
-          <div className="generate-control-grid two">
-            <div className="mode-tabs provider-tabs" role="tablist" aria-label="模型分组">
-              <button type="button" className={provider === 'image-2' ? 'active' : ''} onClick={() => onProviderChange('image-2')}>Image-2</button>
-              <button type="button" className={provider === BANANA_PROVIDER ? 'active' : ''} onClick={() => onProviderChange(BANANA_PROVIDER)}>Banana</button>
+          <StepTitle index="②" title="模型与模式" note="选择生图模型和生成方式。" />
+          <div className="generate-control-grid">
+            <div className="mode-tabs provider-tabs" role="radiogroup" aria-label="生图模型">
+              {IMAGE2_MODEL_OPTIONS.map((item) => (
+                <button key={item.id} type="button" className={imageModelOption.id === item.id ? 'active' : ''} onClick={() => onImageModelChange(item.id)}>
+                  {item.label}
+                </button>
+              ))}
             </div>
+            <small className="muted">{imageModelOption.hint}</small>
             <div className="mode-tabs" role="tablist" aria-label="生成模式">
               <button type="button" className={mode === 'text-to-image' ? 'active' : ''} onClick={() => onModeChange('text-to-image')}>文字生成</button>
               <button type="button" className={mode === 'image-to-image' ? 'active' : ''} onClick={() => onModeChange('image-to-image')}>参考图生成</button>
@@ -119,17 +127,15 @@ export function GenerationPanel({
         ) : null}
 
         <section className="generate-step spec-step">
-          <StepTitle index={specStep} title={provider === BANANA_PROVIDER ? 'Banana 模型规格' : '图片规格'} note={provider === BANANA_PROVIDER ? 'Banana 的比例和清晰度由模型 ID 决定。' : '设置比例、清晰度、质量和输出格式。'} />
+          <StepTitle index={specStep} title="图片规格" note={specTitleNote} />
           <div className="generate-control-grid spec-grid">
-            {provider === BANANA_PROVIDER ? (
-              <BananaModelPicker value={bananaModel} onChange={onBananaModelChange} />
+            {ratioSelectable ? (
+              <ImageSpecPicker ratio={ratio} resolution={resolution} size={size} allowAutoRatio={imageModelOption.defaultRatio === 'auto'} customSizeEnabled onRatioChange={onRatioChange} onResolutionChange={onResolutionChange} onSizeChange={onSizeChange} />
             ) : (
-              <>
-                <ImageSpecPicker ratio={ratio} resolution={resolution} onRatioChange={onRatioChange} onResolutionChange={onResolutionChange} />
-                <QualityPicker value={quality} onChange={onQualityChange} />
-                <OutputFormatPicker value={outputFormat} onChange={onOutputFormatChange} />
-              </>
+              <AutoImageSpecNotice hint={imageModelOption.hint} />
             )}
+            <QualityPicker value={quality} onChange={onQualityChange} />
+            <OutputFormatPicker value={outputFormat} onChange={onOutputFormatChange} />
           </div>
         </section>
 
@@ -166,6 +172,20 @@ function StepTitle({ index, title, note }: { index: string; title: string; note:
         <strong>{title}</strong>
         <span>{note}</span>
       </div>
+    </div>
+  )
+}
+
+function AutoImageSpecNotice({ hint }: { hint: string }) {
+  const detail = hint ? `比例、尺寸和分辨率由模型自动决定；${hint}` : '比例、尺寸和分辨率由模型自动决定。'
+
+  return (
+    <div className="size-auto-notice" aria-label="自动画幅说明">
+      <span>
+        <strong>自动画幅</strong>
+        <small>{detail}</small>
+      </span>
+      <b>自动</b>
     </div>
   )
 }

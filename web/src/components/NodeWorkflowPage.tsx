@@ -38,13 +38,16 @@ import {
   canvasItemContentStyle,
   canvasItemStyle,
   canvasControlStyle,
-  canvasPointFromClient,
+  canvasPointAtStageCenter,
+  canvasPointFromStageMetrics,
   dropPointFromEvent,
+  isClientPointInsideMetrics,
   itemCenter,
   nearestConnectableItem,
   normalizeRotation,
   pointerAngleForItem,
   scaleCanvasItemByWheel,
+  snapshotCanvasStageMetrics,
   spreadPoint,
   updateCanvasItemsForInteraction,
 } from './creativeCanvas/geometry'
@@ -76,6 +79,7 @@ import {
   normalizeConnectionLabel,
 } from './creativeCanvas/connectionPrompt'
 import { loadCreativeCanvasDraft, saveCreativeCanvasDraft } from './creativeCanvas/persistence'
+import type { CanvasStageMetrics } from './creativeCanvas/geometry'
 import { buildCanvasPreviewState, isHistoryPreviewSelected } from './creativeCanvas/preview'
 import { canvasConnectionClassName, canvasConnectionLabelClassName, isEditableTarget } from './creativeCanvas/interaction'
 import './NodeWorkflowPage.css'
@@ -94,6 +98,10 @@ export type NodeWorkflowPageProps = {
   prompt?: string
   injectedPrompt?: string
   injectedPromptRevision?: number
+  injectedPromptProvider?: ModelProvider
+  injectedPromptModel?: string
+  injectedPromptRatio?: string
+  onPromptInjectionApplied?: (revision: number) => void
   initialPrompt?: string
   onUsePrompt: (prompt: string, options: NodeWorkflowUsePromptOptions) => void
   onCreateTask?: (payload: CreateTaskRequest) => void | Promise<void>
@@ -108,12 +116,22 @@ export type NodeWorkflowPageProps = {
 const HISTORY_DRAG_TYPE = 'application/x-lyra-history-result'
 const UPLOAD_DRAG_TYPE = 'application/x-lyra-reference-upload'
 
+type CanvasPlacementSnapshot = {
+  clientX: number
+  clientY: number
+  metrics: CanvasStageMetrics | null
+}
+
 export function NodeWorkflowPage({
   provider,
   bananaModel,
   prompt,
   injectedPrompt,
   injectedPromptRevision = 0,
+  injectedPromptProvider,
+  injectedPromptModel,
+  injectedPromptRatio,
+  onPromptInjectionApplied,
   initialPrompt,
   onUsePrompt,
   onCreateTask,
@@ -128,14 +146,14 @@ export function NodeWorkflowPage({
   const initialDraftPrompt = injectedPromptRevision > 0 && injectedPrompt ? injectedPrompt : initialCanvasDraft.hasStoredDraft ? initialCanvasDraft.prompt : prompt || initialPrompt || ''
   const [mode, setMode] = useState<Mode>(initialCanvasDraft.mode)
   const [draftPrompt, setDraftPrompt] = useState(initialDraftPrompt)
-  const [localProvider, setLocalProvider] = useState<ModelProvider>(provider || IMAGE2_PROVIDER)
-  const [localBananaModel, setLocalBananaModel] = useState(bananaModel || DEFAULT_BANANA_MODEL)
-  const [ratio, setRatio] = useState('1:1')
-  const [resolution, setResolution] = useState('standard')
-  const [quality, setQuality] = useState('high')
-  const [outputFormat, setOutputFormat] = useState('png')
-  const [count, setCount] = useState(1)
-  const [concurrency, setConcurrency] = useState(1)
+  const [localProvider, setLocalProvider] = useState<ModelProvider>(initialCanvasDraft.hasStoredDraft ? initialCanvasDraft.provider : provider || IMAGE2_PROVIDER)
+  const [localBananaModel, setLocalBananaModel] = useState(initialCanvasDraft.hasStoredDraft ? initialCanvasDraft.bananaModel : bananaModel || DEFAULT_BANANA_MODEL)
+  const [ratio, setRatio] = useState(initialCanvasDraft.ratio)
+  const [resolution, setResolution] = useState(initialCanvasDraft.resolution)
+  const [quality, setQuality] = useState(initialCanvasDraft.quality)
+  const [outputFormat, setOutputFormat] = useState(initialCanvasDraft.outputFormat)
+  const [count, setCount] = useState(initialCanvasDraft.count)
+  const [concurrency, setConcurrency] = useState(initialCanvasDraft.concurrency)
   const [message, setMessage] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isGeneratingCanvasPrompt, setIsGeneratingCanvasPrompt] = useState(false)
@@ -163,7 +181,15 @@ export function NodeWorkflowPage({
   const connectionsRef = useRef<CanvasConnection[]>(initialCanvasDraft.connections)
   const draftPromptRef = useRef(draftPrompt)
   const modeRef = useRef<Mode>(mode)
-  const pastePointRef = useRef<{ x: number; y: number }>(autoItemPosition(0))
+  const localProviderRef = useRef<ModelProvider>(localProvider)
+  const localBananaModelRef = useRef(localBananaModel)
+  const ratioRef = useRef(ratio)
+  const resolutionRef = useRef(resolution)
+  const qualityRef = useRef(quality)
+  const outputFormatRef = useRef(outputFormat)
+  const countRef = useRef(count)
+  const concurrencyRef = useRef(concurrency)
+  const pastePlacementRef = useRef<CanvasPlacementSnapshot | null>(null)
   const localPreviewUrlsRef = useRef<string[]>([])
   const autofocusedTextItemIdRef = useRef<string | null>(null)
   const canvasDropDepthRef = useRef(0)
@@ -171,23 +197,36 @@ export function NodeWorkflowPage({
   const appliedPromptInjectionRevisionRef = useRef(0)
 
   useEffect(() => {
+    if (hadStoredCanvasDraftRef.current) return
     setLocalProvider(provider || IMAGE2_PROVIDER)
   }, [provider])
 
   useEffect(() => {
+    if (hadStoredCanvasDraftRef.current) return
     setLocalBananaModel(bananaModel || DEFAULT_BANANA_MODEL)
   }, [bananaModel])
 
   useEffect(() => {
     if (!injectedPrompt || injectedPromptRevision <= 0 || appliedPromptInjectionRevisionRef.current === injectedPromptRevision) return
     appliedPromptInjectionRevisionRef.current = injectedPromptRevision
+    hadStoredCanvasDraftRef.current = false
     setDraftPrompt(injectedPrompt)
     setGeneratedPromptOverride('')
+
+    const nextProvider = injectedPromptProvider || provider || IMAGE2_PROVIDER
+    setLocalProvider(nextProvider)
+    if (nextProvider === BANANA_PROVIDER) {
+      setLocalBananaModel(injectedPromptModel || bananaModel || DEFAULT_BANANA_MODEL)
+    } else if (injectedPromptRatio) {
+      setRatio(injectedPromptRatio)
+    }
+    onPromptInjectionApplied?.(injectedPromptRevision)
+
     window.setTimeout(() => {
       promptTextareaRef.current?.focus()
       promptTextareaRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
     }, 0)
-  }, [injectedPrompt, injectedPromptRevision])
+  }, [bananaModel, injectedPrompt, injectedPromptModel, injectedPromptProvider, injectedPromptRatio, injectedPromptRevision, onPromptInjectionApplied, provider])
 
   useEffect(() => {
     if (!prompt || hadStoredCanvasDraftRef.current) return
@@ -197,10 +236,24 @@ export function NodeWorkflowPage({
 
   useEffect(() => {
     const handle = window.setTimeout(() => {
-      saveCreativeCanvasDraft({ items: canvasItems, connections, prompt: draftPrompt, mode, hasStoredDraft: true })
+      saveCreativeCanvasDraft({
+        items: canvasItems,
+        connections,
+        prompt: draftPrompt,
+        mode,
+        provider: localProvider,
+        bananaModel: localBananaModel,
+        ratio,
+        resolution,
+        quality,
+        outputFormat,
+        count,
+        concurrency,
+        hasStoredDraft: true,
+      })
     }, 300)
     return () => window.clearTimeout(handle)
-  }, [canvasItems, connections, draftPrompt, mode])
+  }, [canvasItems, connections, draftPrompt, mode, localProvider, localBananaModel, ratio, resolution, quality, outputFormat, count, concurrency])
 
   useEffect(() => {
     const saveCurrentDraft = () => {
@@ -209,6 +262,14 @@ export function NodeWorkflowPage({
         connections: connectionsRef.current,
         prompt: draftPromptRef.current,
         mode: modeRef.current,
+        provider: localProviderRef.current,
+        bananaModel: localBananaModelRef.current,
+        ratio: ratioRef.current,
+        resolution: resolutionRef.current,
+        quality: qualityRef.current,
+        outputFormat: outputFormatRef.current,
+        count: countRef.current,
+        concurrency: concurrencyRef.current,
         hasStoredDraft: true,
       })
     }
@@ -284,7 +345,15 @@ export function NodeWorkflowPage({
     connectionsRef.current = connections
     draftPromptRef.current = draftPrompt
     modeRef.current = mode
-  }, [canvasItems, connections, draftPrompt, mode])
+    localProviderRef.current = localProvider
+    localBananaModelRef.current = localBananaModel
+    ratioRef.current = ratio
+    resolutionRef.current = resolution
+    qualityRef.current = quality
+    outputFormatRef.current = outputFormat
+    countRef.current = count
+    concurrencyRef.current = concurrency
+  }, [canvasItems, connections, draftPrompt, mode, localProvider, localBananaModel, ratio, resolution, quality, outputFormat, count, concurrency])
 
   useEffect(() => {
     const itemIds = new Set(canvasItems.map((item) => item.id))
@@ -445,7 +514,7 @@ export function NodeWorkflowPage({
     setMessage('')
     try {
       await onCreateTask(taskPayload)
-      setMessage('任务已创建，右侧预览会跟随当前结果更新。')
+      setMessage('任务已创建，已进入结果页。')
     } catch (error) {
       setMessage(error instanceof Error ? error.message : '创建任务失败。')
     } finally {
@@ -467,7 +536,7 @@ export function NodeWorkflowPage({
     }
   }
 
-  async function addUploadToCanvas(upload: ReferenceUpload, point?: { x: number; y: number }) {
+  async function addUploadToCanvas(upload: ReferenceUpload, point?: { x: number; y: number }, placement?: CanvasPlacementSnapshot) {
     if (!point) {
       const existing = canvasItemsRef.current.find((item) => isCanvasImageItem(item) && item.uploadId === upload.id)
       if (existing) {
@@ -482,7 +551,8 @@ export function NodeWorkflowPage({
     const index = canvasItems.length
     const preview = await resolveUploadPreviewUrl(upload.id)
     const size = await canvasImageSizeFromSrc(preview.src)
-    const item = createCanvasItemFromUpload(upload, point || autoItemPosition(index), index, preview.localPreviewUrl, size)
+    const itemPoint = pointFromPlacementSnapshot(placement, size, point || autoItemPosition(index))
+    const item = createCanvasItemFromUpload(upload, itemPoint, index, preview.localPreviewUrl, size)
     setCanvasItems((items) => [...items, item])
     setSelectedItemId(item.id)
     setSelectedConnectionId(null)
@@ -490,7 +560,7 @@ export function NodeWorkflowPage({
     setMessage('已加入画布参考。')
   }
 
-  async function addFilesToCanvas(files: File[], point: { x: number; y: number }) {
+  async function addFilesToCanvas(files: File[], point: { x: number; y: number }, placement?: CanvasPlacementSnapshot) {
     const imageFiles = files.filter(isImageFile)
     if (!imageFiles.length) {
       setMessage('只能拖入 PNG、JPG 或 WEBP 图片。')
@@ -509,7 +579,10 @@ export function NodeWorkflowPage({
       const sizePromises = imageFiles.map((file) => canvasImageSizeFromFile(file))
       const [created, sizes] = await Promise.all([onUploadReferences(imageFiles), Promise.all(sizePromises)])
       if (!created.length) return
-      const nextItems = created.map((upload, index) => createCanvasItemFromUpload(upload, spreadPoint(point, index), canvasItems.length + index, localUrls[index], sizes[index]))
+      const nextItems = created.map((upload, index) => {
+        const basePoint = pointFromPlacementSnapshot(placement, sizes[index], point)
+        return createCanvasItemFromUpload(upload, spreadPoint(basePoint, index), canvasItems.length + index, localUrls[index], sizes[index])
+      })
       setCanvasItems((items) => [...items, ...nextItems])
       setSelectedItemId(nextItems[0].id)
       setSelectedConnectionId(null)
@@ -520,7 +593,7 @@ export function NodeWorkflowPage({
     }
   }
 
-  async function addHistoryImageToCanvas(image: CanvasHistoryImage, point: { x: number; y: number }) {
+  async function addHistoryImageToCanvas(image: CanvasHistoryImage, point: { x: number; y: number }, placement?: CanvasPlacementSnapshot) {
     const existing = canvasItemsRef.current.find((item) => isCanvasImageItem(item) && item.resultSrc === image.src)
     if (existing) {
       setCanvasItems((items) => items.map((item) => (isCanvasImageItem(item) && item.id === existing.id ? { ...item, isReference: true } : item)))
@@ -548,7 +621,8 @@ export function NodeWorkflowPage({
           return
         }
       }
-      const item = createCanvasItemFromHistory(image, point, canvasItems.length, upload, size)
+      const itemPoint = pointFromPlacementSnapshot(placement, size, point)
+      const item = createCanvasItemFromHistory(image, itemPoint, canvasItems.length, upload, size)
       setCanvasItems((items) => [...items, item])
       setSelectedItemId(item.id)
       setSelectedConnectionId(null)
@@ -614,10 +688,11 @@ export function NodeWorkflowPage({
     event.stopPropagation()
     canvasDropDepthRef.current = 0
     setIsDropActive(false)
-    const point = dropPointFromEvent(event, stageRef.current)
+    const placement = createPlacementSnapshot(event.clientX, event.clientY)
+    const point = pointFromPlacementSnapshot(placement, undefined, dropPointFromEvent(event, stageRef.current))
     const files = Array.from(event.dataTransfer.files || [])
     if (files.length) {
-      void addFilesToCanvas(files, point)
+      void addFilesToCanvas(files, point, placement)
       return
     }
 
@@ -625,23 +700,30 @@ export function NodeWorkflowPage({
     if (uploadPayload) {
       const uploadId = safeParseDragData<{ uploadId: string }>(uploadPayload)?.uploadId
       const upload = referenceUploads.find((item) => item.id === uploadId)
-      if (upload) void addUploadToCanvas(upload, point)
+      if (upload) void addUploadToCanvas(upload, point, placement)
       return
     }
 
     const historyPayload = event.dataTransfer.getData(HISTORY_DRAG_TYPE)
     if (historyPayload) {
       const image = safeParseDragData<CanvasHistoryImage>(historyPayload)
-      if (image?.src) void addHistoryImageToCanvas(image, point)
+      if (image?.src) void addHistoryImageToCanvas(image, point, placement)
       return
     }
 
     const uri = draggedUri(event.dataTransfer)
     if (uri) {
-      void addHistoryImageToCanvas({ id: `external-${Date.now()}`, src: uri, title: '外部图片', subtitle: '拖入图片', index: 0 }, point)
+      void addHistoryImageToCanvas({ id: `external-${Date.now()}`, src: uri, title: '外部图片', subtitle: '拖入图片', index: 0 }, point, placement)
     }
   }
 
+  function createPlacementSnapshot(clientX: number, clientY: number): CanvasPlacementSnapshot {
+    return { clientX, clientY, metrics: snapshotCanvasStageMetrics(stageRef.current) }
+  }
+
+  function pointFromPlacementSnapshot(placement: CanvasPlacementSnapshot | undefined, size: { width?: number; height?: number } | undefined, fallback: { x: number; y: number }) {
+    return placement?.metrics ? canvasPointFromStageMetrics(placement.clientX, placement.clientY, placement.metrics, size) : fallback
+  }
   function draggedUri(dataTransfer: DataTransfer) {
     const value = dataTransfer.getData('text/uri-list') || dataTransfer.getData('text/plain')
     return value.split(/\r?\n/).map((line) => line.trim()).find((line) => /^https?:\/\//i.test(line)) || ''
@@ -652,9 +734,24 @@ export function NodeWorkflowPage({
     return target instanceof Element && Boolean(target.closest('.creative-canvas-empty'))
   }
 
+  function pastePlacementForTarget(target: EventTarget | null): { point: { x: number; y: number }; placement?: CanvasPlacementSnapshot } {
+    const stage = stageRef.current
+    const targetInsideStage = Boolean(stage && target instanceof Node && stage.contains(target))
+    const currentMetrics = snapshotCanvasStageMetrics(stage)
+    const placement = targetInsideStage ? pastePlacementRef.current : null
+    if (!placement || !currentMetrics || !isClientPointInsideMetrics(placement.clientX, placement.clientY, currentMetrics)) {
+      return { point: canvasPointAtStageCenter(stage) }
+    }
+    const currentPlacement = { ...placement, metrics: currentMetrics }
+    return {
+      point: canvasPointFromStageMetrics(currentPlacement.clientX, currentPlacement.clientY, currentMetrics),
+      placement: currentPlacement,
+    }
+  }
+
   function handleStagePointerDown(event: ReactPointerEvent<HTMLElement>) {
     if (!isCanvasStageSurfaceTarget(event.target, event.currentTarget)) return
-    pastePointRef.current = canvasPointFromClient(event.clientX, event.clientY, stageRef.current)
+    pastePlacementRef.current = createPlacementSnapshot(event.clientX, event.clientY)
     setSelectedItemId(null)
     setSelectedConnectionId(null)
     stageRef.current?.focus({ preventScroll: true })
@@ -664,7 +761,8 @@ export function NodeWorkflowPage({
     if (isEditableTarget(target)) return false
     const imageFiles = imageFilesFromClipboard(clipboardData)
     if (!imageFiles.length) return false
-    void addFilesToCanvas(imageFiles, pastePointRef.current)
+    const { point, placement } = pastePlacementForTarget(target)
+    void addFilesToCanvas(imageFiles, point, placement)
     stageRef.current?.focus({ preventScroll: true })
     return true
   }

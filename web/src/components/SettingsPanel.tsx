@@ -12,12 +12,10 @@ type NumericInputValue = number | ''
 export function SettingsPanel({ onReady, onConfig }: { onReady?: (ready: boolean) => void; onConfig?: (config: UserConfig) => void }) {
   const [config, setConfig] = useState<UserConfig | null>(null)
   const [apiKey, setApiKey] = useState('')
-  const [bananaApiKey, setBananaApiKey] = useState('')
   const [developerKeys, setDeveloperKeys] = useState<DeveloperApiKey[]>([])
   const [developerKeyName, setDeveloperKeyName] = useState('local-sdk')
   const [developerSecret, setDeveloperSecret] = useState('')
   const [saveApiKeyToCloud, setSaveApiKeyToCloud] = useState(false)
-  const [saveBananaKeyToCloud, setSaveBananaKeyToCloud] = useState(false)
   const [defaultCount, setDefaultCount] = useState<NumericInputValue>(1)
   const [defaultConcurrency, setDefaultConcurrency] = useState<NumericInputValue>(1)
   const [autoUploadPixhost, setAutoUploadPixhost] = useState(false)
@@ -60,7 +58,7 @@ export function SettingsPanel({ onReady, onConfig }: { onReady?: (ready: boolean
 
   async function saveSettings(confirmedCloudRisk: boolean, forceLocalOnly = false) {
     setError('')
-    const wantsCloud = !forceLocalOnly && ((apiKey.trim() && saveApiKeyToCloud) || (bananaApiKey.trim() && saveBananaKeyToCloud))
+    const wantsCloud = !forceLocalOnly && Boolean(apiKey.trim() && saveApiKeyToCloud)
     if (wantsCloud && !confirmedCloudRisk) {
       setShowCloudWarning(true)
       return
@@ -76,34 +74,28 @@ export function SettingsPanel({ onReady, onConfig }: { onReady?: (ready: boolean
       payload.apiKey = apiKey
       payload.saveApiKeyToCloud = !forceLocalOnly && Boolean(saveApiKeyToCloud)
     }
-    if (bananaApiKey.trim()) {
-      payload.bananaApiKey = bananaApiKey
-      payload.saveBananaKeyToCloud = !forceLocalOnly && Boolean(saveBananaKeyToCloud)
-    }
+
     const cfg = await saveUserConfig(payload)
     applyConfig(cfg)
     setApiKey('')
-    setBananaApiKey('')
     setSaveApiKeyToCloud(false)
-    setSaveBananaKeyToCloud(false)
-    setMessage(apiKey.trim() || bananaApiKey.trim() ? 'API Key 和默认生成设置已保存' : '默认生成设置已保存')
+    setMessage(apiKey.trim() ? 'API Key 和默认生成设置已保存' : '默认生成设置已保存')
   }
 
-  async function clearLocalKey(kind: 'apiKey' | 'bananaApiKey') {
+  async function clearLocalKey() {
     setError('')
-    clearLocalApiKeys(kind === 'apiKey' ? { apiKey: true } : { bananaApiKey: true })
+    clearLocalApiKeys({ apiKey: true })
     const cfg = await getUserConfig()
     applyConfig(cfg)
     setApiKey('')
-    setBananaApiKey('')
-    setMessage(kind === 'apiKey' ? 'codex-key 已从当前浏览器清除' : 'Banana Key 已从当前浏览器清除')
+    setMessage('codex-key 已从当前浏览器清除')
   }
 
-  async function clearCloudKey(kind: 'apiKey' | 'bananaApiKey') {
+  async function clearCloudKey() {
     setError('')
-    const cfg = await saveUserConfig(kind === 'apiKey' ? { clearCloudApiKey: true } : { clearCloudBananaApiKey: true })
+    const cfg = await saveUserConfig({ clearCloudApiKey: true })
     applyConfig(cfg)
-    setMessage(kind === 'apiKey' ? 'codex-key 已从云端清除' : 'Banana Key 已从云端清除')
+    setMessage('codex-key 已从云端清除')
   }
 
   async function createDeveloperKey() {
@@ -169,9 +161,9 @@ export function SettingsPanel({ onReady, onConfig }: { onReady?: (ready: boolean
     setError(formatError(err, fallback))
   }
 
-  const hostedKeyReady = Boolean(config?.cloudApiKeySet || config?.cloudBananaApiKeySet || config?.systemApiKeySet || config?.systemBananaApiKeySet)
-  const hasPendingUpstreamKey = Boolean(apiKey.trim() || bananaApiKey.trim())
-  const pendingCloudKey = Boolean((apiKey.trim() && saveApiKeyToCloud) || (bananaApiKey.trim() && saveBananaKeyToCloud))
+  const hostedKeyReady = Boolean(config?.cloudApiKeySet || config?.systemApiKeySet)
+  const hasPendingUpstreamKey = Boolean(apiKey.trim())
+  const pendingCloudKey = Boolean(apiKey.trim() && saveApiKeyToCloud)
   const saveCue = hasPendingUpstreamKey
     ? pendingCloudKey
       ? '会先确认云端风险；确认后保存 Key 路径和默认生成设置。'
@@ -227,8 +219,8 @@ export function SettingsPanel({ onReady, onConfig }: { onReady?: (ready: boolean
             <div className={`status-line ${config?.apiKeySet ? 'ready' : 'missing'}`}>
               当前：{config?.apiKeySet ? keyStatusText(config.apiKeyPreview, config.apiKeySource) : '未设置'}
             </div>
-            <button type="button" disabled={!config?.localApiKeySet} onClick={() => void clearLocalKey('apiKey')}>清除本地 Key</button>
-            <button type="button" disabled={!config?.cloudApiKeySet} onClick={() => void clearCloudKey('apiKey')}>清除云端 Key</button>
+            <button type="button" disabled={!config?.localApiKeySet} onClick={() => void clearLocalKey()}>清除本地 Key</button>
+            <button type="button" disabled={!config?.cloudApiKeySet} onClick={() => void clearCloudKey()}>清除云端 Key</button>
           </div>
           <input type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="填写 codex-key" spellCheck={false} autoComplete="off" />
           <label className="check-row cloud-key-check">
@@ -241,29 +233,6 @@ export function SettingsPanel({ onReady, onConfig }: { onReady?: (ready: boolean
           </div>
         </section>
 
-        <section className="settings-card banana-key-card">
-          <div className="section-title">
-            <span>Banana 分组 Key</span>
-            <small>单独 apikey</small>
-          </div>
-          <p className="muted">默认只保存在当前浏览器本地。勾选上传到云端后，其他设备登录同一账号也能使用；账号泄露时同样存在 Key 被使用或窃取的风险。</p>
-          <div className="settings-key-actions">
-            <div className={`status-line ${config?.bananaApiKeySet ? 'ready' : 'missing'}`}>
-              当前：{config?.bananaApiKeySet ? keyStatusText(config.bananaApiKeyPreview, config.bananaApiKeySource) : '未设置'}
-            </div>
-            <button type="button" disabled={!config?.localBananaApiKeySet} onClick={() => void clearLocalKey('bananaApiKey')}>清除本地 Key</button>
-            <button type="button" disabled={!config?.cloudBananaApiKeySet} onClick={() => void clearCloudKey('bananaApiKey')}>清除云端 Key</button>
-          </div>
-          <input type="password" value={bananaApiKey} onChange={(e) => setBananaApiKey(e.target.value)} placeholder="填写 banana 分组 API Key" spellCheck={false} autoComplete="off" />
-          <label className="check-row cloud-key-check">
-            <input type="checkbox" checked={saveBananaKeyToCloud} onChange={(e) => setSaveBananaKeyToCloud(e.target.checked)} />
-            <span>同时上传到云端，用于多设备和 API 访问密钥</span>
-          </label>
-          <div className={`settings-path-note ${saveBananaKeyToCloud ? 'ready' : ''}`}>
-            <strong>保存路径：{saveBananaKeyToCloud ? '当前浏览器 + 云端账号' : '仅当前浏览器'}</strong>
-            <span>{saveBananaKeyToCloud ? '点击底部“保存设置”后才会上传；云端 Key 可供外部应用调用。' : '点击底部“保存设置”后只写入本机浏览器；API 访问密钥无法读取本地浏览器 Key。'}</span>
-          </div>
-        </section>
 
         <section className="settings-card developer-key-card">
           <div className="section-title">
@@ -344,7 +313,7 @@ export function SettingsPanel({ onReady, onConfig }: { onReady?: (ready: boolean
             <p>建议先开启 2FA，再上传云端 Key。</p>
             <div className="cloud-warning-actions">
               <button type="button" onClick={() => { setShowCloudWarning(false); if (!twoFactorEnabled) void startTwoFactorSetup() }}>先开启 2FA</button>
-              <button type="button" onClick={() => { setSaveApiKeyToCloud(false); setSaveBananaKeyToCloud(false); void saveSettings(true, true).catch((err) => handleActionError(err, '保存设置失败')) }}>仅本地保存</button>
+              <button type="button" onClick={() => { setSaveApiKeyToCloud(false); void saveSettings(true, true).catch((err) => handleActionError(err, '保存设置失败')) }}>仅本地保存</button>
               <button type="button" className="primary" disabled={savingCloudConfirmed} onClick={() => { setSavingCloudConfirmed(true); void saveSettings(true).catch((err) => handleActionError(err, '保存设置失败')) }}>我了解风险，上传云端</button>
             </div>
           </div>

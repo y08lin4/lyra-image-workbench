@@ -37,7 +37,15 @@ import {
 } from './workbench/nav'
 import { useTaskEvents } from '../hooks/useTaskEvents'
 import { useSubmittedSquareKeys } from '../hooks/useSubmittedSquareKeys'
-import { BANANA_PROVIDER, DEFAULT_BANANA_MODEL, DEFAULT_IMAGE2_MODEL, getBananaModelForRatio, getBananaModelOption } from '../lib/models'
+import {
+  DEFAULT_BANANA_MODEL,
+  DEFAULT_IMAGE2_MODEL,
+  IMAGE2_PROVIDER,
+  getImage2ModelOption,
+  image2ModelSubmissionSpec,
+  image2SelectableRatio,
+  normalizeImage2Model,
+} from '../lib/models'
 import { formatBytes } from '../lib/format'
 import { nativeExitApp, nativeSaveImage } from '../lib/nativeBridge'
 import { ensureAppBackBridge, installEdgeBackGesture, registerAppBackHandler } from '../lib/appBack'
@@ -75,8 +83,6 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
   const [mobileMoreOpen, setMobileMoreOpen] = useState(false)
   const [keyReady, setKeyReady] = useState(false)
   const [keyPreview, setKeyPreview] = useState('')
-  const [bananaKeyReady, setBananaKeyReady] = useState(false)
-  const [bananaKeyPreview, setBananaKeyPreview] = useState('')
   const [tasks, setTasks] = useState<Task[]>([])
   const [activeId, setActiveId] = useState<string | null>(null)
   const [detailId, setDetailId] = useState<string | null>(null)
@@ -84,12 +90,14 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set())
   const [uploads, setUploads] = useState<ReferenceUpload[]>([])
   const [mode, setMode] = useState<Mode>('text-to-image')
-  const [provider, setProvider] = useState<ModelProvider>('image-2')
-  const [bananaModel, setBananaModel] = useState(DEFAULT_BANANA_MODEL)
+  const [provider, setProvider] = useState<ModelProvider>(IMAGE2_PROVIDER)
+  const [imageModel, setImageModel] = useState(DEFAULT_IMAGE2_MODEL)
   const [prompt, setPrompt] = useState('')
-  const [canvasPromptInjection, setCanvasPromptInjection] = useState<{ revision: number; prompt: string } | null>(null)
+  const [canvasPromptInjection, setCanvasPromptInjection] = useState<{ revision: number; prompt: string; provider: ModelProvider; model: string; ratio: string } | null>(null)
+  const canvasPromptInjectionRevisionRef = useRef(0)
   const [ratio, setRatio] = useState('auto')
   const [resolution, setResolution] = useState('auto')
+  const [imageSize, setImageSize] = useState('')
   const [quality, setQuality] = useState('high')
   const [outputFormat, setOutputFormat] = useState('png')
   const [count, setCount] = useState<NumericInputValue>(1)
@@ -121,10 +129,10 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
     prompt: result.revisedPrompt || task.prompt,
   }))).slice(0, 12), [tasks])
   const favoriteIds = useMemo(() => new Set(tasks.filter((task) => task.favorite).map((task) => task.id)), [tasks])
-  const currentKeyReady = provider === BANANA_PROVIDER ? bananaKeyReady : keyReady
-  const currentKeyPreview = provider === BANANA_PROVIDER ? bananaKeyPreview : keyPreview
+  const currentKeyReady = keyReady
+  const currentKeyPreview = keyPreview
   const activeCount = useMemo(() => tasks.filter((task) => !isFinal(task)).length, [tasks])
-  const missingKeyCount = (keyReady ? 0 : 1) + (bananaKeyReady ? 0 : 1)
+  const missingKeyCount = keyReady ? 0 : 1
   const tabItems = useMemo(() => buildWorkbenchTabItems({
     currentKeyReady,
     activeTask: activeTask ? { statusText: activeTask.statusText, progress: activeTask.progress, isFinal: isFinal(activeTask) } : null,
@@ -330,18 +338,28 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
   const applyUserConfig = useCallback((cfg: UserConfig) => {
     setKeyReady(cfg.apiKeySet)
     setKeyPreview(cfg.apiKeyPreview)
-    setBananaKeyReady(Boolean(cfg.bananaApiKeySet))
-    setBananaKeyPreview(cfg.bananaApiKeyPreview || '')
+
     setCount(cfg.defaultCount || 1)
     setConcurrency(cfg.defaultConcurrency || 1)
   }, [])
 
+  function applyImageModelSelection(nextModel: string, nextRatio?: string, nextResolution?: string, nextSize?: string) {
+    const normalizedModel = normalizeImage2Model(nextModel)
+    const option = getImage2ModelOption(normalizedModel)
+    const ratioValue = option.ratioSelectable ? image2SelectableRatio(option, nextRatio) : option.defaultRatio
+    const resolutionValue = nextResolution && nextResolution !== 'auto' ? nextResolution : option.defaultResolution
+    setProvider(IMAGE2_PROVIDER)
+    setImageModel(normalizedModel)
+    setRatio(ratioValue)
+    setResolution(resolutionValue)
+    setImageSize(option.ratioSelectable ? normalizeImageSizeForUI(nextSize) : '')
+  }
+
   async function submit(event: FormEvent) {
     event.preventDefault()
     setError('')
-    const ready = provider === BANANA_PROVIDER ? bananaKeyReady : keyReady
-    if (!ready) {
-      setError(provider === BANANA_PROVIDER ? '请先保存 banana 分组 API Key，或确认已上传到云端' : '请先保存 codex-key，或确认已上传到云端')
+    if (!keyReady) {
+      setError('请先保存 codex-key，或确认已上传到云端')
       return
     }
     if (!prompt.trim()) { setError('请先输入提示词'); return }
@@ -352,15 +370,17 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
     }
     if (mode === 'image-to-image' && uploads.length === 0) { setError('参考图生成需要先上传参考图'); return }
     const submittedUploads = mode === 'image-to-image' ? [...uploads] : []
+    const imageSpec = image2ModelSubmissionSpec(imageModel, ratio, resolution, imageSize)
     const payload: CreateTaskRequest = {
-      provider,
-      model: provider === BANANA_PROVIDER ? bananaModel : DEFAULT_IMAGE2_MODEL,
+      provider: IMAGE2_PROVIDER,
+      model: imageSpec.model,
       mode,
       prompt,
-      ratio: provider === BANANA_PROVIDER ? getBananaModelOption(bananaModel).ratio : ratio,
-      resolution: provider === BANANA_PROVIDER ? getBananaModelOption(bananaModel).resolution : resolution,
-      quality: provider === BANANA_PROVIDER ? 'auto' : quality,
-      outputFormat: provider === BANANA_PROVIDER ? 'auto' : outputFormat,
+      ratio: imageSpec.ratio,
+      resolution: imageSpec.resolution,
+      size: imageSpec.size,
+      quality,
+      outputFormat,
       count: numericOrDefault(count, 1),
       concurrency: numericOrDefault(concurrency, 1),
       uploadIds: submittedUploads.map((item) => item.id),
@@ -397,12 +417,10 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
   }
 
   async function handleCreateNodeWorkflowTask(payload: CreateTaskRequest) {
-    const ready = payload.provider === BANANA_PROVIDER ? bananaKeyReady : keyReady
-    if (!ready) {
-      const message = payload.provider === BANANA_PROVIDER ? 'Banana Key 未设置' : 'codex-key 未设置'
-      setToast(payload.provider === BANANA_PROVIDER ? '请先保存 Banana API Key，或确认已上传到云端' : '请先保存 codex-key，或确认已上传到云端')
+    if (!keyReady) {
+      setToast('请先保存 codex-key，或确认已上传到云端')
       goToTab('settings')
-      throw new Error(message)
+      throw new Error('codex-key 未设置')
     }
     if (!payload.prompt.trim()) throw new Error('请先输入提示词')
     if (payload.mode === 'gif') {
@@ -412,24 +430,29 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
       throw new Error('参考图生成需要先选择参考图后再提交')
     }
 
-    const job = await createTask(payload)
+    const imageSpec = image2ModelSubmissionSpec(payload.model || imageModel, payload.ratio, payload.resolution, payload.size || '')
+    const imagePayload: CreateTaskRequest = {
+      ...payload,
+      provider: IMAGE2_PROVIDER,
+      model: imageSpec.model,
+      ratio: imageSpec.ratio,
+      resolution: imageSpec.resolution,
+      size: imageSpec.size,
+    }
+    const job = await createTask(imagePayload)
     upsertTask(job)
     setActiveId(job.id)
-    setProvider(payload.provider)
-    setMode(payload.mode)
-    if (payload.provider === BANANA_PROVIDER) {
-      setBananaModel(getBananaModelOption(payload.model).id)
-    } else {
-      setRatio(payload.ratio || 'auto')
-      setResolution(payload.resolution || 'auto')
-      setQuality(payload.quality || 'high')
-      setOutputFormat(payload.outputFormat || 'png')
-    }
-    setCount(payload.count || 1)
-    setConcurrency(payload.concurrency || 1)
+    applyImageModelSelection(imagePayload.model, imagePayload.ratio || 'auto', imagePayload.resolution || 'auto', imagePayload.size || '')
+    setMode(imagePayload.mode)
+    setQuality(imagePayload.quality || 'high')
+    setOutputFormat(imagePayload.outputFormat || 'png')
+    setCount(imagePayload.count || 1)
+    setConcurrency(imagePayload.concurrency || 1)
     setPrompt('')
+    goToTab('result')
     void refreshSession()
-    setMessage('创作画布任务已提交，右侧预览会持续更新')
+    setMessage('创作画布任务已提交，已进入结果历史')
+    setToast('创作画布任务已创建，已进入结果页')
   }
 
   function handleAgentTaskBackflow(payload: AgentTaskBackflowPayload) {
@@ -507,41 +530,46 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
 
   function handleUseAssistantPrompt(nextPrompt: string, options?: { provider: ModelProvider; model: string; ratio?: string }) {
     setPrompt(nextPrompt)
-    if (options) {
-      setProvider(options.provider)
-      if (options.provider === BANANA_PROVIDER) {
-        const preferredResolution = getBananaModelOption(options.model).resolution
-        const nextBanana = options.ratio && options.ratio !== 'auto'
-          ? getBananaModelForRatio(options.ratio, preferredResolution === 'auto' ? '2k' : preferredResolution)
-          : getBananaModelOption(options.model)
-        setBananaModel(nextBanana.id)
-      } else if (options.ratio && options.ratio !== 'auto') {
-        setRatio(options.ratio)
-      }
-    }
-    goToTab('generate')
-    setMessage(options ? '提示词助手已填入主输入框，并同步模型选择' : '提示词助手已填入主输入框')
+    if (options) applyImageModelSelection(options.model, options.ratio || ratio)
+    goToTab('nodes')
+    setMessage('提示词已填入创作画布')
     window.setTimeout(() => {
       document.querySelector('[data-generation-composer] textarea')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
     }, 0)
   }
 
+  function promptOptionsWithRatio(options: { provider: ModelProvider; model: string; ratio?: string }) {
+    return { provider: IMAGE2_PROVIDER, model: normalizeImage2Model(options.model), ratio: options.ratio || ratio }
+  }
+
+  function applyPromptModelOptions(options: { provider: ModelProvider; model: string; ratio: string }) {
+    applyImageModelSelection(options.model, options.ratio)
+  }
+
   function applyPromptToGenerate(nextPrompt: string, options: { provider: ModelProvider; model: string; ratio?: string }) {
+    const nextOptions = promptOptionsWithRatio(options)
     setPrompt(nextPrompt)
-    setProvider(options.provider)
-    if (options.provider === BANANA_PROVIDER) {
-      const preferredResolution = getBananaModelOption(options.model).resolution
-      const nextBanana = options.ratio && options.ratio !== 'auto'
-        ? getBananaModelForRatio(options.ratio, preferredResolution === 'auto' ? '2k' : preferredResolution)
-        : getBananaModelOption(options.model)
-      setBananaModel(nextBanana.id)
-    } else if (options.ratio && options.ratio !== 'auto') {
-      setRatio(options.ratio)
-    }
+    applyPromptModelOptions(nextOptions)
     goToTab('generate')
     window.setTimeout(() => {
       document.querySelector('[data-generation-composer] textarea')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
     }, 0)
+  }
+
+  function injectPromptToCanvas(nextPrompt: string, options: { provider: ModelProvider; model: string; ratio?: string }) {
+    const nextOptions = promptOptionsWithRatio(options)
+    const revision = canvasPromptInjectionRevisionRef.current + 1
+    canvasPromptInjectionRevisionRef.current = revision
+    setPrompt(nextPrompt)
+    applyPromptModelOptions(nextOptions)
+    setCanvasPromptInjection({
+      revision,
+      prompt: nextPrompt,
+      provider: nextOptions.provider,
+      model: nextOptions.model,
+      ratio: nextOptions.ratio || 'auto',
+    })
+    goToTab('nodes')
   }
 
   async function importPromptLibraryReferenceImage(referenceImage: PromptLibraryReferenceImage) {
@@ -559,20 +587,20 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
   }
 
   async function handleUseLibraryPrompt(nextPrompt: string, options: PromptLibraryUsePromptOptions) {
-    applyPromptToGenerate(nextPrompt, options)
+    injectPromptToCanvas(nextPrompt, options)
     if (!options.referenceImage) {
-      setMessage('提示词库已填入主输入框，并同步模型选择')
+      setMessage('提示词库已发送到创作画布，并同步模型选择')
       return
     }
 
-    setMessage('提示词库已填入主输入框，正在导入例图参考...')
+    setMessage('提示词库已发送到创作画布，正在导入例图参考...')
     try {
       const uploaded = await importPromptLibraryReferenceImage(options.referenceImage)
       setMode('image-to-image')
-      setMessage(`提示词库已填入主输入框，并加入参考图：${uploaded.originalName}`)
+      setMessage(`提示词库已发送到创作画布，并加入参考图：${uploaded.originalName}`)
     } catch (err) {
       setToast(formatPromptLibraryReferenceError(err))
-      setMessage('提示词库已填入主输入框；例图暂未加入参考图')
+      setMessage('提示词库已发送到创作画布；例图暂未加入参考图')
     }
   }
 
@@ -582,22 +610,9 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
   }
 
   function handleUseAgentPromptToCanvas(nextPrompt: string, options: { provider: ModelProvider; model: string; ratio?: string }) {
-    setPrompt(nextPrompt)
-    setCanvasPromptInjection((current) => ({ revision: (current?.revision || 0) + 1, prompt: nextPrompt }))
-    setProvider(options.provider)
-    if (options.provider === BANANA_PROVIDER) {
-      const preferredResolution = getBananaModelOption(options.model).resolution
-      const nextBanana = options.ratio && options.ratio !== 'auto'
-        ? getBananaModelForRatio(options.ratio, preferredResolution === 'auto' ? '2k' : preferredResolution)
-        : getBananaModelOption(options.model)
-      setBananaModel(nextBanana.id)
-    } else if (options.ratio && options.ratio !== 'auto') {
-      setRatio(options.ratio)
-    }
-    goToTab('nodes')
+    injectPromptToCanvas(nextPrompt, options)
     setMessage('Agent 已发送到创作画布')
   }
-
   async function handleUseSquarePrompt(nextPrompt: string, item?: PromptSquareItem) {
     setPrompt(nextPrompt)
     if (item) {
@@ -606,9 +621,8 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
       const resolutionValue = (item.resolution || item.params?.resolution || '').trim()
       const qualityValue = (item.quality || item.params?.quality || '').trim()
       const formatValue = (item.outputFormat || item.params?.outputFormat || '').trim()
-      if (!model || model === 'image-2' || model === 'gpt-image-2') setProvider('image-2')
-      if (ratioValue && ratioValue !== 'auto') setRatio(ratioValue)
-      if (resolutionValue) setResolution(resolutionValue)
+      const sizeValue = (item.params?.size || '').trim()
+      applyImageModelSelection(model || DEFAULT_IMAGE2_MODEL, ratioValue || ratio, resolutionValue || resolution, sizeValue)
       if (qualityValue) setQuality(qualityValue)
       if (formatValue) setOutputFormat(formatValue)
     }
@@ -673,13 +687,9 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
       }, 0)
       return
     }
-    const nextProvider = task.provider || 'image-2'
-    setProvider(nextProvider)
-    setBananaModel(nextProvider === BANANA_PROVIDER ? getBananaModelOption(task.model || '').id : bananaModel)
+    applyImageModelSelection(task.model || DEFAULT_IMAGE2_MODEL, task.ratio || 'auto', task.resolution || 'auto', task.size || '')
     setMode(task.mode)
     setPrompt(task.prompt)
-    setRatio(task.ratio || 'auto')
-    setResolution(task.resolution || 'auto')
     setQuality(task.quality || 'high')
     setOutputFormat(task.outputFormat || 'png')
     setCount(task.count || 1)
@@ -699,11 +709,8 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
   }
 
   async function handleRetry(id: string) {
-    const task = tasks.find((item) => item.id === id)
-    const nextProvider = task?.provider || 'image-2'
-    const ready = nextProvider === BANANA_PROVIDER ? bananaKeyReady : keyReady
-    if (!ready) {
-      setToast(nextProvider === BANANA_PROVIDER ? '请先保存 Banana API Key，或确认已上传到云端' : '请先保存 codex-key，或确认已上传到云端')
+    if (!keyReady) {
+      setToast('请先保存 codex-key，或确认已上传到云端')
       goToTab('settings')
       return
     }
@@ -825,6 +832,10 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
     setMessage(failed ? `下载完成：成功 ${ok}，失败 ${failed}` : `已保存/下载 ${ok} 张图片`)
   }
 
+  const handleCanvasPromptInjectionApplied = useCallback((revision: number) => {
+    setCanvasPromptInjection((current) => (current?.revision === revision ? null : current))
+  }, [])
+
   async function logout() {
     await logoutUser()
     setSession(null)
@@ -839,9 +850,11 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
   if (!session) return <SpaceLogin theme={theme} onToggleTheme={onToggleTheme} onSession={(next) => { setSession(next); setSpaceReady(true) }} />
 
   const agentPageProps: AgentPageBridgeProps = {
-    provider,
-    model: provider === BANANA_PROVIDER ? bananaModel : DEFAULT_IMAGE2_MODEL,
+    provider: IMAGE2_PROVIDER,
+    model: imageModel,
+    ratio,
     onCopyPrompt: () => setMessage('Agent 提示词已复制'),
+    onUsePromptToCanvas: (payload) => handleUseAgentPromptToCanvas(payload.prompt, { provider: payload.provider, model: payload.model, ratio: payload.ratio }),
     onTaskConfirmed: handleAgentTaskBackflow,
     onTaskCreated: handleAgentTaskBackflow,
     onConfirmTask: handleAgentTaskBackflow,
@@ -870,7 +883,7 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
               <div className="generate-main-column">
                 {!currentKeyReady ? (
                   <div className="key-warning">
-                    <strong>{provider === BANANA_PROVIDER ? 'Banana Key 未设置' : 'codex-key 未设置'}</strong>
+                    <strong>codex-key 未设置</strong>
                     <span>当前模型还没有可用 Key，先去设置保存，或主动上传到云端后再生成。</span>
                     <button type="button" onClick={() => goToTab('settings')}>去设置</button>
                   </div>
@@ -881,9 +894,10 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
                   prompt={prompt}
                   ratio={ratio}
                   resolution={resolution}
+                  size={imageSize}
                   quality={quality}
                   outputFormat={outputFormat}
-                  bananaModel={bananaModel}
+                  imageModel={imageModel}
                   count={count}
                   concurrency={concurrency}
                   uploads={uploads}
@@ -892,13 +906,13 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
                   message={message}
                   error={error}
                   onModeChange={setMode}
-                  onProviderChange={setProvider}
+                  onImageModelChange={applyImageModelSelection}
                   onPromptChange={setPrompt}
                   onRatioChange={setRatio}
                   onResolutionChange={setResolution}
+                  onSizeChange={setImageSize}
                   onQualityChange={setQuality}
                   onOutputFormatChange={setOutputFormat}
-                  onBananaModelChange={setBananaModel}
                   onCountChange={setCount}
                   onConcurrencyChange={setConcurrency}
                   onOpenSettings={() => goToTab('settings')}
@@ -914,7 +928,7 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
         {activeTab === 'library' ? (
           <PromptLibraryPage
             provider={provider}
-            bananaModel={bananaModel}
+            bananaModel={DEFAULT_BANANA_MODEL}
             onUsePrompt={handleUseLibraryPrompt}
           />
         ) : null}
@@ -922,10 +936,14 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
         {activeTab === 'nodes' ? (
           <NodeWorkflowPage
             provider={provider}
-            bananaModel={bananaModel}
+            bananaModel={DEFAULT_BANANA_MODEL}
             prompt={prompt}
             injectedPrompt={canvasPromptInjection?.prompt}
             injectedPromptRevision={canvasPromptInjection?.revision ?? 0}
+            injectedPromptProvider={canvasPromptInjection?.provider}
+            injectedPromptModel={canvasPromptInjection?.model}
+            injectedPromptRatio={canvasPromptInjection?.ratio}
+            onPromptInjectionApplied={handleCanvasPromptInjectionApplied}
             onUsePrompt={handleUseCanvasPrompt}
             onCreateTask={handleCreateNodeWorkflowTask}
             referenceUploads={uploads}
@@ -969,7 +987,7 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
               tasks={tasks}
               uploads={uploads}
               provider={provider}
-              bananaModel={bananaModel}
+              bananaModel={DEFAULT_BANANA_MODEL}
               onClose={() => goToTab('nodes')}
               onUsePrompt={handleUseAssistantPrompt}
               onRefreshUploads={refreshUploads}
@@ -1036,7 +1054,7 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
 
         {activeTab === 'settings' ? (
           <section className="workflow-page settings-page-inline">
-            <PageHeader eyebrow="Settings" title="设置" description="管理账号安全、生成 Key、默认数量、默认并发和图床偏好。" />
+            <PageHeader eyebrow="Settings" title="设置" description="管理账号安全、codex-pro 推荐、Image-2 / image-2-4k 生图分组提示、默认数量、默认并发和图床偏好。" />
             <div className="settings-inline-grid settings-only-grid">
               <SettingsPanel onConfig={applyUserConfig} />
             </div>
@@ -1090,6 +1108,10 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
   )
 }
 
+function normalizeImageSizeForUI(value?: string) {
+  const normalized = (value || '').trim().toLowerCase().replace(/×/g, 'x').replace(/\s+/g, '')
+  return normalized === 'auto' || normalized === '自动' ? '' : normalized
+}
 function defaultSquareTags(task: Task) {
   return [
     task.mode === 'gif' ? 'GIF动图' : task.mode === 'image-to-image' ? '图生图' : '文生图',
@@ -1099,12 +1121,12 @@ function defaultSquareTags(task: Task) {
 }
 
 function squareModelTag(task: Task) {
-  return task.provider === BANANA_PROVIDER ? task.model || DEFAULT_BANANA_MODEL : image2SquareModelTag(task.model)
+  return image2SquareModelTag(task.model)
 }
 
 function image2SquareModelTag(model?: string) {
   const normalized = (model || '').trim()
-  if (!normalized || normalized === 'image-2' || normalized === DEFAULT_IMAGE2_MODEL) return DEFAULT_IMAGE2_MODEL
+  if (!normalized || normalized === 'image-2' || normalized === 'gpt-image-2' || normalized === DEFAULT_IMAGE2_MODEL) return DEFAULT_IMAGE2_MODEL
   return normalized
 }
 

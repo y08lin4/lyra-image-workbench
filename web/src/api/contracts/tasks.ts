@@ -97,6 +97,7 @@ export interface CreateTaskRequest {
   framePrompts?: string[]
   ratio: string
   resolution: string
+  size?: string
   quality: string
   outputFormat: string
   count: number

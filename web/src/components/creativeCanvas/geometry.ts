@@ -1,8 +1,16 @@
 import type { CSSProperties, DragEvent as ReactDragEvent } from 'react'
 import type { CanvasInteraction, CanvasItem, CanvasPoint } from './types'
 
+type CanvasPointSize = {
+  width?: number
+  height?: number
+}
+
+const CANVAS_SAFE_INSET = 8
+const DEFAULT_CANVAS_POINT_SIZE = { width: 220, height: 156 }
+
 export function updateCanvasItemsForInteraction(items: CanvasItem[], interaction: CanvasInteraction, event: PointerEvent, stage: HTMLElement | null): CanvasItem[] {
-  const rect = stage?.getBoundingClientRect()
+  const metrics = canvasStageMetrics(stage)
   return items.map((item) => {
     if (item.id !== interaction.itemId) return item
     if (interaction.type === 'move') {
@@ -10,13 +18,13 @@ export function updateCanvasItemsForInteraction(items: CanvasItem[], interaction
       const nextY = interaction.origin.y + event.clientY - interaction.startClientY
       return {
         ...item,
-        x: rect ? clamp(nextX, 8, Math.max(8, rect.width - item.width - 8)) : nextX,
-        y: rect ? clamp(nextY, 8, Math.max(8, rect.height - item.height - 8)) : nextY,
+        x: metrics ? clampCanvasStart(nextX, metrics.width, item.width) : nextX,
+        y: metrics ? clampCanvasStart(nextY, metrics.height, item.height) : nextY,
       }
     }
     if (interaction.type === 'resize') {
       return item.type === 'image'
-        ? resizeImageItemByPointer(item, interaction, event, rect)
+        ? resizeImageItemByPointer(item, interaction, event, metrics)
         : resizeFreeformItemByPointer(item, interaction, event)
     }
     const nextAngle = pointerAngleForItem(item, event.clientX, event.clientY, stage)
@@ -42,9 +50,9 @@ export function canvasControlStyle(_item: CanvasItem): CSSProperties {
 }
 
 export function scaleCanvasItemByWheel(item: CanvasItem, deltaY: number, stage: HTMLElement | null): CanvasItem {
-  const rect = stage?.getBoundingClientRect()
-  const maxWidth = rect ? Math.max(160, rect.width - 24) : 900
-  const maxHeight = rect ? Math.max(120, rect.height - 24) : 720
+  const metrics = canvasStageMetrics(stage)
+  const maxWidth = metrics ? Math.max(160, metrics.width - 24) : 900
+  const maxHeight = metrics ? Math.max(120, metrics.height - 24) : 720
   const minWidth = item.type === 'text' ? 96 : 64
   const minHeight = item.type === 'text' ? 64 : 48
   const requestedScale = deltaY < 0 ? 1.08 : 0.92
@@ -66,8 +74,8 @@ export function scaleCanvasItemByWheel(item: CanvasItem, deltaY: number, stage: 
 
   return {
     ...item,
-    x: rect ? clamp(nextX, 8, Math.max(8, rect.width - nextWidth - 8)) : nextX,
-    y: rect ? clamp(nextY, 8, Math.max(8, rect.height - nextHeight - 8)) : nextY,
+    x: metrics ? clampCanvasStart(nextX, metrics.width, nextWidth) : nextX,
+    y: metrics ? clampCanvasStart(nextY, metrics.height, nextHeight) : nextY,
     width: nextWidth,
     height: nextHeight,
   }
@@ -84,13 +92,13 @@ function resizeFreeformItemByPointer(item: CanvasItem, interaction: CanvasIntera
   return { ...item, width: nextWidth, height: nextHeight }
 }
 
-function resizeImageItemByPointer(item: CanvasItem, interaction: CanvasInteraction, event: PointerEvent, rect?: DOMRect): CanvasItem {
-  const maxWidth = rect ? Math.max(160, rect.width - 24) : 900
-  const maxHeight = rect ? Math.max(120, rect.height - 24) : 720
+function resizeImageItemByPointer(item: CanvasItem, interaction: CanvasInteraction, event: PointerEvent, metrics: CanvasStageMetrics | null): CanvasItem {
+  const maxWidth = metrics ? Math.max(160, metrics.width - 24) : 900
+  const maxHeight = metrics ? Math.max(120, metrics.height - 24) : 720
   const minWidth = 64
   const minHeight = 48
-  const centerX = (rect?.left || 0) + interaction.origin.x + interaction.origin.width / 2
-  const centerY = (rect?.top || 0) + interaction.origin.y + interaction.origin.height / 2
+  const centerX = (metrics?.left || 0) + interaction.origin.x + interaction.origin.width / 2
+  const centerY = (metrics?.top || 0) + interaction.origin.y + interaction.origin.height / 2
   const startDistance = Math.max(1, Math.hypot(interaction.startClientX - centerX, interaction.startClientY - centerY))
   const currentDistance = Math.max(1, Math.hypot(event.clientX - centerX, event.clientY - centerY))
   const scale = clamp(currentDistance / startDistance, 0.05, 20)
@@ -101,8 +109,8 @@ function resizeImageItemByPointer(item: CanvasItem, interaction: CanvasInteracti
 
   return {
     ...item,
-    x: rect ? clamp(nextX, 8, Math.max(8, rect.width - width - 8)) : nextX,
-    y: rect ? clamp(nextY, 8, Math.max(8, rect.height - height - 8)) : nextY,
+    x: metrics ? clampCanvasStart(nextX, metrics.width, width) : nextX,
+    y: metrics ? clampCanvasStart(nextY, metrics.height, height) : nextY,
     width,
     height,
   }
@@ -187,19 +195,43 @@ export function dropPointFromEvent(event: ReactDragEvent<HTMLElement>, stage: HT
   return canvasPointFromClient(event.clientX, event.clientY, stage)
 }
 
-export function canvasPointFromClient(clientX: number, clientY: number, stage: HTMLElement | null): CanvasPoint {
-  const rect = stage?.getBoundingClientRect()
-  if (!rect) return autoItemPosition(0)
+export function canvasPointFromClient(clientX: number, clientY: number, stage: HTMLElement | null, size: CanvasPointSize = DEFAULT_CANVAS_POINT_SIZE): CanvasPoint {
+  const metrics = canvasStageMetrics(stage)
+  if (!metrics) return autoItemPosition(0)
+  return canvasPointFromStageMetrics(clientX, clientY, metrics, size)
+}
+
+export function canvasPointFromStageMetrics(clientX: number, clientY: number, metrics: CanvasStageMetrics, size: CanvasPointSize = DEFAULT_CANVAS_POINT_SIZE): CanvasPoint {
+  const width = canvasPointDimension(size.width, DEFAULT_CANVAS_POINT_SIZE.width)
+  const height = canvasPointDimension(size.height, DEFAULT_CANVAS_POINT_SIZE.height)
+  const inside = isClientPointInsideMetrics(clientX, clientY, metrics)
+  const x = inside ? clientX - metrics.left - width / 2 : metrics.width / 2 - width / 2
+  const y = inside ? clientY - metrics.top - height / 2 : metrics.height / 2 - height / 2
   return {
-    x: clamp(clientX - rect.left - 110, 8, Math.max(8, rect.width - 240)),
-    y: clamp(clientY - rect.top - 78, 8, Math.max(8, rect.height - 180)),
+    x: clampCanvasStart(x, metrics.width, width),
+    y: clampCanvasStart(y, metrics.height, height),
   }
 }
 
+export function canvasPointAtStageCenter(stage: HTMLElement | null, size: CanvasPointSize = DEFAULT_CANVAS_POINT_SIZE): CanvasPoint {
+  const metrics = canvasStageMetrics(stage)
+  if (!metrics) return autoItemPosition(0)
+  return canvasPointFromStageMetrics(metrics.left + metrics.width / 2, metrics.top + metrics.height / 2, metrics, size)
+}
+
+export function snapshotCanvasStageMetrics(stage: HTMLElement | null): CanvasStageMetrics | null {
+  return canvasStageMetrics(stage)
+}
+
+export function isClientPointInsideMetrics(clientX: number, clientY: number, metrics: CanvasStageMetrics | null) {
+  if (!metrics) return false
+  return clientX >= metrics.left && clientX <= metrics.left + metrics.width && clientY >= metrics.top && clientY <= metrics.top + metrics.height
+}
+
 export function pointerAngleForItem(item: CanvasItem, clientX: number, clientY: number, stage: HTMLElement | null) {
-  const rect = stage?.getBoundingClientRect()
-  const centerX = (rect?.left || 0) + item.x + item.width / 2
-  const centerY = (rect?.top || 0) + item.y + item.height / 2
+  const metrics = canvasStageMetrics(stage)
+  const centerX = (metrics?.left || 0) + item.x + item.width / 2
+  const centerY = (metrics?.top || 0) + item.y + item.height / 2
   return Math.atan2(clientY - centerY, clientX - centerX) * 180 / Math.PI
 }
 
@@ -218,6 +250,33 @@ export function normalizeRotation(value: number) {
   const next = value % 360
   return next > 180 ? next - 360 : next < -180 ? next + 360 : next
 }
+
+export type CanvasStageMetrics = {
+  left: number
+  top: number
+  width: number
+  height: number
+}
+
+function canvasStageMetrics(stage: HTMLElement | null): CanvasStageMetrics | null {
+  const rect = stage?.getBoundingClientRect()
+  if (!stage || !rect) return null
+  return {
+    left: rect.left + stage.clientLeft,
+    top: rect.top + stage.clientTop,
+    width: stage.clientWidth || rect.width,
+    height: stage.clientHeight || rect.height,
+  }
+}
+
+function canvasPointDimension(value: number | undefined, fallback: number) {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : fallback
+}
+
+function clampCanvasStart(value: number, available: number, size: number) {
+  return clamp(value, CANVAS_SAFE_INSET, Math.max(CANVAS_SAFE_INSET, available - size - CANVAS_SAFE_INSET))
+}
+
 export function nearestConnectableItem(items: readonly CanvasItem[], sourceId: string, maxGap = 44): CanvasItem | null {
   const source = items.find((item) => item.id === sourceId)
   if (!source) return null
@@ -244,5 +303,3 @@ function itemRectGap(a: CanvasItem, b: CanvasItem) {
   const dy = Math.max(0, Math.max(bTop - aBottom, aTop - bBottom))
   return Math.hypot(dx, dy)
 }
-
-

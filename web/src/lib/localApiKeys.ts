@@ -5,16 +5,13 @@ const LOCAL_API_KEYS_STORAGE_KEY = 'image-workbench:local-api-keys:v1'
 const DEFAULT_SCOPE = '__default__'
 
 export const LOCAL_API_KEY_HEADER = 'X-Image-Workbench-API-Key'
-export const LOCAL_BANANA_API_KEY_HEADER = 'X-Image-Workbench-Banana-API-Key'
 
 export type LocalApiKeyUpdate = {
   apiKey?: string
-  bananaApiKey?: string
 }
 
 type LocalApiKeys = {
   apiKey?: string
-  bananaApiKey?: string
 }
 
 type LocalApiKeyStore = Record<string, LocalApiKeys>
@@ -22,31 +19,19 @@ type LocalApiKeyStore = Record<string, LocalApiKeys>
 export function mergeLocalApiKeys(config: UserConfig, scope = getLocalKeyScope()): UserConfig {
   const keys = getLocalApiKeys(scope)
   const localApiKeySet = Boolean(keys.apiKey)
-  const localBananaApiKeySet = Boolean(keys.bananaApiKey)
   const cloudApiKeySet = Boolean(config.cloudApiKeySet ?? config.apiKeySet)
-  const cloudBananaApiKeySet = Boolean(config.cloudBananaApiKeySet ?? config.bananaApiKeySet)
   const systemApiKeySet = Boolean(config.systemApiKeySet)
-  const systemBananaApiKeySet = Boolean(config.systemBananaApiKeySet)
   return {
     ...config,
     localApiKeySet,
     localApiKeyPreview: maskSecret(keys.apiKey || ''),
-    localBananaApiKeySet,
-    localBananaApiKeyPreview: maskSecret(keys.bananaApiKey || ''),
     cloudApiKeySet,
     cloudApiKeyPreview: config.cloudApiKeyPreview || config.apiKeyPreview || '',
-    cloudBananaApiKeySet,
-    cloudBananaApiKeyPreview: config.cloudBananaApiKeyPreview || config.bananaApiKeyPreview || '',
     systemApiKeySet,
     systemApiKeyPreview: '',
-    systemBananaApiKeySet,
-    systemBananaApiKeyPreview: '',
     apiKeySet: localApiKeySet || cloudApiKeySet || systemApiKeySet,
     apiKeyPreview: localApiKeySet ? maskSecret(keys.apiKey || '') : cloudApiKeySet ? (config.cloudApiKeyPreview || config.apiKeyPreview || '') : '',
-    bananaApiKeySet: localBananaApiKeySet || cloudBananaApiKeySet || systemBananaApiKeySet,
-    bananaApiKeyPreview: localBananaApiKeySet ? maskSecret(keys.bananaApiKey || '') : cloudBananaApiKeySet ? (config.cloudBananaApiKeyPreview || config.bananaApiKeyPreview || '') : '',
     apiKeySource: localApiKeySet ? 'local' : cloudApiKeySet ? 'cloud' : systemApiKeySet ? 'system' : 'none',
-    bananaApiKeySource: localBananaApiKeySet ? 'local' : cloudBananaApiKeySet ? 'cloud' : systemBananaApiKeySet ? 'system' : 'none',
   }
 }
 
@@ -54,15 +39,13 @@ export function saveLocalApiKeys(update: LocalApiKeyUpdate, scope = getLocalKeyS
   const current = getLocalApiKeys(scope)
   const next = { ...current }
   if (update.apiKey !== undefined && update.apiKey.trim()) next.apiKey = update.apiKey.trim()
-  if (update.bananaApiKey !== undefined && update.bananaApiKey.trim()) next.bananaApiKey = update.bananaApiKey.trim()
   writeLocalApiKeys(scope, next)
 }
 
-export function clearLocalApiKeys(update: { apiKey?: boolean; bananaApiKey?: boolean }, scope = getLocalKeyScope()) {
+export function clearLocalApiKeys(update: { apiKey?: boolean }, scope = getLocalKeyScope()) {
   const current = getLocalApiKeys(scope)
   const next = { ...current }
   if (update.apiKey) delete next.apiKey
-  if (update.bananaApiKey) delete next.bananaApiKey
   writeLocalApiKeys(scope, next)
 }
 
@@ -70,7 +53,6 @@ export function withLocalApiKeyHeaders(headers?: HeadersInit, scope = getLocalKe
   const next = new Headers(headers)
   const keys = getLocalApiKeys(scope)
   if (keys.apiKey) next.set(LOCAL_API_KEY_HEADER, keys.apiKey)
-  if (keys.bananaApiKey) next.set(LOCAL_BANANA_API_KEY_HEADER, keys.bananaApiKey)
   return next
 }
 
@@ -83,9 +65,8 @@ function writeLocalApiKeys(scopeValue: string, keys: LocalApiKeys) {
   const scope = scopeForUser(scopeValue)
   const next = {
     apiKey: keys.apiKey?.trim() || undefined,
-    bananaApiKey: keys.bananaApiKey?.trim() || undefined,
   }
-  if (next.apiKey || next.bananaApiKey) {
+  if (next.apiKey) {
     store[scope] = next
   } else {
     delete store[scope]

@@ -62,7 +62,7 @@ export function OverviewTab({
       </div>
       <div className="admin-overview-summary">
         <div className="status-line">当前对外域名：{config?.publicBaseUrl || '未设置'}。用于记录部署域名，反代仍在宝塔/Nginx 里配置。</div>
-        <div className="status-line">默认 Image-2 模型：{config?.model || 'gpt-image-2'}；Banana Nano 在工作台按规格路由到独立模型 ID。</div>
+        <div className="status-line">默认 Image-2 模型：{config?.model || 'gpt-image-2'}。</div>
         <div className="status-line">易支付 Key：{billingConfig.epayKeySet ? `已设置（${billingConfig.epayKeyPreview || '已隐藏'}）` : '未设置'}</div>
         <div className="status-line">邮件发件：{smtpEnabled ? '已开启' : '未开启'}；SMTP 密码：{emailConfig.smtpPasswordSet ? `已设置（${emailConfig.smtpPasswordPreview || '已隐藏'}）` : '未设置'}</div>
       </div>

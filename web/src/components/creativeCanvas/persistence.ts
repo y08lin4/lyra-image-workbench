@@ -1,13 +1,27 @@
-import type { Mode } from '../../types'
+import type { Mode, ModelProvider } from '../../types'
 import type { CanvasConnection, CanvasImageItem, CanvasItem, CanvasTextItem, ReferenceRole } from './types'
 
 const CREATIVE_CANVAS_DRAFT_KEY = 'lyra.creativeCanvas.draft.v1'
+const DEFAULT_PROVIDER: ModelProvider = 'image-2'
+const DEFAULT_BANANA_MODEL = 'gemini-3.1-flash-image-preview'
+const RATIO_VALUES = ['auto', '1:1', '2:3', '3:2', '3:4', '4:3', '9:16', '16:9']
+const RESOLUTION_VALUES = ['auto', 'standard', '2k', '4k']
+const QUALITY_VALUES = ['auto', 'low', 'medium', 'high']
+const OUTPUT_FORMAT_VALUES = ['png', 'jpeg', 'webp']
 
 export type CreativeCanvasDraft = {
   items: CanvasItem[]
   connections: CanvasConnection[]
   prompt: string
   mode: Mode
+  provider: ModelProvider
+  bananaModel: string
+  ratio: string
+  resolution: string
+  quality: string
+  outputFormat: string
+  count: number
+  concurrency: number
   hasStoredDraft: boolean
 }
 
@@ -21,6 +35,14 @@ const EMPTY_DRAFT: CreativeCanvasDraft = {
   connections: [],
   prompt: '',
   mode: 'text-to-image',
+  provider: DEFAULT_PROVIDER,
+  bananaModel: DEFAULT_BANANA_MODEL,
+  ratio: '1:1',
+  resolution: 'standard',
+  quality: 'high',
+  outputFormat: 'png',
+  count: 1,
+  concurrency: 1,
   hasStoredDraft: false,
 }
 
@@ -45,6 +67,14 @@ export function loadCreativeCanvasDraft(): CreativeCanvasDraft {
       connections,
       prompt: typeof parsed.prompt === 'string' ? parsed.prompt : '',
       mode: parsed.mode === 'image-to-image' ? 'image-to-image' : 'text-to-image',
+      provider: sanitizeProvider(parsed.provider),
+      bananaModel: sanitizeString(parsed.bananaModel) || DEFAULT_BANANA_MODEL,
+      ratio: sanitizeOneOf(parsed.ratio, RATIO_VALUES, '1:1'),
+      resolution: sanitizeOneOf(parsed.resolution, RESOLUTION_VALUES, 'standard'),
+      quality: sanitizeOneOf(parsed.quality, QUALITY_VALUES, 'high'),
+      outputFormat: sanitizeOneOf(parsed.outputFormat, OUTPUT_FORMAT_VALUES, 'png'),
+      count: sanitizeInteger(parsed.count, 1, 8, 1),
+      concurrency: sanitizeInteger(parsed.concurrency, 1, 8, 1),
       hasStoredDraft: true,
     }
   } catch {
@@ -68,6 +98,14 @@ export function saveCreativeCanvasDraft(draft: CreativeCanvasDraft) {
     connections,
     prompt: draft.prompt,
     mode: draft.mode,
+    provider: draft.provider,
+    bananaModel: draft.bananaModel,
+    ratio: draft.ratio,
+    resolution: draft.resolution,
+    quality: draft.quality,
+    outputFormat: draft.outputFormat,
+    count: draft.count,
+    concurrency: draft.concurrency,
   }
 
   try {
@@ -141,6 +179,22 @@ function isCanvasItem(item: CanvasItem | null): item is CanvasItem {
 
 function sanitizeString(value: unknown) {
   return typeof value === 'string' ? value : ''
+}
+
+function sanitizeProvider(value: unknown): ModelProvider {
+  const next = sanitizeString(value)
+  return next === 'banana' ? 'banana' : DEFAULT_PROVIDER
+}
+
+function sanitizeOneOf(value: unknown, allowed: readonly string[], fallback: string) {
+  const next = sanitizeString(value)
+  return allowed.includes(next) ? next : fallback
+}
+
+function sanitizeInteger(value: unknown, min: number, max: number, fallback: number) {
+  const numeric = typeof value === 'number' ? value : Number(value)
+  if (!Number.isFinite(numeric)) return fallback
+  return Math.min(max, Math.max(min, Math.round(numeric)))
 }
 
 function sanitizeOptionalString(value: unknown) {
