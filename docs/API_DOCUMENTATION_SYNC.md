@@ -14,6 +14,8 @@ The section below can be copied as the external repository README or API quickst
 
 LyAi Image Generation API turns the Lyra Image Workbench web workflow into a programmatic image generation API. Users register on the site, save their upstream image provider key into their protected cloud account space, create a Lyra Bearer Key, then call `/v1/*` endpoints from scripts, SDKs, automation tools, or another AI agent.
 
+> Banana Nano / Banana provider has moved to the independent `banana` branch. Current `dev` API documentation covers Image-2 and `image-2（满血版）`; Banana stays on the independent `banana` branch and is not advertised as an available provider.
+
 The API is task based:
 
 1. Create an image generation task.
@@ -29,9 +31,7 @@ Before calling the API:
 
 1. Open [https://ai-image.ailinyu.de/](https://ai-image.ailinyu.de/).
 2. Register or sign in.
-3. In the web settings page, save the cloud upstream key for the provider you will use:
-   - `image-2`: save the codex-key/cloud upstream key.
-   - `banana`: save the Banana cloud upstream key.
+3. In the web settings page, save the Image-2 cloud upstream key (codex-key/cloud upstream key).
 4. Generate a Lyra Bearer API Key in the API/developer key area.
 5. Copy the Bearer Key immediately. It is shown only once and starts with `lyra_sk_`.
 
@@ -88,10 +88,22 @@ Request:
 
 ```json
 {
-  "model": "gpt-image-2",
+  "model": "image-2",
   "prompt": "A clean product photo of a translucent smart speaker on a stone pedestal",
-  "size": "1024x1024",
   "quality": "auto",
+  "output_format": "png",
+  "n": 1
+}
+```
+
+Full image-2（满血版） size example:
+
+```json
+{
+  "model": "image-2-4k",
+  "prompt": "A 16:9 cinematic product poster for a translucent smart speaker",
+  "size": "1536x864",
+  "quality": "high",
   "output_format": "png",
   "n": 1
 }
@@ -107,7 +119,7 @@ Success response:
   "task": {
     "id": "img_20260627120000_abcd1234abcd1234",
     "provider": "image-2",
-    "model": "gpt-image-2",
+    "model": "image-2",
     "mode": "text-to-image",
     "status": "queued",
     "statusText": "排队中",
@@ -136,7 +148,7 @@ Request:
 ```json
 {
   "provider": "image-2",
-  "model": "gpt-image-2",
+  "model": "image-2",
   "mode": "text-to-image",
   "prompt": "A clean product photo of a translucent smart speaker on a stone pedestal",
   "ratio": "1:1",
@@ -165,14 +177,13 @@ Example response after success:
   "task": {
     "id": "img_20260627120000_abcd1234abcd1234",
     "provider": "image-2",
-    "model": "gpt-image-2",
+    "model": "image-2",
     "mode": "text-to-image",
     "prompt": "A clean product photo of a translucent smart speaker on a stone pedestal",
     "ratio": "1:1",
     "resolution": "standard",
     "quality": "auto",
     "outputFormat": "png",
-    "size": "1024x1024",
     "count": 1,
     "consumedCredits": 1,
     "concurrency": 1,
@@ -294,9 +305,9 @@ Task result entries may also contain `errorCode`, `errorText`, and `errorEnglish
 | Field | Endpoint | Type | Required | Accepted values / behavior |
 | --- | --- | --- | --- | --- |
 | `prompt` | both create endpoints | string | yes | Text prompt. Empty prompts are rejected. |
-| `model` | both | string | no | For `image-2`, the server uses `gpt-image-2`. For `banana`, use one of the supported Banana model IDs or omit for the default. |
-| `provider` | both | string | no | `image-2`, `image2`, `gpt-image-2`, `banana`, `banana-nano`, `nano-banana`. Empty means `image-2`. |
-| `size` | `/v1/images/generations` | string | no | OpenAI-style size. Maps to `ratio` plus `resolution`. See size table below. |
+| `model` | both | string | no | Use `image-2` for the base entry. Use `image-2-4k` for the UI label `image-2（满血版）`. Legacy `gpt-image-2` is still accepted and normalized to `image-2`. |
+| `provider` | both | string | no | `image-2`, `image2`, `image-2-4k`, legacy `gpt-image-2`. Empty means `image-2`. |
+| `size` | `/v1/images/generations` | string | no | For `image-2`, omit `size`; the server will not submit it upstream. For `image-2-4k` / `image-2（满血版）`, accepts `auto`, mapped preset sizes, or custom `WIDTHxHEIGHT`. |
 | `ratio` | both | string | no | `auto`, `1:1`, `2:3`, `3:2`, `3:4`, `4:3`, `9:16`, `16:9`. Unknown values normalize to `1:1`. |
 | `resolution` | both | string | no | `auto`, `standard`, `2k`, `4k`. Unknown values normalize to `standard`. |
 | `quality` | both | string | no | `auto`, `low`, `medium`, `high`. Unknown values normalize to `auto`. |
@@ -307,7 +318,7 @@ Task result entries may also contain `errorCode`, `errorText`, and `errorEnglish
 | `concurrency` | both | integer | no | Minimum `1`. Controls per-task parallel image generation. |
 | `mode` | `/v1/image-tasks` | string | yes for native endpoint | Must be `text-to-image` for the current external API. |
 | `apiKey` | none | string | no | Ignored for `/v1/*`; do not send upstream keys to external API requests. |
-| `bananaApiKey` | none | string | no | Ignored for `/v1/*`; save the Banana upstream key in the web settings page instead. |
+| `bananaApiKey` | none | string | no | Legacy/unsupported field ignored for `/v1/*`; do not send upstream keys to external API requests. |
 
 ### Size Mapping
 
@@ -336,31 +347,9 @@ Task result entries may also contain `errorCode`, `errorText`, and `errorEnglish
 | `2160x3840` | `9:16` | `4k` |
 | `3840x2160` | `16:9` | `4k` |
 
-### Banana Models
+### Banana Migration Note
 
-For `provider=banana`, the current accepted model IDs are:
-
-```text
-gemini-3.1-flash-image-preview
-gemini-3.1-flash-image-preview-16x9-4k
-gemini-3.1-flash-image-preview-9x16-4k
-gemini-3.1-flash-image-preview-16x9-2k
-gemini-3.1-flash-image-preview-9x16-2k
-gemini-3.1-flash-image-preview-2k
-gemini-3.1-flash-image-preview-4k
-gemini-3.1-flash-image-preview-4x3-4k
-gemini-3.1-flash-image-preview-4x3-2k
-gemini-3.1-flash-image-preview-3x2-4k
-gemini-3.1-flash-image-preview-3x2-2k
-gemini-3.1-flash-image-preview-2x3-4k
-gemini-3.1-flash-image-preview-2x3-2k
-gemini-3.1-flash-image-preview-1x1-4k
-gemini-3.1-flash-image-preview-3x4-2k
-gemini-3.1-flash-image-preview-3x4-4k
-gemini-3.1-flash-image-preview-1x1-2k
-```
-
-Banana models use their own model-defined size/ratio behavior. The server normalizes `quality` and `outputFormat` to `auto` for Banana tasks.
+Banana Nano / Banana provider has moved to the independent `banana` branch. Current `dev` API documentation does not list Banana as an accepted provider or model family.
 
 ## Code Examples
 
@@ -383,7 +372,7 @@ FAILURE="failed cancelled interrupted"
 CREATE_JSON=$(curl --fail-with-body -sS -X POST "$BASE_URL/v1/images/generations" \
   -H "Authorization: Bearer $LYRA_API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{"model":"gpt-image-2","prompt":"A clean product photo of a translucent smart speaker on a stone pedestal","size":"1024x1024","quality":"auto","output_format":"png","n":1}')
+  -d '{"model": "image-2","prompt":"A clean product photo of a translucent smart speaker on a stone pedestal","quality":"auto","output_format":"png","n":1}')
 
 TASK_ID=$(python -c 'import json,sys; d=json.load(sys.stdin); print(d.get("taskId") or d["task"]["id"])' <<< "$CREATE_JSON")
 echo "task_id=$TASK_ID"
@@ -445,9 +434,8 @@ async function request(path: string, init: RequestInit = {}) {
 const created = await request("/v1/images/generations", {
   method: "POST",
   body: JSON.stringify({
-    model: "gpt-image-2",
+    model: "image-2",
     prompt: "A clean product photo of a translucent smart speaker on a stone pedestal",
-    size: "1024x1024",
     quality: "auto",
     output_format: "png",
     n: 1,
@@ -495,9 +483,8 @@ created = requests.post(
     f"{BASE_URL}/v1/images/generations",
     headers={**headers, "Content-Type": "application/json"},
     json={
-        "model": "gpt-image-2",
+        "model": "image-2",
         "prompt": "A clean product photo of a translucent smart speaker on a stone pedestal",
-        "size": "1024x1024",
         "quality": "auto",
         "output_format": "png",
         "n": 1,
@@ -571,7 +558,7 @@ func request(method, path string, body []byte) []byte {
 }
 
 func main() {
-	createdBytes := request("POST", "/v1/images/generations", []byte(`{"model":"gpt-image-2","prompt":"A clean product photo of a translucent smart speaker on a stone pedestal","size":"1024x1024","quality":"auto","output_format":"png","n":1}`))
+	createdBytes := request("POST", "/v1/images/generations", []byte(`{"model": "image-2","prompt":"A clean product photo of a translucent smart speaker on a stone pedestal","quality":"auto","output_format":"png","n":1}`))
 	var created map[string]any
 	_ = json.Unmarshal(createdBytes, &created)
 	taskID, _ := created["taskId"].(string)
@@ -650,7 +637,7 @@ public class GenerateImage {
   static final Set<String> FAILURE = Set.of("failed", "cancelled", "interrupted");
 
   public static void main(String[] args) throws Exception {
-    String body = "{\"model\":\"gpt-image-2\",\"prompt\":\"A clean product photo of a translucent smart speaker on a stone pedestal\",\"size\":\"1024x1024\",\"quality\":\"auto\",\"output_format\":\"png\",\"n\":1}";
+    String body = "{\"model\":\"image-2\",\"prompt\":\"A clean product photo of a translucent smart speaker on a stone pedestal\",\"quality\":\"auto\",\"output_format\":\"png\",\"n\":1}";
     String created = send("POST", "/v1/images/generations", body);
     String taskId = stringField(created, "taskId");
     if (taskId.isBlank()) taskId = stringField(created, "id");
@@ -743,7 +730,7 @@ Use Authorization: Bearer <LYRA_API_KEY> for every /v1/* request. The key starts
 
 Prerequisites the user must have completed on the website:
 1. Registered or signed in at https://ai-image.ailinyu.de/.
-2. Saved the provider's cloud upstream key in web settings.
+2. Saved the Image-2 cloud upstream key in web settings.
 3. Generated and copied a Lyra Bearer API Key.
 
 Create task:
@@ -753,9 +740,8 @@ Authorization: Bearer <LYRA_API_KEY>
 Content-Type: application/json
 Body:
 {
-  "model": "gpt-image-2",
+  "model": "image-2",
   "prompt": "A clean product photo of a translucent smart speaker on a stone pedestal",
-  "size": "1024x1024",
   "quality": "auto",
   "output_format": "png",
   "n": 1
@@ -766,7 +752,7 @@ POST https://ai-image.ailinyu.de/v1/image-tasks
 Body:
 {
   "provider": "image-2",
-  "model": "gpt-image-2",
+  "model": "image-2",
   "mode": "text-to-image",
   "prompt": "A clean product photo of a translucent smart speaker on a stone pedestal",
   "ratio": "1:1",
@@ -801,9 +787,9 @@ Queued tasks can be cancelled. Running task cancellation is best effort.
 
 Supported fields:
 - prompt: required string.
-- model: optional. image-2 defaults to gpt-image-2. banana can use supported Banana model IDs.
-- provider: optional. image-2/image2/gpt-image-2 or banana/banana-nano/nano-banana.
-- size: auto, 1024x1024, 1024x1536, 1536x1024, 768x1024, 1024x768, 1008x1792, 1792x1008, plus 2k and 4k mapped sizes.
+- model: optional. Use image-2 for the base entry; use image-2-4k for image-2（满血版）. Legacy gpt-image-2 still maps to image-2.
+- provider: optional. image-2/image2/image-2-4k/legacy gpt-image-2.
+- size: omit for image-2. For image-2-4k, use auto, mapped preset sizes, or custom WIDTHxHEIGHT. Custom width/height must be divisible by 16, ratio 1:3 to 3:1, and no more than 3840 edge / 3840x2160 total pixels.
 - ratio: auto, 1:1, 2:3, 3:2, 3:4, 4:3, 9:16, 16:9.
 - resolution: auto, standard, 2k, 4k.
 - quality: auto, low, medium, high.
@@ -847,7 +833,7 @@ Keep the in-site API docs and the external documentation repository aligned on t
 | Cancel endpoint | `POST /v1/image-tasks/{taskId}/cancel` | Endpoint table and cancel section |
 | Example order | curl, TypeScript, Python, Go, Java | In-site tabs and external README |
 | Example prompt | `A clean product photo of a translucent smart speaker on a stone pedestal` | All examples |
-| Example payload | `model=gpt-image-2`, `size=1024x1024`, `quality=auto`, `output_format=png`, `n=1` | All examples |
+| Example payload | `model=image-2`, `quality=auto`, `output_format=png`, `n=1` | All examples |
 | Terminal statuses | `succeeded`, `partial_failed`, `failed`, `cancelled`, `interrupted` | Examples, AI prompt, polling docs |
 | Failure statuses | `failed`, `cancelled`, `interrupted` | Examples and AI prompt |
 | Partial success behavior | Download all or first `ok=true` result, expose failed result entries to callers | Polling docs and examples |

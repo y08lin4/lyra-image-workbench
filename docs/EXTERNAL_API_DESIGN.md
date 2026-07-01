@@ -103,7 +103,9 @@ React 设置页
 
 ## 5. 上游 Key 门槛
 
-生成 Bearer API Key 前必须检查当前用户空间是否已经配置云端上游 Key。
+> Banana provider 已迁移到独立 `banana` 分支；当前 `dev` 外部 API 设计只描述 Image-2，不再把 `provider=banana` 作为可用路径。
+
+生成 Bearer API Key 前必须检查当前用户空间是否已经配置 Image-2 云端上游 Key。
 
 判断规则：
 
@@ -111,26 +113,13 @@ React 设置页
 provider=image-2:
   spaceconfig.Config.CloudAPIKeyEnabled == true
   且 APIKey 非空
-
-provider=banana:
-  spaceconfig.Config.CloudBananaAPIKeyEnabled == true
-  且 BananaAPIKey 非空
 ```
 
-第一版可以先采用更简单规则：
-
-```text
-当前用户空间至少有一个云端上游 Key
-```
-
-创建任务时按实际 `provider` 再做精确检查：
+创建任务时再次检查 Image-2 云端上游 Key 是否存在：
 
 ```text
 POST /v1/image-tasks provider=image-2
   -> 必须有 image-2 云端 Key
-
-POST /v1/image-tasks provider=banana
-  -> 必须有 banana 云端 Key
 ```
 
 如果没有上游 Key，返回：
@@ -356,7 +345,7 @@ Content-Type: application/json
 ```json
 {
   "provider": "image-2",
-  "model": "gpt-image-2",
+  "model": "image-2",
   "mode": "text-to-image",
   "prompt": "a cinematic portrait of a girl in neon rain",
   "ratio": "1:1",
@@ -402,7 +391,7 @@ Bearer 鉴权成功
   "task": {
     "id": "img_20260625143000_abcd1234abcd1234",
     "provider": "image-2",
-    "model": "gpt-image-2",
+    "model": "image-2",
     "mode": "text-to-image",
     "status": "queued",
     "stage": "queued",
@@ -428,14 +417,13 @@ Authorization: Bearer lyra_sk_xxx
   "task": {
     "id": "img_20260625143000_abcd1234abcd1234",
     "provider": "image-2",
-    "model": "gpt-image-2",
+    "model": "image-2",
     "mode": "text-to-image",
     "prompt": "a cinematic portrait of a girl in neon rain",
     "ratio": "1:1",
     "resolution": "standard",
     "quality": "auto",
     "outputFormat": "png",
-    "size": "1024x1024",
     "count": 1,
     "concurrency": 1,
     "status": "succeeded",
@@ -869,8 +857,9 @@ curl "http://127.0.0.1:8787/v1/image-tasks/img_xxx/images/0" \
 - 注册和配置站点: `https://ai-image.ailinyu.de/`
 - 认证: 所有 `/v1/*` 请求都带 `Authorization: Bearer <API_KEY>`。
 - Bearer Key 格式: `lyra_sk_...`，只代表调用 Lyra 的权限，不是上游 NewAPI/OpenAI 兼容网关 Key。
-- 用户需要先在网页端注册登录，在设置页保存对应 provider 的云端上游 Key，然后生成 Bearer API Key。
+- 用户需要先在网页端注册登录，在设置页保存 Image-2 云端上游 Key，然后生成 Bearer API Key。
 - 不要把 Bearer Key 写死在前端代码里；SDK/脚本优先读取环境变量 `LYRA_API_KEY`。
+- Banana provider 已迁移到独立 `banana` 分支；当前 `dev` 快速接入口径仅说明 Image-2。
 
 ## 创建任务
 
@@ -886,9 +875,8 @@ Content-Type: application/json
 
 ```json
 {
-  "model": "gpt-image-2",
+  "model": "image-2",
   "prompt": "A clean product photo of a translucent smart speaker on a stone pedestal",
-  "size": "1024x1024",
   "quality": "auto",
   "output_format": "png",
   "n": 1
@@ -908,7 +896,7 @@ Content-Type: application/json
 ```json
 {
   "provider": "image-2",
-  "model": "gpt-image-2",
+  "model": "image-2",
   "mode": "text-to-image",
   "prompt": "A clean product photo of a translucent smart speaker on a stone pedestal",
   "ratio": "1:1",
@@ -939,9 +927,9 @@ Content-Type: application/json
 ## 参数说明
 
 - `prompt`: 必填，生成提示词。
-- `model`: 可选。`image-2` 会使用服务端默认 `gpt-image-2`；`banana` 可传服务端支持的 banana 模型 ID，不传时使用默认 banana 模型。
-- `provider`: 可选，支持 `image-2`/`gpt-image-2`/`image2` 或 `banana`/`banana-nano`/`nano-banana`。
-- `size`: OpenAI 兼容字段，可传 `auto`、`1024x1024`、`1024x1536`、`1536x1024`、`768x1024`、`1024x768`、`1008x1792`、`1792x1008`，以及 2K/4K 对应尺寸；服务端会映射为 `ratio` + `resolution`。
+- `model`: 可选。`image-2` 为基础版；`image-2-4k` 为 `image-2（满血版）`；旧 `gpt-image-2` 输入继续兼容。
+- `provider`: 可选，支持 `image-2`/`image2`/`image-2-4k`，旧 `gpt-image-2` 继续兼容。
+- `size`: 基础版 `image-2` 建议省略，服务端不会提交给上游；`image-2-4k` 支持 `auto`、预设尺寸和自定义 `WIDTHxHEIGHT`。
 - `ratio`: 可选，`auto`、`1:1`、`2:3`、`3:2`、`3:4`、`4:3`、`9:16`、`16:9`。
 - `resolution`: 可选，`auto`、`standard`、`2k`、`4k`。
 - `quality`: 可选，`auto`、`low`、`medium`、`high`；未知值归一为 `auto`。
