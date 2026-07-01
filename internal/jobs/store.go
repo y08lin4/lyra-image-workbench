@@ -15,6 +15,7 @@ import (
 type Store struct {
 	mu     sync.Mutex
 	spaces *spaces.FileStore
+	sqlite *SQLiteStore
 }
 
 type persisted struct {
@@ -26,6 +27,9 @@ func NewStore(spaceStore *spaces.FileStore) *Store {
 }
 
 func (s *Store) Save(job Job) error {
+	if s.sqlite != nil {
+		return s.sqlite.Save(job)
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	jobs, err := s.loadLocked(job.SpaceToken)
@@ -47,6 +51,9 @@ func (s *Store) Save(job Job) error {
 }
 
 func (s *Store) Update(spaceToken string, id string, mutate func(*Job)) (Job, bool, error) {
+	if s.sqlite != nil {
+		return s.sqlite.Update(spaceToken, id, mutate)
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	jobs, err := s.loadLocked(spaceToken)
@@ -67,6 +74,9 @@ func (s *Store) Update(spaceToken string, id string, mutate func(*Job)) (Job, bo
 }
 
 func (s *Store) Delete(spaceToken string, id string) (Job, bool, error) {
+	if s.sqlite != nil {
+		return s.sqlite.Delete(spaceToken, id)
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	jobs, err := s.loadLocked(spaceToken)
@@ -87,6 +97,9 @@ func (s *Store) Delete(spaceToken string, id string) (Job, bool, error) {
 }
 
 func (s *Store) Get(spaceToken string, id string) (Job, bool, error) {
+	if s.sqlite != nil {
+		return s.sqlite.Get(spaceToken, id)
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	jobs, err := s.loadLocked(spaceToken)
@@ -102,6 +115,9 @@ func (s *Store) Get(spaceToken string, id string) (Job, bool, error) {
 }
 
 func (s *Store) List(spaceToken string, limit int) ([]Job, error) {
+	if s.sqlite != nil {
+		return s.sqlite.List(spaceToken, limit)
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	jobs, err := s.loadLocked(spaceToken)
@@ -119,6 +135,9 @@ func (s *Store) List(spaceToken string, limit int) ([]Job, error) {
 }
 
 func (s *Store) AllSpacesJobs() (map[string][]Job, error) {
+	if s.sqlite != nil {
+		return s.sqlite.AllSpacesJobs()
+	}
 	tokens, err := s.spaces.ListTokens()
 	if err != nil {
 		return nil, err
@@ -135,6 +154,9 @@ func (s *Store) AllSpacesJobs() (map[string][]Job, error) {
 }
 
 func (s *Store) Stats(spaceToken string) (Stats, error) {
+	if s.sqlite != nil {
+		return s.sqlite.Stats(spaceToken)
+	}
 	jobs, err := s.List(spaceToken, 1000)
 	if err != nil {
 		return Stats{}, err
