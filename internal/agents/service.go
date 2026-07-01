@@ -698,23 +698,11 @@ func normalizeConcurrency(value int, count int) int {
 	return value
 }
 
-func normalizeProvider(value string) string {
-	switch strings.ToLower(strings.TrimSpace(value)) {
-	case config.BananaProvider, "banana-nano", "nano-banana":
-		return config.BananaProvider
-	default:
-		return config.DefaultProvider
-	}
+func normalizeProvider(_ string) string {
+	return config.DefaultProvider
 }
 
-func normalizeModel(provider string, value string) string {
-	value = strings.TrimSpace(value)
-	if provider == config.BananaProvider {
-		if config.IsBananaModel(value) {
-			return value
-		}
-		return config.DefaultBananaModel
-	}
+func normalizeModel(_ string, _ string) string {
 	return config.DefaultModel
 }
 

@@ -4,9 +4,8 @@ func (update Update) HasChanges() bool {
 	return update.SiteName != nil ||
 		update.NewAPIBaseURL != nil ||
 		update.SystemAPIKey != nil ||
-		update.SystemBananaAPIKey != nil ||
 		update.ClearSystemAPIKey ||
-		update.ClearSystemBananaKey ||
+		update.ImageChannels != nil ||
 		update.PublicBaseURL != nil ||
 		update.DebugEnabled != nil ||
 		update.TimeoutSec != nil ||

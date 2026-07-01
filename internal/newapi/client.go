@@ -36,6 +36,7 @@ type Request struct {
 	Size            string
 	Quality         string
 	OutputFormat    string
+	ExtraParams     map[string]any
 	SkipImageParams bool
 	TimeoutSec      int
 	InputImages     []InputImage
@@ -89,16 +90,15 @@ func (c *Client) generateText(ctx context.Context, req Request) (Image, error) {
 		"prompt":          req.Prompt,
 		"n":               1,
 		"response_format": "b64_json",
+		"output_format":   outputFormat,
 	}
-	if !req.SkipImageParams {
-		body["output_format"] = outputFormat
-		if req.Size != "" && req.Size != "自动" && req.Size != "auto" {
-			body["size"] = req.Size
-		}
-		if req.Quality != "" {
-			body["quality"] = normalizeQuality(req.Quality)
-		}
+	if !req.SkipImageParams && req.Size != "" && req.Size != "自动" && req.Size != "auto" {
+		body["size"] = req.Size
 	}
+	if req.Quality != "" {
+		body["quality"] = normalizeQuality(req.Quality)
+	}
+	mergeExtraParams(body, req.ExtraParams)
 	payload, err := json.Marshal(body)
 	if err != nil {
 		return Image{}, err
@@ -124,14 +124,15 @@ func (c *Client) editImage(ctx context.Context, req Request) (Image, error) {
 	_ = writer.WriteField("prompt", req.Prompt)
 	_ = writer.WriteField("n", "1")
 	_ = writer.WriteField("response_format", "b64_json")
-	if !req.SkipImageParams {
-		_ = writer.WriteField("output_format", outputFormat)
-		if req.Size != "" && req.Size != "自动" && req.Size != "auto" {
-			_ = writer.WriteField("size", req.Size)
-		}
-		if req.Quality != "" {
-			_ = writer.WriteField("quality", normalizeQuality(req.Quality))
-		}
+	_ = writer.WriteField("output_format", outputFormat)
+	if !req.SkipImageParams && req.Size != "" && req.Size != "自动" && req.Size != "auto" {
+		_ = writer.WriteField("size", req.Size)
+	}
+	if req.Quality != "" {
+		_ = writer.WriteField("quality", normalizeQuality(req.Quality))
+	}
+	if err := writeExtraMultipartFields(writer, req.ExtraParams); err != nil {
+		return Image{}, err
 	}
 	for idx, input := range req.InputImages {
 		if err := addImagePart(writer, input, idx); err != nil {
@@ -149,6 +150,71 @@ func (c *Client) editImage(ctx context.Context, req Request) (Image, error) {
 	httpReq.Header.Set("Content-Type", writer.FormDataContentType())
 	httpReq.Header.Set("Cache-Control", "no-store")
 	return c.doAndParse(ctx, httpReq, outputFormat)
+}
+
+func mergeExtraParams(body map[string]any, extra map[string]any) {
+	for key, value := range filterExtraParams(extra) {
+		body[key] = value
+	}
+}
+
+func writeExtraMultipartFields(writer *multipart.Writer, extra map[string]any) error {
+	for key, value := range filterExtraParams(extra) {
+		fieldValue, err := extraParamFieldValue(value)
+		if err != nil {
+			return err
+		}
+		if err := writer.WriteField(key, fieldValue); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func extraParamFieldValue(value any) (string, error) {
+	if text, ok := value.(string); ok {
+		return text, nil
+	}
+	data, err := json.Marshal(value)
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
+}
+
+func filterExtraParams(values map[string]any) map[string]any {
+	if len(values) == 0 {
+		return nil
+	}
+	out := make(map[string]any, len(values))
+	for key, value := range values {
+		trimmed := strings.TrimSpace(key)
+		if trimmed == "" || isCoreExtraParamKey(trimmed) {
+			continue
+		}
+		out[trimmed] = value
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func isCoreExtraParamKey(key string) bool {
+	switch canonicalExtraParamKey(key) {
+	case "model", "prompt", "n", "responseformat", "size", "quality", "outputformat", "provider", "mode", "source", "ratio", "resolution", "count", "concurrency", "uploadids", "references", "runtimesecrets", "apikey", "authorization", "extraparams", "extrabody":
+		return true
+	default:
+		return false
+	}
+}
+
+func canonicalExtraParamKey(key string) string {
+	key = strings.ToLower(strings.TrimSpace(key))
+	key = strings.ReplaceAll(key, "_", "")
+	key = strings.ReplaceAll(key, "-", "")
+	key = strings.ReplaceAll(key, ".", "")
+	return key
 }
 
 func addImagePart(writer *multipart.Writer, input InputImage, idx int) error {

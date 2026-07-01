@@ -16,70 +16,69 @@ import (
 )
 
 type RuntimeConfig struct {
-	SiteName              string   `json:"siteName"`
-	NewAPIBaseURL         string   `json:"newApiBaseUrl"`
-	SystemAPIKey          string   `json:"systemApiKey,omitempty"`
-	SystemBananaAPIKey    string   `json:"systemBananaApiKey,omitempty"`
-	PublicBaseURL         string   `json:"publicBaseUrl"`
-	DebugEnabled          bool     `json:"debugEnabled"`
-	TimeoutSec            int      `json:"timeoutSec"`
-	Model                 string   `json:"model"`
-	EpayEnabled           bool     `json:"epayEnabled"`
-	EpayAPIURL            string   `json:"epayApiUrl"`
-	EpayPID               string   `json:"epayPid"`
-	EpayKey               string   `json:"epayKey"`
-	EpayMethods           []string `json:"epayMethods"`
-	CreditPriceCents      int      `json:"creditPriceCents"`
-	MinTopUpCredits       int      `json:"minTopUpCredits"`
-	ReferralRewardCredits int      `json:"referralRewardCredits"`
-	SMTPEnabled           bool     `json:"smtpEnabled"`
-	SMTPHost              string   `json:"smtpHost"`
-	SMTPPort              int      `json:"smtpPort"`
-	SMTPUser              string   `json:"smtpUser"`
-	SMTPPassword          string   `json:"smtpPassword"`
-	SMTPFrom              string   `json:"smtpFrom"`
-	SMTPSecure            bool     `json:"smtpSecure"`
-	NewUserInitialCredits int      `json:"newUserInitialCredits"`
-	DailyFreeCredits      int      `json:"dailyFreeCredits"`
-	UpdatedAt             string   `json:"updatedAt"`
+	SiteName              string               `json:"siteName"`
+	NewAPIBaseURL         string               `json:"newApiBaseUrl"`
+	SystemAPIKey          string               `json:"systemApiKey,omitempty"`
+	ImageChannels         []ImageChannelConfig `json:"imageChannels"`
+	PublicBaseURL         string               `json:"publicBaseUrl"`
+	DebugEnabled          bool                 `json:"debugEnabled"`
+	TimeoutSec            int                  `json:"timeoutSec"`
+	Model                 string               `json:"model"`
+	EpayEnabled           bool                 `json:"epayEnabled"`
+	EpayAPIURL            string               `json:"epayApiUrl"`
+	EpayPID               string               `json:"epayPid"`
+	EpayKey               string               `json:"epayKey"`
+	EpayMethods           []string             `json:"epayMethods"`
+	CreditPriceCents      int                  `json:"creditPriceCents"`
+	MinTopUpCredits       int                  `json:"minTopUpCredits"`
+	ReferralRewardCredits int                  `json:"referralRewardCredits"`
+	SMTPEnabled           bool                 `json:"smtpEnabled"`
+	SMTPHost              string               `json:"smtpHost"`
+	SMTPPort              int                  `json:"smtpPort"`
+	SMTPUser              string               `json:"smtpUser"`
+	SMTPPassword          string               `json:"smtpPassword"`
+	SMTPFrom              string               `json:"smtpFrom"`
+	SMTPSecure            bool                 `json:"smtpSecure"`
+	NewUserInitialCredits int                  `json:"newUserInitialCredits"`
+	DailyFreeCredits      int                  `json:"dailyFreeCredits"`
+	UpdatedAt             string               `json:"updatedAt"`
 }
 
 type PublicRuntimeConfig struct {
-	SiteName               string              `json:"siteName"`
-	NewAPIBaseURL          string              `json:"newApiBaseUrl"`
-	SystemAPIKeySet        bool                `json:"systemApiKeySet"`
-	SystemAPIKeyPreview    string              `json:"systemApiKeyPreview"`
-	SystemBananaKeySet     bool                `json:"systemBananaApiKeySet"`
-	SystemBananaKeyPreview string              `json:"systemBananaApiKeyPreview"`
-	PublicBaseURL          string              `json:"publicBaseUrl"`
-	DebugEnabled           bool                `json:"debugEnabled"`
-	TimeoutSec             int                 `json:"timeoutSec"`
-	Model                  string              `json:"model"`
-	ModelLocked            bool                `json:"modelLocked"`
-	EpayEnabled            bool                `json:"epayEnabled"`
-	EpayAPIURL             string              `json:"epayApiUrl"`
-	EpayPID                string              `json:"epayPid"`
-	EpayKeySet             bool                `json:"epayKeySet"`
-	EpayKeyPreview         string              `json:"epayKeyPreview"`
-	EpayMethods            []string            `json:"epayMethods"`
-	CreditPriceCents       int                 `json:"creditPriceCents"`
-	MinTopUpCredits        int                 `json:"minTopUpCredits"`
-	ReferralRewardCredits  int                 `json:"referralRewardCredits"`
-	SMTPEnabled            bool                `json:"smtpEnabled"`
-	SMTPHost               string              `json:"smtpHost"`
-	SMTPPort               int                 `json:"smtpPort"`
-	SMTPUser               string              `json:"smtpUser"`
-	SMTPPasswordSet        bool                `json:"smtpPasswordSet"`
-	SMTPPasswordPreview    string              `json:"smtpPasswordPreview"`
-	SMTPFrom               string              `json:"smtpFrom"`
-	SMTPSecure             bool                `json:"smtpSecure"`
-	Email                  PublicEmailConfig   `json:"email"`
-	NewUserInitialCredits  int                 `json:"newUserInitialCredits"`
-	DailyFreeCredits       int                 `json:"dailyFreeCredits"`
-	Billing                PublicBillingConfig `json:"billing"`
-	TimeoutCode            string              `json:"timeoutCode"`
-	UpdatedAt              string              `json:"updatedAt"`
-	Limits                 Limits              `json:"limits"`
+	SiteName              string                     `json:"siteName"`
+	NewAPIBaseURL         string                     `json:"newApiBaseUrl"`
+	SystemAPIKeySet       bool                       `json:"systemApiKeySet"`
+	SystemAPIKeyPreview   string                     `json:"systemApiKeyPreview"`
+	ImageChannels         []PublicImageChannelConfig `json:"imageChannels"`
+	PublicBaseURL         string                     `json:"publicBaseUrl"`
+	DebugEnabled          bool                       `json:"debugEnabled"`
+	TimeoutSec            int                        `json:"timeoutSec"`
+	Model                 string                     `json:"model"`
+	ModelLocked           bool                       `json:"modelLocked"`
+	EpayEnabled           bool                       `json:"epayEnabled"`
+	EpayAPIURL            string                     `json:"epayApiUrl"`
+	EpayPID               string                     `json:"epayPid"`
+	EpayKeySet            bool                       `json:"epayKeySet"`
+	EpayKeyPreview        string                     `json:"epayKeyPreview"`
+	EpayMethods           []string                   `json:"epayMethods"`
+	CreditPriceCents      int                        `json:"creditPriceCents"`
+	MinTopUpCredits       int                        `json:"minTopUpCredits"`
+	ReferralRewardCredits int                        `json:"referralRewardCredits"`
+	SMTPEnabled           bool                       `json:"smtpEnabled"`
+	SMTPHost              string                     `json:"smtpHost"`
+	SMTPPort              int                        `json:"smtpPort"`
+	SMTPUser              string                     `json:"smtpUser"`
+	SMTPPasswordSet       bool                       `json:"smtpPasswordSet"`
+	SMTPPasswordPreview   string                     `json:"smtpPasswordPreview"`
+	SMTPFrom              string                     `json:"smtpFrom"`
+	SMTPSecure            bool                       `json:"smtpSecure"`
+	Email                 PublicEmailConfig          `json:"email"`
+	NewUserInitialCredits int                        `json:"newUserInitialCredits"`
+	DailyFreeCredits      int                        `json:"dailyFreeCredits"`
+	Billing               PublicBillingConfig        `json:"billing"`
+	TimeoutCode           string                     `json:"timeoutCode"`
+	UpdatedAt             string                     `json:"updatedAt"`
+	Limits                Limits                     `json:"limits"`
 }
 
 type PublicBillingConfig struct {
@@ -107,42 +106,68 @@ type PublicEmailConfig struct {
 	SMTPSecure          bool   `json:"smtpSecure"`
 }
 
+type ImageChannelConfig struct {
+	Type    string                    `json:"type"`
+	Name    string                    `json:"name"`
+	BaseURL string                    `json:"baseURL"`
+	Key     string                    `json:"key,omitempty"`
+	Enabled bool                      `json:"enabled"`
+	Models  []ImageChannelModelConfig `json:"models"`
+}
+
+type PublicImageChannelConfig struct {
+	Type       string                    `json:"type"`
+	Name       string                    `json:"name"`
+	BaseURL    string                    `json:"baseURL"`
+	KeySet     bool                      `json:"keySet"`
+	KeyPreview string                    `json:"keyPreview"`
+	Enabled    bool                      `json:"enabled"`
+	Models     []ImageChannelModelConfig `json:"models"`
+}
+
+type ImageChannelModelConfig struct {
+	ID                string `json:"id"`
+	Label             string `json:"label"`
+	Enabled           bool   `json:"enabled"`
+	Price             int    `json:"price"`
+	RatioSelectable   bool   `json:"ratioSelectable"`
+	DefaultResolution string `json:"defaultResolution"`
+}
 type Limits struct {
 	MinTimeoutSec int `json:"minTimeoutSec"`
 	MaxTimeoutSec int `json:"maxTimeoutSec"`
 }
 
 type Update struct {
-	SiteName              *string  `json:"siteName"`
-	NewAPIBaseURL         *string  `json:"newApiBaseUrl"`
-	SystemAPIKey          *string  `json:"systemApiKey"`
-	SystemBananaAPIKey    *string  `json:"systemBananaApiKey"`
-	ClearSystemAPIKey     bool     `json:"clearSystemApiKey"`
-	ClearSystemBananaKey  bool     `json:"clearSystemBananaApiKey"`
-	PublicBaseURL         *string  `json:"publicBaseUrl"`
-	DebugEnabled          *bool    `json:"debugEnabled"`
-	TimeoutSec            *int     `json:"timeoutSec"`
-	EpayEnabled           *bool    `json:"epayEnabled"`
-	EpayAPIURL            *string  `json:"epayApiUrl"`
-	EpayPID               *string  `json:"epayPid"`
-	EpayKey               *string  `json:"epayKey"`
-	ClearEpayKey          bool     `json:"clearEpayKey"`
-	EpayMethods           []string `json:"epayMethods"`
-	CreditPriceCents      *int     `json:"creditPriceCents"`
-	MinTopUpCredits       *int     `json:"minTopUpCredits"`
-	ReferralRewardCredits *int     `json:"referralRewardCredits"`
-	SMTPEnabled           *bool    `json:"smtpEnabled"`
-	SMTPHost              *string  `json:"smtpHost"`
-	SMTPPort              *int     `json:"smtpPort"`
-	SMTPUser              *string  `json:"smtpUser"`
-	SMTPPassword          *string  `json:"smtpPassword"`
-	SMTPPass              *string  `json:"smtpPass"`
-	ClearSMTPPassword     bool     `json:"clearSmtpPassword"`
-	ClearSMTPPass         bool     `json:"clearSmtpPass"`
-	SMTPFrom              *string  `json:"smtpFrom"`
-	SMTPSecure            *bool    `json:"smtpSecure"`
-	NewUserInitialCredits *int     `json:"newUserInitialCredits"`
-	DailyFreeCredits      *int     `json:"dailyFreeCredits"`
+	SiteName              *string              `json:"siteName"`
+	NewAPIBaseURL         *string              `json:"newApiBaseUrl"`
+	SystemAPIKey          *string              `json:"systemApiKey"`
+	ClearSystemAPIKey     bool                 `json:"clearSystemApiKey"`
+	ImageChannels         []ImageChannelConfig `json:"imageChannels"`
+	PublicBaseURL         *string              `json:"publicBaseUrl"`
+	DebugEnabled          *bool                `json:"debugEnabled"`
+	TimeoutSec            *int                 `json:"timeoutSec"`
+	EpayEnabled           *bool                `json:"epayEnabled"`
+	EpayAPIURL            *string              `json:"epayApiUrl"`
+	EpayPID               *string              `json:"epayPid"`
+	EpayKey               *string              `json:"epayKey"`
+	ClearEpayKey          bool                 `json:"clearEpayKey"`
+	EpayMethods           []string             `json:"epayMethods"`
+	CreditPriceCents      *int                 `json:"creditPriceCents"`
+	MinTopUpCredits       *int                 `json:"minTopUpCredits"`
+	ReferralRewardCredits *int                 `json:"referralRewardCredits"`
+	SMTPEnabled           *bool                `json:"smtpEnabled"`
+	SMTPHost              *string              `json:"smtpHost"`
+	SMTPPort              *int                 `json:"smtpPort"`
+	SMTPUser              *string              `json:"smtpUser"`
+	SMTPPassword          *string              `json:"smtpPassword"`
+	SMTPPass              *string              `json:"smtpPass"`
+	ClearSMTPPassword     bool                 `json:"clearSmtpPassword"`
+	ClearSMTPPass         bool                 `json:"clearSmtpPass"`
+	SMTPFrom              *string              `json:"smtpFrom"`
+	SMTPSecure            *bool                `json:"smtpSecure"`
+	NewUserInitialCredits *int                 `json:"newUserInitialCredits"`
+	DailyFreeCredits      *int                 `json:"dailyFreeCredits"`
 }
 
 const (
@@ -153,6 +178,11 @@ const (
 	DefaultSMTPPort              = 587
 	DefaultNewUserInitialCredits = 0
 	DefaultDailyFreeCredits      = 0
+	DefaultImageChannelType      = "openai-compatible"
+	DefaultImage4KChannelName    = "image-2-4k"
+	DefaultImageModelPrice       = 1
+	DefaultImageResolution       = "auto"
+	DefaultImage4KResolution     = "auto"
 )
 
 type FileStore struct {
@@ -173,7 +203,13 @@ func NewFileStore(path string, defaults RuntimeConfig) (*FileStore, error) {
 		if err := json.Unmarshal(data, &loaded); err != nil {
 			return nil, fmt.Errorf("读取本机配置失败：%w", err)
 		}
+		hasLegacyBananaKey := hasLegacyBananaConfig(data)
 		store.current = normalize(merge(store.current, loaded))
+		if hasLegacyBananaKey {
+			if err := store.saveLocked(); err != nil {
+				return nil, fmt.Errorf("清理旧 Banana 配置失败：%w", err)
+			}
+		}
 		return store, nil
 	}
 	if !errors.Is(err, os.ErrNotExist) {
@@ -217,6 +253,8 @@ func (s *FileStore) Update(update Update) (RuntimeConfig, error) {
 	defer s.mu.Unlock()
 
 	next := s.current
+	legacyBaseURLChanged := update.NewAPIBaseURL != nil
+	legacyKeyChanged := update.SystemAPIKey != nil || update.ClearSystemAPIKey
 	if update.SiteName != nil {
 		next.SiteName = strings.TrimSpace(*update.SiteName)
 	}
@@ -226,14 +264,8 @@ func (s *FileStore) Update(update Update) (RuntimeConfig, error) {
 	if update.SystemAPIKey != nil {
 		next.SystemAPIKey = strings.TrimSpace(*update.SystemAPIKey)
 	}
-	if update.SystemBananaAPIKey != nil {
-		next.SystemBananaAPIKey = strings.TrimSpace(*update.SystemBananaAPIKey)
-	}
 	if update.ClearSystemAPIKey {
 		next.SystemAPIKey = ""
-	}
-	if update.ClearSystemBananaKey {
-		next.SystemBananaAPIKey = ""
 	}
 	if update.PublicBaseURL != nil {
 		next.PublicBaseURL = strings.TrimSpace(*update.PublicBaseURL)
@@ -304,6 +336,12 @@ func (s *FileStore) Update(update Update) (RuntimeConfig, error) {
 	if update.DailyFreeCredits != nil {
 		next.DailyFreeCredits = *update.DailyFreeCredits
 	}
+	if update.ImageChannels != nil {
+		next.ImageChannels = mergeImageChannelsForUpdate(next.ImageChannels, update.ImageChannels)
+	}
+	if legacyBaseURLChanged || legacyKeyChanged {
+		next.ImageChannels = syncLegacyImageChannels(next.ImageChannels, next.NewAPIBaseURL, next.SystemAPIKey)
+	}
 	normalized, err := validate(next)
 	if err != nil {
 		return RuntimeConfig{}, err
@@ -344,8 +382,8 @@ func merge(base RuntimeConfig, loaded RuntimeConfig) RuntimeConfig {
 	if strings.TrimSpace(loaded.SystemAPIKey) != "" {
 		base.SystemAPIKey = loaded.SystemAPIKey
 	}
-	if strings.TrimSpace(loaded.SystemBananaAPIKey) != "" {
-		base.SystemBananaAPIKey = loaded.SystemBananaAPIKey
+	if len(loaded.ImageChannels) > 0 {
+		base.ImageChannels = loaded.ImageChannels
 	}
 	base.DebugEnabled = loaded.DebugEnabled
 	if loaded.TimeoutSec != 0 {
@@ -403,12 +441,22 @@ func merge(base RuntimeConfig, loaded RuntimeConfig) RuntimeConfig {
 	return base
 }
 
+func hasLegacyBananaConfig(data []byte) bool {
+	var raw map[string]json.RawMessage
+	if json.Unmarshal(data, &raw) != nil {
+		return false
+	}
+	_, ok := raw["systemBananaApiKey"]
+	return ok
+}
+
 func normalize(value RuntimeConfig) RuntimeConfig {
 	normalized, err := validate(value)
 	if err != nil {
 		return RuntimeConfig{
 			SiteName:              DefaultSiteName,
 			NewAPIBaseURL:         config.DefaultNewAPIBaseURL,
+			ImageChannels:         defaultImageChannels(config.DefaultNewAPIBaseURL, ""),
 			TimeoutSec:            config.DefaultTimeoutSec,
 			Model:                 config.DefaultModel,
 			EpayMethods:           defaultEpayMethods(),
@@ -430,6 +478,11 @@ func validate(value RuntimeConfig) (RuntimeConfig, error) {
 	if err != nil {
 		return RuntimeConfig{}, err
 	}
+	if strings.TrimSpace(value.NewAPIBaseURL) == "" {
+		if channelBaseURL := firstImageChannelBaseURL(value.ImageChannels); channelBaseURL != "" {
+			value.NewAPIBaseURL = channelBaseURL
+		}
+	}
 	baseURL, err := normalizeBaseURL(value.NewAPIBaseURL)
 	if err != nil {
 		return RuntimeConfig{}, err
@@ -442,7 +495,14 @@ func validate(value RuntimeConfig) (RuntimeConfig, error) {
 		return RuntimeConfig{}, fmt.Errorf("超时时间必须在 %d 到 %d 秒之间", config.MinTimeoutSec, config.MaxTimeoutSec)
 	}
 	systemAPIKey := strings.TrimSpace(value.SystemAPIKey)
-	systemBananaAPIKey := strings.TrimSpace(value.SystemBananaAPIKey)
+	if systemAPIKey == "" {
+		systemAPIKey = firstImageChannelKey(value.ImageChannels)
+	}
+	imageChannels, err := normalizeImageChannels(value.ImageChannels, baseURL, systemAPIKey)
+	if err != nil {
+		return RuntimeConfig{}, err
+	}
+	baseURL, systemAPIKey = legacyImageChannelFields(imageChannels, baseURL, systemAPIKey)
 	epayAPIURL, err := normalizeOptionalHTTPURL(value.EpayAPIURL, "易支付网关地址")
 	if err != nil {
 		return RuntimeConfig{}, err
@@ -501,7 +561,7 @@ func validate(value RuntimeConfig) (RuntimeConfig, error) {
 		NewAPIBaseURL:         baseURL,
 		PublicBaseURL:         publicBaseURL,
 		SystemAPIKey:          systemAPIKey,
-		SystemBananaAPIKey:    systemBananaAPIKey,
+		ImageChannels:         imageChannels,
 		DebugEnabled:          value.DebugEnabled,
 		TimeoutSec:            value.TimeoutSec,
 		Model:                 config.DefaultModel,
@@ -598,23 +658,268 @@ func normalizeSMTPFrom(raw string) (string, error) {
 }
 
 func normalizeBaseURL(raw string) (string, error) {
+	return normalizeOpenAICompatibleBaseURL(raw, "NewAPI 请求 URL")
+}
+
+func normalizeImageChannelBaseURL(raw string) (string, error) {
+	return normalizeOpenAICompatibleBaseURL(raw, "图片渠道 baseURL")
+}
+
+func normalizeOpenAICompatibleBaseURL(raw string, label string) (string, error) {
 	trimmed := strings.TrimSpace(raw)
 	if trimmed == "" {
-		return "", errors.New("NewAPI 请求 URL 不能为空")
+		return "", fmt.Errorf("%s不能为空", label)
 	}
 	trimmed = strings.TrimRight(trimmed, "/")
 	trimmed = strings.TrimSuffix(trimmed, "/images/generations")
 	trimmed = strings.TrimSuffix(trimmed, "/images/edits")
 	parsed, err := url.Parse(trimmed)
 	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
-		return "", errors.New("NewAPI 请求 URL 格式无效")
+		return "", fmt.Errorf("%s格式无效", label)
 	}
 	if parsed.Scheme != "http" && parsed.Scheme != "https" {
-		return "", errors.New("NewAPI 请求 URL 仅支持 http 或 https")
+		return "", fmt.Errorf("%s仅支持 http 或 https", label)
 	}
 	return strings.TrimRight(parsed.String(), "/"), nil
 }
 
+func normalizeImageChannels(channels []ImageChannelConfig, legacyBaseURL string, legacyKey string) ([]ImageChannelConfig, error) {
+	if len(channels) == 0 {
+		return defaultImageChannels(legacyBaseURL, legacyKey), nil
+	}
+	normalized := make([]ImageChannelConfig, 0, len(channels)+2)
+	seen := make(map[string]bool, len(channels)+2)
+	for _, channel := range channels {
+		item, err := normalizeImageChannel(channel, legacyBaseURL, legacyKey)
+		if err != nil {
+			return nil, err
+		}
+		identity := imageChannelIdentity(item)
+		if seen[identity] {
+			return nil, fmt.Errorf("图片渠道 %s 重复", item.Name)
+		}
+		seen[identity] = true
+		normalized = append(normalized, item)
+	}
+	defaultBaseURL, defaultKey := legacyImageChannelFields(normalized, legacyBaseURL, legacyKey)
+	for _, channel := range defaultImageChannels(defaultBaseURL, defaultKey) {
+		identity := imageChannelIdentity(channel)
+		if seen[identity] {
+			continue
+		}
+		seen[identity] = true
+		normalized = append(normalized, channel)
+	}
+	return normalized, nil
+}
+
+func normalizeImageChannel(channel ImageChannelConfig, legacyBaseURL string, legacyKey string) (ImageChannelConfig, error) {
+	channelType := imageChannelType(channel.Type)
+	name := strings.TrimSpace(channel.Name)
+	if name == "" {
+		return ImageChannelConfig{}, errors.New("图片渠道名称不能为空")
+	}
+	baseURL := strings.TrimSpace(channel.BaseURL)
+	if baseURL == "" && isDefaultImageChannelName(name) {
+		baseURL = legacyBaseURL
+	}
+	normalizedBaseURL, err := normalizeImageChannelBaseURL(baseURL)
+	if err != nil {
+		return ImageChannelConfig{}, err
+	}
+	key := strings.TrimSpace(channel.Key)
+	if key == "" && isDefaultImageChannelName(name) {
+		key = strings.TrimSpace(legacyKey)
+	}
+	models, err := normalizeImageChannelModels(name, channel.Models)
+	if err != nil {
+		return ImageChannelConfig{}, err
+	}
+	return ImageChannelConfig{
+		Type:    channelType,
+		Name:    name,
+		BaseURL: normalizedBaseURL,
+		Key:     key,
+		Enabled: channel.Enabled,
+		Models:  models,
+	}, nil
+}
+
+func normalizeImageChannelModels(channelName string, models []ImageChannelModelConfig) ([]ImageChannelModelConfig, error) {
+	if len(models) == 0 {
+		return defaultImageChannelModels(channelName), nil
+	}
+	normalized := make([]ImageChannelModelConfig, 0, len(models))
+	seen := make(map[string]bool, len(models))
+	for _, model := range models {
+		id := strings.TrimSpace(model.ID)
+		if id == "" {
+			return nil, errors.New("图片渠道模型 ID 不能为空")
+		}
+		identity := strings.ToLower(id)
+		if seen[identity] {
+			return nil, fmt.Errorf("图片渠道模型 %s 重复", id)
+		}
+		seen[identity] = true
+		label := strings.TrimSpace(model.Label)
+		if label == "" {
+			label = id
+		}
+		price := model.Price
+		if price < 0 {
+			return nil, errors.New("图片渠道模型价格不能小于 0")
+		}
+		if price == 0 {
+			price = DefaultImageModelPrice
+		}
+		defaultResolution := strings.ToLower(strings.TrimSpace(model.DefaultResolution))
+		if defaultResolution == "" {
+			defaultResolution = defaultImageChannelResolution(channelName)
+		}
+		normalized = append(normalized, ImageChannelModelConfig{
+			ID:                id,
+			Label:             label,
+			Enabled:           model.Enabled,
+			Price:             price,
+			RatioSelectable:   model.RatioSelectable,
+			DefaultResolution: defaultResolution,
+		})
+	}
+	return normalized, nil
+}
+
+func defaultImageChannels(baseURL string, key string) []ImageChannelConfig {
+	return []ImageChannelConfig{
+		defaultImageChannel(config.DefaultProvider, baseURL, key),
+		defaultImageChannel(DefaultImage4KChannelName, baseURL, key),
+	}
+}
+
+func defaultImageChannel(name string, baseURL string, key string) ImageChannelConfig {
+	return ImageChannelConfig{
+		Type:    DefaultImageChannelType,
+		Name:    name,
+		BaseURL: strings.TrimRight(strings.TrimSpace(baseURL), "/"),
+		Key:     strings.TrimSpace(key),
+		Enabled: true,
+		Models:  defaultImageChannelModels(name),
+	}
+}
+
+func defaultImageChannelModels(channelName string) []ImageChannelModelConfig {
+	return []ImageChannelModelConfig{
+		{
+			ID:                config.DefaultModel,
+			Label:             config.DefaultModel,
+			Enabled:           true,
+			Price:             DefaultImageModelPrice,
+			RatioSelectable:   defaultImageChannelRatioSelectable(channelName),
+			DefaultResolution: defaultImageChannelResolution(channelName),
+		},
+	}
+}
+
+func defaultImageChannelRatioSelectable(channelName string) bool {
+	return strings.EqualFold(strings.TrimSpace(channelName), DefaultImage4KChannelName)
+}
+
+func defaultImageChannelResolution(channelName string) string {
+	if strings.EqualFold(strings.TrimSpace(channelName), DefaultImage4KChannelName) {
+		return DefaultImage4KResolution
+	}
+	return DefaultImageResolution
+}
+
+func firstImageChannelBaseURL(channels []ImageChannelConfig) string {
+	if channel, ok := findImageChannel(channels, config.DefaultProvider); ok {
+		return strings.TrimSpace(channel.BaseURL)
+	}
+	for _, channel := range channels {
+		if strings.TrimSpace(channel.BaseURL) != "" {
+			return strings.TrimSpace(channel.BaseURL)
+		}
+	}
+	return ""
+}
+
+func firstImageChannelKey(channels []ImageChannelConfig) string {
+	if channel, ok := findImageChannel(channels, config.DefaultProvider); ok {
+		return strings.TrimSpace(channel.Key)
+	}
+	for _, channel := range channels {
+		if strings.TrimSpace(channel.Key) != "" {
+			return strings.TrimSpace(channel.Key)
+		}
+	}
+	return ""
+}
+
+func legacyImageChannelFields(channels []ImageChannelConfig, fallbackBaseURL string, fallbackKey string) (string, string) {
+	if channel, ok := findImageChannel(channels, config.DefaultProvider); ok {
+		return channel.BaseURL, channel.Key
+	}
+	return fallbackBaseURL, fallbackKey
+}
+
+func mergeImageChannelsForUpdate(existing []ImageChannelConfig, incoming []ImageChannelConfig) []ImageChannelConfig {
+	existingKeys := make(map[string]string, len(existing))
+	for _, channel := range existing {
+		if key := strings.TrimSpace(channel.Key); key != "" {
+			existingKeys[imageChannelIdentity(channel)] = key
+		}
+	}
+	merged := append([]ImageChannelConfig(nil), incoming...)
+	for i := range merged {
+		if strings.TrimSpace(merged[i].Key) != "" {
+			continue
+		}
+		if key := existingKeys[imageChannelIdentity(merged[i])]; key != "" {
+			merged[i].Key = key
+		}
+	}
+	return merged
+}
+
+func syncLegacyImageChannels(channels []ImageChannelConfig, legacyBaseURL string, legacyKey string) []ImageChannelConfig {
+	if len(channels) == 0 {
+		return channels
+	}
+	synced := append([]ImageChannelConfig(nil), channels...)
+	for i := range synced {
+		if imageChannelType(synced[i].Type) == DefaultImageChannelType && isDefaultImageChannelName(synced[i].Name) {
+			synced[i].BaseURL = legacyBaseURL
+			synced[i].Key = legacyKey
+		}
+	}
+	return synced
+}
+
+func findImageChannel(channels []ImageChannelConfig, name string) (ImageChannelConfig, bool) {
+	target := strings.ToLower(strings.TrimSpace(name))
+	for _, channel := range channels {
+		if imageChannelType(channel.Type) == DefaultImageChannelType && strings.ToLower(strings.TrimSpace(channel.Name)) == target {
+			return channel, true
+		}
+	}
+	return ImageChannelConfig{}, false
+}
+
+func imageChannelIdentity(channel ImageChannelConfig) string {
+	return imageChannelType(channel.Type) + "\x00" + strings.ToLower(strings.TrimSpace(channel.Name))
+}
+
+func imageChannelType(value string) string {
+	normalized := strings.ToLower(strings.TrimSpace(value))
+	if normalized == "" {
+		return DefaultImageChannelType
+	}
+	return normalized
+}
+
+func isDefaultImageChannelName(name string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(name))
+	return normalized == config.DefaultProvider || normalized == DefaultImage4KChannelName
+}
 func normalizeEpayMethods(methods []string) []string {
 	seen := make(map[string]bool)
 	normalized := make([]string, 0, len(methods))
@@ -637,18 +942,55 @@ func defaultEpayMethods() []string {
 }
 
 func SystemAPIKeyForProvider(value RuntimeConfig, provider string) string {
-	if provider == config.BananaProvider {
-		return strings.TrimSpace(value.SystemBananaAPIKey)
+	provider = normalizeImageChannelProvider(provider)
+	if channel, ok := findImageChannel(value.ImageChannels, provider); ok {
+		if !channel.Enabled {
+			return ""
+		}
+		if key := strings.TrimSpace(channel.Key); key != "" {
+			return key
+		}
 	}
 	return strings.TrimSpace(value.SystemAPIKey)
 }
 
+func SystemBaseURLForProvider(value RuntimeConfig, provider string) string {
+	provider = normalizeImageChannelProvider(provider)
+	if channel, ok := findImageChannel(value.ImageChannels, provider); ok {
+		if !channel.Enabled {
+			return ""
+		}
+		if baseURL := strings.TrimSpace(channel.BaseURL); baseURL != "" {
+			return baseURL
+		}
+	}
+	return strings.TrimSpace(value.NewAPIBaseURL)
+}
 func HasSystemAPIKeyForProvider(value RuntimeConfig, provider string) bool {
 	return SystemAPIKeyForProvider(value, provider) != ""
 }
 
 func HasAnySystemAPIKey(value RuntimeConfig) bool {
-	return strings.TrimSpace(value.SystemAPIKey) != "" || strings.TrimSpace(value.SystemBananaAPIKey) != ""
+	if strings.TrimSpace(value.SystemAPIKey) != "" {
+		return true
+	}
+	for _, channel := range value.ImageChannels {
+		if channel.Enabled && strings.TrimSpace(channel.Key) != "" {
+			return true
+		}
+	}
+	return false
+}
+
+func normalizeImageChannelProvider(provider string) string {
+	switch strings.ToLower(strings.TrimSpace(provider)) {
+	case "", config.DefaultProvider, "image2", config.DefaultModel:
+		return config.DefaultProvider
+	case DefaultImage4KChannelName:
+		return DefaultImage4KChannelName
+	default:
+		return strings.TrimSpace(provider)
+	}
 }
 func MaskSecret(value string) string {
 	value = strings.TrimSpace(value)
@@ -663,7 +1005,7 @@ func MaskSecret(value string) string {
 
 func toPublic(value RuntimeConfig) PublicRuntimeConfig {
 	systemAPIKeyPreview := MaskSecret(value.SystemAPIKey)
-	systemBananaKeyPreview := MaskSecret(value.SystemBananaAPIKey)
+	imageChannels := publicImageChannels(value.ImageChannels)
 	epayKeyPreview := MaskSecret(value.EpayKey)
 	smtpPasswordPreview := MaskSecret(value.SMTPPassword)
 	billing := PublicBillingConfig{
@@ -690,43 +1032,59 @@ func toPublic(value RuntimeConfig) PublicRuntimeConfig {
 		SMTPSecure:          value.SMTPSecure,
 	}
 	return PublicRuntimeConfig{
-		SiteName:               value.SiteName,
-		NewAPIBaseURL:          value.NewAPIBaseURL,
-		SystemAPIKeySet:        value.SystemAPIKey != "",
-		SystemAPIKeyPreview:    systemAPIKeyPreview,
-		SystemBananaKeySet:     value.SystemBananaAPIKey != "",
-		SystemBananaKeyPreview: systemBananaKeyPreview,
-		PublicBaseURL:          value.PublicBaseURL,
-		DebugEnabled:           value.DebugEnabled,
-		TimeoutSec:             value.TimeoutSec,
-		Model:                  config.DefaultModel,
-		ModelLocked:            true,
-		EpayEnabled:            billing.EpayEnabled,
-		EpayAPIURL:             billing.EpayAPIURL,
-		EpayPID:                billing.EpayPID,
-		EpayKeySet:             billing.EpayKeySet,
-		EpayKeyPreview:         billing.EpayKeyPreview,
-		EpayMethods:            append([]string{}, billing.EpayMethods...),
-		CreditPriceCents:       billing.CreditPriceCents,
-		MinTopUpCredits:        billing.MinTopUpCredits,
-		ReferralRewardCredits:  billing.ReferralRewardCredits,
-		SMTPEnabled:            email.SMTPEnabled,
-		SMTPHost:               email.SMTPHost,
-		SMTPPort:               email.SMTPPort,
-		SMTPUser:               email.SMTPUser,
-		SMTPPasswordSet:        email.SMTPPasswordSet,
-		SMTPPasswordPreview:    email.SMTPPasswordPreview,
-		SMTPFrom:               email.SMTPFrom,
-		SMTPSecure:             email.SMTPSecure,
-		Email:                  email,
-		NewUserInitialCredits:  billing.NewUserInitialCredits,
-		DailyFreeCredits:       billing.DailyFreeCredits,
-		Billing:                billing,
-		TimeoutCode:            fmt.Sprintf("TIMEOUT_%dS", value.TimeoutSec),
-		UpdatedAt:              value.UpdatedAt,
+		SiteName:              value.SiteName,
+		NewAPIBaseURL:         value.NewAPIBaseURL,
+		SystemAPIKeySet:       value.SystemAPIKey != "",
+		SystemAPIKeyPreview:   systemAPIKeyPreview,
+		ImageChannels:         imageChannels,
+		PublicBaseURL:         value.PublicBaseURL,
+		DebugEnabled:          value.DebugEnabled,
+		TimeoutSec:            value.TimeoutSec,
+		Model:                 config.DefaultModel,
+		ModelLocked:           true,
+		EpayEnabled:           billing.EpayEnabled,
+		EpayAPIURL:            billing.EpayAPIURL,
+		EpayPID:               billing.EpayPID,
+		EpayKeySet:            billing.EpayKeySet,
+		EpayKeyPreview:        billing.EpayKeyPreview,
+		EpayMethods:           append([]string{}, billing.EpayMethods...),
+		CreditPriceCents:      billing.CreditPriceCents,
+		MinTopUpCredits:       billing.MinTopUpCredits,
+		ReferralRewardCredits: billing.ReferralRewardCredits,
+		SMTPEnabled:           email.SMTPEnabled,
+		SMTPHost:              email.SMTPHost,
+		SMTPPort:              email.SMTPPort,
+		SMTPUser:              email.SMTPUser,
+		SMTPPasswordSet:       email.SMTPPasswordSet,
+		SMTPPasswordPreview:   email.SMTPPasswordPreview,
+		SMTPFrom:              email.SMTPFrom,
+		SMTPSecure:            email.SMTPSecure,
+		Email:                 email,
+		NewUserInitialCredits: billing.NewUserInitialCredits,
+		DailyFreeCredits:      billing.DailyFreeCredits,
+		Billing:               billing,
+		TimeoutCode:           fmt.Sprintf("TIMEOUT_%dS", value.TimeoutSec),
+		UpdatedAt:             value.UpdatedAt,
 		Limits: Limits{
 			MinTimeoutSec: config.MinTimeoutSec,
 			MaxTimeoutSec: config.MaxTimeoutSec,
 		},
 	}
+}
+
+func publicImageChannels(channels []ImageChannelConfig) []PublicImageChannelConfig {
+	public := make([]PublicImageChannelConfig, 0, len(channels))
+	for _, channel := range channels {
+		key := strings.TrimSpace(channel.Key)
+		public = append(public, PublicImageChannelConfig{
+			Type:       channel.Type,
+			Name:       channel.Name,
+			BaseURL:    channel.BaseURL,
+			KeySet:     key != "",
+			KeyPreview: MaskSecret(key),
+			Enabled:    channel.Enabled,
+			Models:     append([]ImageChannelModelConfig{}, channel.Models...),
+		})
+	}
+	return public
 }

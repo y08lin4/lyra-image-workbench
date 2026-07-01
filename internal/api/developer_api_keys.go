@@ -79,7 +79,7 @@ func (h DeveloperAPIKeyHandler) Delete(w http.ResponseWriter, r *http.Request) {
 }
 
 func hasAnyCloudUpstreamKey(cfg spaceconfig.Config) bool {
-	return (cfg.CloudAPIKeyEnabled && cfg.APIKey != "") || (cfg.CloudBananaAPIKeyEnabled && cfg.BananaAPIKey != "")
+	return cfg.CloudAPIKeyEnabled && cfg.APIKey != ""
 }
 
 type developerScope struct {

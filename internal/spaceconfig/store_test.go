@@ -43,43 +43,6 @@ func TestStoreDoesNotPersistAPIKey(t *testing.T) {
 	}
 }
 
-func TestStoreDoesNotPersistBananaAPIKey(t *testing.T) {
-	spaceStore, err := spaces.NewFileStore(t.TempDir())
-	if err != nil {
-		t.Fatalf("NewFileStore() error = %v", err)
-	}
-	session, err := spaceStore.CreateOrOpenByPassword("R7!Banana#Vault$2026")
-	if err != nil {
-		t.Fatalf("CreateOrOpenByPassword() error = %v", err)
-	}
-	store := NewStore(spaceStore)
-
-	image2Key := "sk-image2-secret-1234567890"
-	bananaKey := "  sk-banana-secret-0987654321  "
-	public, err := store.Update(session.Token, Update{APIKey: &image2Key, BananaAPIKey: &bananaKey})
-	if err != nil {
-		t.Fatalf("Update() error = %v", err)
-	}
-	if public.APIKeySet || public.BananaAPIKeySet || public.APIKeyPreview != "" || public.BananaAPIKeyPreview != "" {
-		t.Fatalf("key flags should stay false for browser-local keys: %+v", public)
-	}
-	encoded, _ := json.Marshal(public)
-	if strings.Contains(string(encoded), "sk-banana-secret-0987654321") {
-		t.Fatalf("public config leaked raw banana API key: %s", encoded)
-	}
-
-	private, err := store.Get(session.Token)
-	if err != nil {
-		t.Fatalf("Get() error = %v", err)
-	}
-	if private.APIKey != "" {
-		t.Fatalf("image-2 key should not be persisted: %q", private.APIKey)
-	}
-	if private.BananaAPIKey != "" {
-		t.Fatalf("banana API key should not be persisted: %q", private.BananaAPIKey)
-	}
-}
-
 func TestStorePersistsCloudAPIKeysOnlyWhenExplicitlyEnabled(t *testing.T) {
 	spaceStore, err := spaces.NewFileStore(t.TempDir())
 	if err != nil {
@@ -138,13 +101,14 @@ func TestStoreScrubsLegacyPersistedAPIKeysOnRead(t *testing.T) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatalf("MkdirAll(space dir) error = %v", err)
 	}
-	legacy := Config{
-		APIKey:             "sk-legacy-secret-1234567890",
-		BananaAPIKey:       "sk-legacy-banana-secret-1234567890",
-		DefaultCount:       2,
-		DefaultConcurrency: 3,
-		AutoUploadPixhost:  true,
-		UpdatedAt:          "2026-05-17T00:00:00Z",
+	legacy := map[string]any{
+		"apiKey":                    "sk-legacy-secret-1234567890",
+		"bananaApiKey":              "sk-legacy-banana-secret-1234567890",
+		"cloudBananaApiKeyEnabled":  true,
+		"defaultCount":              2,
+		"defaultConcurrency":        3,
+		"autoUploadPixhost":         true,
+		"updatedAt":                 "2026-05-17T00:00:00Z",
 	}
 	payload, err := json.MarshalIndent(legacy, "", "  ")
 	if err != nil {
@@ -160,8 +124,12 @@ func TestStoreScrubsLegacyPersistedAPIKeysOnRead(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Public() error = %v", err)
 	}
-	if public.APIKeySet || public.BananaAPIKeySet || public.APIKeyPreview != "" || public.BananaAPIKeyPreview != "" {
+	if public.APIKeySet || public.APIKeyPreview != "" {
 		t.Fatalf("legacy keys should be hidden from public config: %+v", public)
+	}
+	encoded, _ := json.Marshal(public)
+	if strings.Contains(string(encoded), "bananaApiKey") {
+		t.Fatalf("public config should not expose banana key fields: %s", encoded)
 	}
 	if public.DefaultCount != 2 || public.DefaultConcurrency != 3 || !public.AutoUploadPixhost {
 		t.Fatalf("non-secret settings should survive scrub: %+v", public)
@@ -170,7 +138,7 @@ func TestStoreScrubsLegacyPersistedAPIKeysOnRead(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadFile(scrubbed config) error = %v", err)
 	}
-	if strings.Contains(string(scrubbed), "sk-legacy-secret") || strings.Contains(string(scrubbed), "sk-legacy-banana") {
+	if strings.Contains(string(scrubbed), "sk-legacy-secret") || strings.Contains(string(scrubbed), "sk-legacy-banana") || strings.Contains(string(scrubbed), "bananaApiKey") {
 		t.Fatalf("legacy API keys were not removed from disk: %s", scrubbed)
 	}
 }

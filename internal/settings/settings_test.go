@@ -237,7 +237,7 @@ func TestFileStoreSMTPSettingsMaskAndClearPassword(t *testing.T) {
 	}
 }
 
-func TestFileStoreSystemUpstreamKeysMaskAndClear(t *testing.T) {
+func TestFileStoreSystemUpstreamKeyMaskAndClear(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.local.json")
 	store, err := NewFileStore(path, RuntimeConfig{
 		NewAPIBaseURL: config.DefaultNewAPIBaseURL,
@@ -249,23 +249,22 @@ func TestFileStoreSystemUpstreamKeysMaskAndClear(t *testing.T) {
 	}
 
 	imageKey := "sk-system-image-1234567890"
-	bananaKey := "sk-system-banana-0987654321"
-	updated, err := store.Update(Update{SystemAPIKey: &imageKey, SystemBananaAPIKey: &bananaKey})
+	updated, err := store.Update(Update{SystemAPIKey: &imageKey})
 	if err != nil {
-		t.Fatalf("Update(system keys) error = %v", err)
+		t.Fatalf("Update(system key) error = %v", err)
 	}
-	if updated.SystemAPIKey != imageKey || updated.SystemBananaAPIKey != bananaKey {
-		t.Fatalf("system keys not persisted privately: %+v", updated)
+	if updated.SystemAPIKey != imageKey {
+		t.Fatalf("system key not persisted privately: %+v", updated)
 	}
 	public := store.Public()
-	if !public.SystemAPIKeySet || !public.SystemBananaKeySet || public.SystemAPIKeyPreview == "" || public.SystemBananaKeyPreview == "" {
+	if !public.SystemAPIKeySet || public.SystemAPIKeyPreview == "" {
 		t.Fatalf("system key public status invalid: %+v", public)
 	}
 	payload, err := json.Marshal(public)
 	if err != nil {
 		t.Fatalf("Marshal public config: %v", err)
 	}
-	if strings.Contains(string(payload), imageKey) || strings.Contains(string(payload), bananaKey) || strings.Contains(string(payload), `"systemApiKey":`) || strings.Contains(string(payload), `"systemBananaApiKey":`) {
+	if strings.Contains(string(payload), imageKey) || strings.Contains(string(payload), `"systemApiKey":`) || strings.Contains(string(payload), "systemBananaApiKey") {
 		t.Fatalf("public config leaked system upstream key: %s", payload)
 	}
 
@@ -273,14 +272,185 @@ func TestFileStoreSystemUpstreamKeysMaskAndClear(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reopen NewFileStore() error = %v", err)
 	}
-	if reopened.Get().SystemAPIKey != imageKey || reopened.Get().SystemBananaAPIKey != bananaKey {
-		t.Fatalf("private system keys not persisted")
+	if reopened.Get().SystemAPIKey != imageKey {
+		t.Fatalf("private system key not persisted")
 	}
-	if _, err := reopened.Update(Update{ClearSystemAPIKey: true, ClearSystemBananaKey: true}); err != nil {
-		t.Fatalf("Update(clear system keys) error = %v", err)
+	if _, err := reopened.Update(Update{ClearSystemAPIKey: true}); err != nil {
+		t.Fatalf("Update(clear system key) error = %v", err)
 	}
 	cleared := reopened.Public()
-	if cleared.SystemAPIKeySet || cleared.SystemBananaKeySet || cleared.SystemAPIKeyPreview != "" || cleared.SystemBananaKeyPreview != "" {
-		t.Fatalf("system keys should be cleared: %+v", cleared)
+	if cleared.SystemAPIKeySet || cleared.SystemAPIKeyPreview != "" {
+		t.Fatalf("system key should be cleared: %+v", cleared)
 	}
+}
+
+func TestFileStoreDefaultImageChannelsMirrorLegacySettings(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.local.json")
+	systemKey := "sk-system-channel-1234567890"
+	store, err := NewFileStore(path, RuntimeConfig{
+		NewAPIBaseURL: "http://127.0.0.1:3000/v1/images/generations",
+		SystemAPIKey:  " " + systemKey + " ",
+		TimeoutSec:    config.DefaultTimeoutSec,
+		Model:         config.DefaultModel,
+	})
+	if err != nil {
+		t.Fatalf("NewFileStore() error = %v", err)
+	}
+
+	cfg := store.Get()
+	if cfg.NewAPIBaseURL != "http://127.0.0.1:3000/v1" || cfg.SystemAPIKey != systemKey {
+		t.Fatalf("legacy fields not normalized: %+v", cfg)
+	}
+	if len(cfg.ImageChannels) != 2 {
+		t.Fatalf("ImageChannels length = %d, want 2: %+v", len(cfg.ImageChannels), cfg.ImageChannels)
+	}
+	image2, ok := imageChannelByName(cfg.ImageChannels, config.DefaultProvider)
+	if !ok {
+		t.Fatalf("default image-2 channel missing: %+v", cfg.ImageChannels)
+	}
+	assertImageChannel(t, image2, config.DefaultProvider, "http://127.0.0.1:3000/v1", systemKey, false, DefaultImageResolution)
+	image4K, ok := imageChannelByName(cfg.ImageChannels, DefaultImage4KChannelName)
+	if !ok {
+		t.Fatalf("default image-2-4k channel missing: %+v", cfg.ImageChannels)
+	}
+	assertImageChannel(t, image4K, DefaultImage4KChannelName, "http://127.0.0.1:3000/v1", systemKey, true, DefaultImage4KResolution)
+
+	public := store.Public()
+	publicImage2, ok := publicImageChannelByName(public.ImageChannels, config.DefaultProvider)
+	if !ok || !publicImage2.KeySet || publicImage2.KeyPreview != MaskSecret(systemKey) {
+		t.Fatalf("public image-2 channel key status invalid: %+v", public.ImageChannels)
+	}
+	payload, err := json.Marshal(public)
+	if err != nil {
+		t.Fatalf("Marshal public config: %v", err)
+	}
+	if strings.Contains(string(payload), systemKey) || strings.Contains(string(payload), `"key":`) {
+		t.Fatalf("public config leaked image channel key: %s", payload)
+	}
+}
+
+func TestFileStoreLegacyUpstreamFieldsSyncDefaultImageChannels(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.local.json")
+	store, err := NewFileStore(path, RuntimeConfig{
+		NewAPIBaseURL: config.DefaultNewAPIBaseURL,
+		TimeoutSec:    config.DefaultTimeoutSec,
+		Model:         config.DefaultModel,
+	})
+	if err != nil {
+		t.Fatalf("NewFileStore() error = %v", err)
+	}
+
+	baseURL := "https://upstream.example/v1/images/edits"
+	key := "sk-legacy-sync-1234567890"
+	updated, err := store.Update(Update{NewAPIBaseURL: &baseURL, SystemAPIKey: &key})
+	if err != nil {
+		t.Fatalf("Update(legacy upstream) error = %v", err)
+	}
+	if updated.NewAPIBaseURL != "https://upstream.example/v1" || updated.SystemAPIKey != key {
+		t.Fatalf("legacy fields not persisted: %+v", updated)
+	}
+	for _, name := range []string{config.DefaultProvider, DefaultImage4KChannelName} {
+		channel, ok := imageChannelByName(updated.ImageChannels, name)
+		if !ok {
+			t.Fatalf("channel %s missing: %+v", name, updated.ImageChannels)
+		}
+		if channel.BaseURL != updated.NewAPIBaseURL || channel.Key != key {
+			t.Fatalf("channel %s not synced with legacy fields: %+v", name, channel)
+		}
+	}
+	if got := SystemAPIKeyForProvider(updated, DefaultImage4KChannelName); got != key {
+		t.Fatalf("SystemAPIKeyForProvider(image-2-4k) = %q", got)
+	}
+
+	cleared, err := store.Update(Update{ClearSystemAPIKey: true})
+	if err != nil {
+		t.Fatalf("Update(clear system key) error = %v", err)
+	}
+	if HasAnySystemAPIKey(cleared) || SystemAPIKeyForProvider(cleared, config.DefaultProvider) != "" {
+		t.Fatalf("system key should be cleared from legacy and channels: %+v", cleared)
+	}
+	for _, channel := range cleared.ImageChannels {
+		if channel.Key != "" {
+			t.Fatalf("channel key should be cleared: %+v", channel)
+		}
+	}
+}
+
+func TestFileStoreImageChannelsUpdateNormalizesAndBackfillsLegacyFields(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.local.json")
+	store, err := NewFileStore(path, RuntimeConfig{
+		NewAPIBaseURL: config.DefaultNewAPIBaseURL,
+		TimeoutSec:    config.DefaultTimeoutSec,
+		Model:         config.DefaultModel,
+	})
+	if err != nil {
+		t.Fatalf("NewFileStore() error = %v", err)
+	}
+
+	channelKey := "sk-channel-update-1234567890"
+	updated, err := store.Update(Update{ImageChannels: []ImageChannelConfig{
+		{
+			Type:    " OpenAI-Compatible ",
+			Name:    " image-2 ",
+			BaseURL: "https://channel.example/v1/images/generations",
+			Key:     " " + channelKey + " ",
+			Enabled: true,
+			Models: []ImageChannelModelConfig{
+				{ID: " gpt-image-2 ", Enabled: true, RatioSelectable: true, DefaultResolution: " 4K "},
+			},
+		},
+	}})
+	if err != nil {
+		t.Fatalf("Update(image channels) error = %v", err)
+	}
+	if updated.NewAPIBaseURL != "https://channel.example/v1" || updated.SystemAPIKey != channelKey {
+		t.Fatalf("legacy fields not backfilled from image channel: %+v", updated)
+	}
+	image2, ok := imageChannelByName(updated.ImageChannels, config.DefaultProvider)
+	if !ok {
+		t.Fatalf("image-2 channel missing: %+v", updated.ImageChannels)
+	}
+	if image2.Type != DefaultImageChannelType || image2.Name != config.DefaultProvider || image2.BaseURL != updated.NewAPIBaseURL || image2.Key != channelKey {
+		t.Fatalf("image-2 channel not normalized: %+v", image2)
+	}
+	if len(image2.Models) != 1 || image2.Models[0].ID != config.DefaultModel || image2.Models[0].Label != config.DefaultModel || image2.Models[0].Price != DefaultImageModelPrice || image2.Models[0].DefaultResolution != "4k" {
+		t.Fatalf("image-2 model not normalized: %+v", image2.Models)
+	}
+	image4K, ok := imageChannelByName(updated.ImageChannels, DefaultImage4KChannelName)
+	if !ok {
+		t.Fatalf("image-2-4k channel should be backfilled: %+v", updated.ImageChannels)
+	}
+	assertImageChannel(t, image4K, DefaultImage4KChannelName, updated.NewAPIBaseURL, channelKey, true, DefaultImage4KResolution)
+}
+
+func assertImageChannel(t *testing.T, channel ImageChannelConfig, name string, baseURL string, key string, ratioSelectable bool, defaultResolution string) {
+	t.Helper()
+	if channel.Type != DefaultImageChannelType || channel.Name != name || channel.BaseURL != baseURL || channel.Key != key || !channel.Enabled {
+		t.Fatalf("channel %s not normalized: %+v", name, channel)
+	}
+	if len(channel.Models) != 1 {
+		t.Fatalf("channel %s model count = %d", name, len(channel.Models))
+	}
+	model := channel.Models[0]
+	if model.ID != config.DefaultModel || model.Label != config.DefaultModel || !model.Enabled || model.Price != DefaultImageModelPrice || model.RatioSelectable != ratioSelectable || model.DefaultResolution != defaultResolution {
+		t.Fatalf("channel %s model invalid: %+v", name, model)
+	}
+}
+
+func imageChannelByName(channels []ImageChannelConfig, name string) (ImageChannelConfig, bool) {
+	for _, channel := range channels {
+		if channel.Name == name {
+			return channel, true
+		}
+	}
+	return ImageChannelConfig{}, false
+}
+
+func publicImageChannelByName(channels []PublicImageChannelConfig, name string) (PublicImageChannelConfig, bool) {
+	for _, channel := range channels {
+		if channel.Name == name {
+			return channel, true
+		}
+	}
+	return PublicImageChannelConfig{}, false
 }

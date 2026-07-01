@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/y08lin4/lyra-image-workbench/internal/apikeys"
-	"github.com/y08lin4/lyra-image-workbench/internal/config"
 	"github.com/y08lin4/lyra-image-workbench/internal/jobs"
 	"github.com/y08lin4/lyra-image-workbench/internal/output"
 	"github.com/y08lin4/lyra-image-workbench/internal/settings"
@@ -38,8 +37,8 @@ func (h V1ImageTaskHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer r.Body.Close()
-	var payload jobs.CreateRequest
-	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+	payload, err := decodeCreateRequest(r.Body)
+	if err != nil {
 		writeError(w, http.StatusBadRequest, "BAD_JSON", "请求体不是有效 JSON")
 		return
 	}
@@ -133,18 +132,25 @@ func (h V1ImageTaskHandler) waiveTaskCredits(spaceToken string, req jobs.CreateR
 }
 
 type v1ImageGenerationRequest struct {
-	Provider          string `json:"provider,omitempty"`
-	Model             string `json:"model"`
-	Prompt            string `json:"prompt"`
-	Size              string `json:"size,omitempty"`
-	Ratio             string `json:"ratio,omitempty"`
-	Resolution        string `json:"resolution,omitempty"`
-	Quality           string `json:"quality,omitempty"`
-	OutputFormat      string `json:"output_format,omitempty"`
-	OutputFormatCamel string `json:"outputFormat,omitempty"`
-	Count             int    `json:"count,omitempty"`
-	N                 int    `json:"n,omitempty"`
-	Concurrency       int    `json:"concurrency,omitempty"`
+	Provider          string         `json:"provider,omitempty"`
+	Model             string         `json:"model"`
+	Profile           string         `json:"profile,omitempty"`
+	ModelProfile      string         `json:"modelProfile,omitempty"`
+	ModelProfileSnake string         `json:"model_profile,omitempty"`
+	ChannelID         string         `json:"channel_id,omitempty"`
+	Prompt            string         `json:"prompt"`
+	Size              string         `json:"size,omitempty"`
+	Ratio             string         `json:"ratio,omitempty"`
+	Resolution        string         `json:"resolution,omitempty"`
+	Quality           string         `json:"quality,omitempty"`
+	OutputFormat      string         `json:"output_format,omitempty"`
+	OutputFormatCamel string         `json:"outputFormat,omitempty"`
+	ExtraParams       map[string]any `json:"extraParams,omitempty"`
+	ExtraParamsSnake  map[string]any `json:"extra_params,omitempty"`
+	ExtraBody         map[string]any `json:"extra_body,omitempty"`
+	Count             int            `json:"count,omitempty"`
+	N                 int            `json:"n,omitempty"`
+	Concurrency       int            `json:"concurrency,omitempty"`
 }
 
 func (req v1ImageGenerationRequest) createRequest() jobs.CreateRequest {
@@ -163,18 +169,25 @@ func (req v1ImageGenerationRequest) createRequest() jobs.CreateRequest {
 	if count == 0 {
 		count = req.Count
 	}
-	return jobs.CreateRequest{
+	create := jobs.CreateRequest{
 		Provider:     strings.TrimSpace(req.Provider),
 		Model:        strings.TrimSpace(req.Model),
 		Mode:         jobs.ModeTextToImage,
 		Prompt:       strings.TrimSpace(req.Prompt),
 		Ratio:        ratio,
 		Resolution:   resolution,
+		Size:         strings.TrimSpace(req.Size),
 		Quality:      strings.TrimSpace(req.Quality),
 		OutputFormat: outputFormat,
+		ExtraParams:  req.extraParams(),
 		Count:        count,
 		Concurrency:  req.Concurrency,
 	}
+	return normalizeCreateRequestCompatibility(create, req.Profile, req.ModelProfile, req.ModelProfileSnake, req.ChannelID)
+}
+
+func (req v1ImageGenerationRequest) extraParams() map[string]any {
+	return mergeExtraParamAliases(req.ExtraParams, req.ExtraParamsSnake, req.ExtraBody)
 }
 
 func v1SizeSpec(size string) (string, string) {
@@ -342,12 +355,6 @@ func (h V1ImageTaskHandler) requireCloudUpstreamKey(storageToken string, provide
 	if h.settings != nil && settings.HasSystemAPIKeyForProvider(h.settings.Get(), provider) {
 		return nil
 	}
-	if provider == config.BananaProvider {
-		if cfg.CloudBananaAPIKeyEnabled && strings.TrimSpace(cfg.BananaAPIKey) != "" {
-			return nil
-		}
-		return errUpstreamKeyRequired("请先由管理员配置系统 Banana 上游 Key，或在设置中保存个人 Banana 云端上游 Key，再使用外部 API 创建任务")
-	}
 	if cfg.CloudAPIKeyEnabled && strings.TrimSpace(cfg.APIKey) != "" {
 		return nil
 	}
@@ -374,14 +381,7 @@ func bearerSecret(header string) string {
 }
 
 func providerForV1(value string) (string, bool) {
-	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "", config.DefaultProvider, "image2", "gpt-image-2":
-		return config.DefaultProvider, true
-	case config.BananaProvider, "banana-nano", "nano-banana":
-		return config.BananaProvider, true
-	default:
-		return "", false
-	}
+	return openAIImageProvider(value)
 }
 
 func publicV1Job(job jobs.Job) jobs.Job {

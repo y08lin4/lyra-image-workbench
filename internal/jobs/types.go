@@ -64,6 +64,7 @@ type Job struct {
 	Quality         string              `json:"quality"`
 	OutputFormat    string              `json:"outputFormat"`
 	Size            string              `json:"size"`
+	ExtraParams     map[string]any      `json:"extraParams,omitempty"`
 	Count           int                 `json:"count"`
 	ConsumedCredits int                 `json:"consumedCredits,omitempty"`
 	Concurrency     int                 `json:"concurrency"`
@@ -139,8 +140,10 @@ type CreateRequest struct {
 	FramePrompts  []string            `json:"framePrompts,omitempty"`
 	Ratio         string              `json:"ratio"`
 	Resolution    string              `json:"resolution"`
+	Size          string              `json:"size,omitempty"`
 	Quality       string              `json:"quality"`
 	OutputFormat  string              `json:"outputFormat"`
+	ExtraParams   map[string]any      `json:"extraParams,omitempty"`
 	Count         int                 `json:"count"`
 	Concurrency   int                 `json:"concurrency"`
 	UploadIDs     []string            `json:"uploadIds"`
@@ -150,8 +153,7 @@ type CreateRequest struct {
 }
 
 type RuntimeSecrets struct {
-	APIKey       string `json:"apiKey,omitempty"`
-	BananaAPIKey string `json:"bananaApiKey,omitempty"`
+	APIKey string `json:"apiKey,omitempty"`
 }
 
 type Stats struct {

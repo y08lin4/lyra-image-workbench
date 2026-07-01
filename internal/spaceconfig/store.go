@@ -13,25 +13,19 @@ import (
 )
 
 type Config struct {
-	APIKey                   string `json:"apiKey,omitempty"`
-	BananaAPIKey             string `json:"bananaApiKey,omitempty"`
-	CloudAPIKeyEnabled       bool   `json:"cloudApiKeyEnabled,omitempty"`
-	CloudBananaAPIKeyEnabled bool   `json:"cloudBananaApiKeyEnabled,omitempty"`
-	DefaultCount             int    `json:"defaultCount,omitempty"`
-	DefaultConcurrency       int    `json:"defaultConcurrency,omitempty"`
-	AutoUploadPixhost        bool   `json:"autoUploadPixhost,omitempty"`
-	UpdatedAt                string `json:"updatedAt"`
+	APIKey             string `json:"apiKey,omitempty"`
+	CloudAPIKeyEnabled bool   `json:"cloudApiKeyEnabled,omitempty"`
+	DefaultCount       int    `json:"defaultCount,omitempty"`
+	DefaultConcurrency int    `json:"defaultConcurrency,omitempty"`
+	AutoUploadPixhost  bool   `json:"autoUploadPixhost,omitempty"`
+	UpdatedAt          string `json:"updatedAt"`
 }
 
 type PublicConfig struct {
-	APIKeySet                bool   `json:"apiKeySet"`
-	APIKeyPreview            string `json:"apiKeyPreview"`
-	BananaAPIKeySet          bool   `json:"bananaApiKeySet"`
-	BananaAPIKeyPreview      string `json:"bananaApiKeyPreview"`
-	CloudAPIKeySet           bool   `json:"cloudApiKeySet"`
-	CloudAPIKeyPreview       string `json:"cloudApiKeyPreview"`
-	CloudBananaAPIKeySet     bool   `json:"cloudBananaApiKeySet"`
-	CloudBananaAPIKeyPreview string `json:"cloudBananaApiKeyPreview"`
+	APIKeySet          bool   `json:"apiKeySet"`
+	APIKeyPreview      string `json:"apiKeyPreview"`
+	CloudAPIKeySet     bool   `json:"cloudApiKeySet"`
+	CloudAPIKeyPreview string `json:"cloudApiKeyPreview"`
 	DefaultCount             int    `json:"defaultCount"`
 	DefaultConcurrency       int    `json:"defaultConcurrency"`
 	AutoUploadPixhost        bool   `json:"autoUploadPixhost"`
@@ -39,12 +33,9 @@ type PublicConfig struct {
 }
 
 type Update struct {
-	APIKey                 *string `json:"apiKey"`
-	BananaAPIKey           *string `json:"bananaApiKey"`
-	SaveAPIKeyToCloud      *bool   `json:"saveApiKeyToCloud"`
-	SaveBananaKeyToCloud   *bool   `json:"saveBananaKeyToCloud"`
-	ClearCloudAPIKey       *bool   `json:"clearCloudApiKey"`
-	ClearCloudBananaAPIKey *bool   `json:"clearCloudBananaApiKey"`
+	APIKey            *string `json:"apiKey"`
+	SaveAPIKeyToCloud *bool   `json:"saveApiKeyToCloud"`
+	ClearCloudAPIKey  *bool   `json:"clearCloudApiKey"`
 	DefaultCount           *int    `json:"defaultCount"`
 	DefaultConcurrency     *int    `json:"defaultConcurrency"`
 	AutoUploadPixhost      *bool   `json:"autoUploadPixhost"`
@@ -83,10 +74,11 @@ func (s *Store) Get(spaceToken string) (Config, error) {
 	if err := json.Unmarshal(data, &cfg); err != nil {
 		return Config{}, fmt.Errorf("读取个人空间配置失败：%w", err)
 	}
+	hasLegacyBananaKey := hasLegacyBananaConfig(data)
 	normalized := normalize(cfg)
-	if hasUnauthorizedSensitiveKeys(cfg) {
+	if hasUnauthorizedSensitiveKeys(cfg) || hasLegacyBananaKey {
 		if err := s.save(spaceToken, normalized); err != nil {
-			return Config{}, fmt.Errorf("清理未授权云端 API Key 失败: %w", err)
+			return Config{}, fmt.Errorf("清理旧版上游 API Key 失败: %w", err)
 		}
 	}
 	return normalized, nil
@@ -104,17 +96,9 @@ func (s *Store) Update(spaceToken string, update Update) (PublicConfig, error) {
 		cfg.APIKey = ""
 		cfg.CloudAPIKeyEnabled = false
 	}
-	if update.ClearCloudBananaAPIKey != nil && *update.ClearCloudBananaAPIKey {
-		cfg.BananaAPIKey = ""
-		cfg.CloudBananaAPIKeyEnabled = false
-	}
 	if update.APIKey != nil && update.SaveAPIKeyToCloud != nil && *update.SaveAPIKeyToCloud {
 		cfg.APIKey = strings.TrimSpace(*update.APIKey)
 		cfg.CloudAPIKeyEnabled = cfg.APIKey != ""
-	}
-	if update.BananaAPIKey != nil && update.SaveBananaKeyToCloud != nil && *update.SaveBananaKeyToCloud {
-		cfg.BananaAPIKey = strings.TrimSpace(*update.BananaAPIKey)
-		cfg.CloudBananaAPIKeyEnabled = cfg.BananaAPIKey != ""
 	}
 	if update.DefaultCount != nil {
 		cfg.DefaultCount = clamp(*update.DefaultCount, 1, 12, 1)
@@ -162,18 +146,11 @@ func (s *Store) configPath(spaceToken string) (string, error) {
 
 func normalize(cfg Config) Config {
 	cfg.APIKey = strings.TrimSpace(cfg.APIKey)
-	cfg.BananaAPIKey = strings.TrimSpace(cfg.BananaAPIKey)
 	if !cfg.CloudAPIKeyEnabled {
 		cfg.APIKey = ""
 	}
 	if cfg.APIKey == "" {
 		cfg.CloudAPIKeyEnabled = false
-	}
-	if !cfg.CloudBananaAPIKeyEnabled {
-		cfg.BananaAPIKey = ""
-	}
-	if cfg.BananaAPIKey == "" {
-		cfg.CloudBananaAPIKeyEnabled = false
 	}
 	cfg.DefaultCount = clamp(cfg.DefaultCount, 1, 12, 1)
 	cfg.DefaultConcurrency = clamp(cfg.DefaultConcurrency, 1, 0, 1)
@@ -182,22 +159,28 @@ func normalize(cfg Config) Config {
 }
 
 func hasUnauthorizedSensitiveKeys(cfg Config) bool {
-	return (strings.TrimSpace(cfg.APIKey) != "" && !cfg.CloudAPIKeyEnabled) ||
-		(strings.TrimSpace(cfg.BananaAPIKey) != "" && !cfg.CloudBananaAPIKeyEnabled)
+	return strings.TrimSpace(cfg.APIKey) != "" && !cfg.CloudAPIKeyEnabled
+}
+
+func hasLegacyBananaConfig(data []byte) bool {
+	var raw map[string]json.RawMessage
+	if json.Unmarshal(data, &raw) != nil {
+		return false
+	}
+	if _, ok := raw["bananaApiKey"]; ok {
+		return true
+	}
+	_, ok := raw["cloudBananaApiKeyEnabled"]
+	return ok
 }
 
 func toPublic(cfg Config) PublicConfig {
 	cloudAPIKeySet := cfg.CloudAPIKeyEnabled && cfg.APIKey != ""
-	cloudBananaKeySet := cfg.CloudBananaAPIKeyEnabled && cfg.BananaAPIKey != ""
 	return PublicConfig{
-		APIKeySet:                cloudAPIKeySet,
-		APIKeyPreview:            maskSecret(cfg.APIKey),
-		BananaAPIKeySet:          cloudBananaKeySet,
-		BananaAPIKeyPreview:      maskSecret(cfg.BananaAPIKey),
-		CloudAPIKeySet:           cloudAPIKeySet,
-		CloudAPIKeyPreview:       maskSecret(cfg.APIKey),
-		CloudBananaAPIKeySet:     cloudBananaKeySet,
-		CloudBananaAPIKeyPreview: maskSecret(cfg.BananaAPIKey),
+		APIKeySet:          cloudAPIKeySet,
+		APIKeyPreview:      maskSecret(cfg.APIKey),
+		CloudAPIKeySet:     cloudAPIKeySet,
+		CloudAPIKeyPreview: maskSecret(cfg.APIKey),
 		DefaultCount:             cfg.DefaultCount,
 		DefaultConcurrency:       cfg.DefaultConcurrency,
 		AutoUploadPixhost:        cfg.AutoUploadPixhost,

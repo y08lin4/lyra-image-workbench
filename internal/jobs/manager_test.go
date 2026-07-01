@@ -135,6 +135,82 @@ func TestManagerCreateReturnsQueuedAndCompletesInBackground(t *testing.T) {
 	}
 }
 
+func TestManagerWorkerPoolRunsQueuedJobsConcurrently(t *testing.T) {
+	t.Setenv(jobWorkerCountEnv, "2")
+	var requests atomic.Int32
+	started := make(chan struct{}, 2)
+	release := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		started <- struct{}{}
+		select {
+		case <-release:
+		case <-r.Context().Done():
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": []map[string]string{{
+			"b64_json": base64.StdEncoding.EncodeToString([]byte("image")),
+		}}})
+	}))
+	defer server.Close()
+	defer closeOnce(release)
+	env := newManagerTestEnv(t, server.URL)
+
+	var ids []string
+	for i := 0; i < 2; i++ {
+		created, err := env.manager.Create(env.token, CreateRequest{
+			RuntimeSecrets: RuntimeSecrets{APIKey: "sk-test"},
+			Mode:           ModeTextToImage,
+			Prompt:         fmt.Sprintf("cat %d", i),
+			Ratio:          "1:1",
+			Resolution:     "standard",
+			Count:          1,
+			Concurrency:    1,
+		})
+		if err != nil {
+			t.Fatalf("Create(%d) error = %v", i, err)
+		}
+		ids = append(ids, created.ID)
+	}
+
+	for i := 0; i < 2; i++ {
+		select {
+		case <-started:
+		case <-time.After(2 * time.Second):
+			t.Fatalf("timed out waiting for concurrent worker start %d; requests = %d", i+1, requests.Load())
+		}
+	}
+	closeOnce(release)
+	for _, id := range ids {
+		final := waitForJobStatus(t, env.store, env.token, id, StatusSucceeded, 3*time.Second)
+		if len(final.Results) != 1 || !final.Results[0].OK {
+			t.Fatalf("unexpected final result for %s: %+v", id, final.Results)
+		}
+	}
+	if requests.Load() != 2 {
+		t.Fatalf("expected two upstream calls, got %d", requests.Load())
+	}
+}
+
+func TestConfiguredWorkerCount(t *testing.T) {
+	t.Setenv(jobWorkerCountEnv, "")
+	if got := configuredWorkerCount(); got != defaultWorkerCount {
+		t.Fatalf("configuredWorkerCount(empty) = %d, want %d", got, defaultWorkerCount)
+	}
+	t.Setenv(jobWorkerCountEnv, "4")
+	if got := configuredWorkerCount(); got != 4 {
+		t.Fatalf("configuredWorkerCount(4) = %d", got)
+	}
+	t.Setenv(jobWorkerCountEnv, "999")
+	if got := configuredWorkerCount(); got != maxWorkerCount {
+		t.Fatalf("configuredWorkerCount(999) = %d, want %d", got, maxWorkerCount)
+	}
+	t.Setenv(jobWorkerCountEnv, "nope")
+	if got := configuredWorkerCount(); got != defaultWorkerCount {
+		t.Fatalf("configuredWorkerCount(nope) = %d, want %d", got, defaultWorkerCount)
+	}
+}
+
 func TestManagerSendsExpectedImage2SizesForAllRatiosAndResolutions(t *testing.T) {
 	type upstreamRequest struct {
 		size string
@@ -228,6 +304,286 @@ func TestManagerSendsExpectedImage2SizesForAllRatiosAndResolutions(t *testing.T)
 				})
 			}
 		})
+	}
+}
+func TestManagerImage2SkipsSpecParamsAndPassesExtraParams(t *testing.T) {
+	captured := make(chan map[string]any, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var payload map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatalf("decode body: %v", err)
+		}
+		captured <- payload
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": []map[string]string{{
+			"b64_json": base64.StdEncoding.EncodeToString([]byte("image-2")),
+		}}})
+	}))
+	defer server.Close()
+	env := newManagerTestEnv(t, server.URL+"/v1")
+
+	created, err := env.manager.Create(env.token, CreateRequest{
+		RuntimeSecrets: RuntimeSecrets{APIKey: "sk-test"},
+		Model:          "image-2",
+		Mode:           ModeTextToImage,
+		Prompt:         "image 2 cat",
+		Ratio:          "16:9",
+		Resolution:     "4k",
+		Quality:        "high",
+		OutputFormat:   "webp",
+		ExtraParams: map[string]any{
+			"negative_prompt": "blur",
+			"seed":            123,
+			"model":           "bad-model",
+			"size":            "1x1",
+			"quality":         "low",
+			"output_format":   "jpeg",
+		},
+		Count:       1,
+		Concurrency: 1,
+	})
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	if created.Model != "image-2" {
+		t.Fatalf("created model = %q", created.Model)
+	}
+	if _, ok := created.ExtraParams["model"]; ok {
+		t.Fatalf("core model should be filtered from extra params: %+v", created.ExtraParams)
+	}
+	if created.ExtraParams["negative_prompt"] != "blur" || created.ExtraParams["seed"] != 123 {
+		t.Fatalf("unexpected created extra params: %+v", created.ExtraParams)
+	}
+	final := waitForJobStatus(t, env.store, env.token, created.ID, StatusSucceeded, 3*time.Second)
+	if len(final.Results) != 1 || !final.Results[0].OK {
+		t.Fatalf("unexpected final result: %+v", final.Results)
+	}
+	select {
+	case payload := <-captured:
+		if payload["model"] != "image-2" {
+			t.Fatalf("upstream model = %+v", payload)
+		}
+		if _, ok := payload["size"]; ok {
+			t.Fatalf("size should not be sent for image-2: %+v", payload)
+		}
+		if payload["quality"] != "high" || payload["output_format"] != "webp" {
+			t.Fatalf("quality/output_format should still be sent for image-2: %+v", payload)
+		}
+		if payload["negative_prompt"] != "blur" || payload["seed"].(float64) != 123 {
+			t.Fatalf("extra params were not sent upstream: %+v", payload)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for captured upstream request")
+	}
+}
+
+func TestManagerImage2FullUsesSelectedSizeMapping(t *testing.T) {
+	captured := make(chan map[string]any, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var payload map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatalf("decode body: %v", err)
+		}
+		captured <- payload
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": []map[string]string{{
+			"b64_json": base64.StdEncoding.EncodeToString([]byte("image-2-4k")),
+			"size":     "1792x1008",
+		}}})
+	}))
+	defer server.Close()
+	env := newManagerTestEnv(t, server.URL+"/v1")
+
+	created, err := env.manager.Create(env.token, CreateRequest{
+		RuntimeSecrets: RuntimeSecrets{APIKey: "sk-test"},
+		Model:          "image-2-4k",
+		Mode:           ModeTextToImage,
+		Prompt:         "4k cat",
+		Ratio:          "16:9",
+		Resolution:     "standard",
+		OutputFormat:   "png",
+		Count:          1,
+		Concurrency:    1,
+	})
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	if created.Model != "image-2-4k" || created.Resolution != "standard" || created.Size != "1792x1008" {
+		t.Fatalf("unexpected image-2-4k create fields: %+v", created)
+	}
+	final := waitForJobStatus(t, env.store, env.token, created.ID, StatusSucceeded, 3*time.Second)
+	if len(final.Results) != 1 || final.Results[0].ActualSize != "1792x1008" {
+		t.Fatalf("unexpected final result: %+v", final.Results)
+	}
+	select {
+	case payload := <-captured:
+		if payload["model"] != "image-2-4k" || payload["size"] != "1792x1008" {
+			t.Fatalf("unexpected upstream request: %+v", payload)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for captured upstream request")
+	}
+}
+
+func TestManagerImage2FullAcceptsCustomPixelSize(t *testing.T) {
+	captured := make(chan map[string]any, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var payload map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatalf("decode body: %v", err)
+		}
+		captured <- payload
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": []map[string]string{{
+			"b64_json": base64.StdEncoding.EncodeToString([]byte("custom-size")),
+			"size":     "1536x864",
+		}}})
+	}))
+	defer server.Close()
+	env := newManagerTestEnv(t, server.URL+"/v1")
+
+	created, err := env.manager.Create(env.token, CreateRequest{
+		RuntimeSecrets: RuntimeSecrets{APIKey: "sk-test"},
+		Model:          "image-2-4k",
+		Mode:           ModeTextToImage,
+		Prompt:         "custom size cat",
+		Ratio:          "1:1",
+		Resolution:     "4k",
+		Size:           "1536x864",
+		OutputFormat:   "png",
+		Count:          1,
+		Concurrency:    1,
+	})
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	if created.Ratio != "auto" || created.Resolution != "auto" || created.Size != "1536x864" {
+		t.Fatalf("unexpected custom size fields: %+v", created)
+	}
+	final := waitForJobStatus(t, env.store, env.token, created.ID, StatusSucceeded, 3*time.Second)
+	if len(final.Results) != 1 || final.Results[0].ActualSize != "1536x864" {
+		t.Fatalf("unexpected final result: %+v", final.Results)
+	}
+	select {
+	case payload := <-captured:
+		if payload["model"] != "image-2-4k" || payload["size"] != "1536x864" {
+			t.Fatalf("unexpected upstream request: %+v", payload)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for captured upstream request")
+	}
+}
+func TestManagerImage24KUsesConfiguredChannelBaseURLAndKey(t *testing.T) {
+	defaultServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatalf("default channel should not be used for image-2-4k, got %s", r.URL.Path)
+	}))
+	defer defaultServer.Close()
+
+	captured := make(chan map[string]any, 1)
+	server4K := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("Authorization"); got != "Bearer sk-4k" {
+			t.Fatalf("Authorization = %q", got)
+		}
+		var payload map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatalf("decode body: %v", err)
+		}
+		captured <- payload
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": []map[string]string{{
+			"b64_json": base64.StdEncoding.EncodeToString([]byte("image-2-4k-channel")),
+			"size":     "1024x1024",
+		}}})
+	}))
+	defer server4K.Close()
+
+	env := newManagerTestEnv(t, defaultServer.URL+"/v1")
+	if _, err := env.settings.Update(settings.Update{ImageChannels: []settings.ImageChannelConfig{
+		{Type: settings.DefaultImageChannelType, Name: config.DefaultProvider, BaseURL: defaultServer.URL + "/v1", Key: "sk-default", Enabled: true},
+		{Type: settings.DefaultImageChannelType, Name: "image-2-4k", BaseURL: server4K.URL + "/v1", Key: "sk-4k", Enabled: true},
+	}}); err != nil {
+		t.Fatalf("settings.Update(image channels) error = %v", err)
+	}
+
+	created, err := env.manager.Create(env.token, CreateRequest{
+		Model:        "image-2-4k",
+		Mode:         ModeTextToImage,
+		Prompt:       "4k channel cat",
+		Ratio:        "1:1",
+		Resolution:   "auto",
+		Count:        1,
+		Concurrency:  1,
+		OutputFormat: "png",
+	})
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	final := waitForJobStatus(t, env.store, env.token, created.ID, StatusSucceeded, 3*time.Second)
+	if len(final.Results) != 1 || final.Results[0].ActualSize != "1024x1024" {
+		t.Fatalf("unexpected final result: %+v", final.Results)
+	}
+	select {
+	case payload := <-captured:
+		if payload["model"] != "image-2-4k" || payload["size"] != "1024x1024" {
+			t.Fatalf("unexpected upstream request: %+v", payload)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for captured upstream request")
+	}
+}
+func TestManagerImage2FullAutoRatioKeepsAutoSize(t *testing.T) {
+	captured := make(chan map[string]any, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var payload map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatalf("decode body: %v", err)
+		}
+		captured <- payload
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": []map[string]string{{
+			"b64_json": base64.StdEncoding.EncodeToString([]byte("image-2-4k-auto")),
+			"size":     "1024x1024",
+		}}})
+	}))
+	defer server.Close()
+	env := newManagerTestEnv(t, server.URL+"/v1")
+
+	created, err := env.manager.Create(env.token, CreateRequest{
+		RuntimeSecrets: RuntimeSecrets{APIKey: "sk-test"},
+		Model:          "image-2-4k",
+		Mode:           ModeTextToImage,
+		Prompt:         "4k auto cat",
+		Ratio:          "auto",
+		Resolution:     "auto",
+		OutputFormat:   "png",
+		Count:          1,
+		Concurrency:    1,
+	})
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	if created.Ratio != "auto" || created.Resolution != "auto" || created.Size != "自动" {
+		t.Fatalf("unexpected image-2-4k auto fields: %+v", created)
+	}
+	final := waitForJobStatus(t, env.store, env.token, created.ID, StatusSucceeded, 3*time.Second)
+	if len(final.Results) != 1 || !final.Results[0].OK {
+		t.Fatalf("unexpected final result: %+v", final.Results)
+	}
+	select {
+	case payload := <-captured:
+		if payload["model"] != "image-2-4k" {
+			t.Fatalf("unexpected upstream request: %+v", payload)
+		}
+		if _, ok := payload["size"]; ok {
+			t.Fatalf("auto size should not be sent upstream: %+v", payload)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for captured upstream request")
+	}
+}
+
+func TestResolveModelPassesThroughCustomOpenAICompatibleIDs(t *testing.T) {
+	model, err := resolveModel(config.DefaultProvider, "z-image-turbo")
+	if err != nil {
+		t.Fatalf("resolveModel() error = %v", err)
+	}
+	if model != "z-image-turbo" {
+		t.Fatalf("resolveModel() = %q, want custom model id", model)
 	}
 }
 func TestManagerUsesCloudKeyWhenRuntimeKeyMissing(t *testing.T) {
@@ -338,54 +694,6 @@ func TestManagerAllowsPartialFailed(t *testing.T) {
 	}
 	if okCount != 1 {
 		t.Fatalf("expected exactly one success, got %+v", final.Results)
-	}
-}
-
-func TestManagerRoutesBananaModelWithSeparateKey(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if got := r.Header.Get("Authorization"); got != "Bearer sk-banana" {
-			t.Fatalf("Authorization = %q", got)
-		}
-		var payload map[string]any
-		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-			t.Fatalf("decode body: %v", err)
-		}
-		if payload["model"] != "gemini-3.1-flash-image-preview-16x9-4k" {
-			t.Fatalf("unexpected banana model: %+v", payload)
-		}
-		for _, key := range []string{"size", "quality", "output_format"} {
-			if _, ok := payload[key]; ok {
-				t.Fatalf("%s should not be sent for banana model-encoded specs: %+v", key, payload)
-			}
-		}
-		_ = json.NewEncoder(w).Encode(map[string]any{"data": []map[string]string{{"b64_json": base64.StdEncoding.EncodeToString([]byte("banana"))}}})
-	}))
-	defer server.Close()
-	env := newManagerTestEnv(t, server.URL)
-	created, err := env.manager.Create(env.token, CreateRequest{
-		RuntimeSecrets: RuntimeSecrets{BananaAPIKey: "sk-banana"},
-		Provider:       config.BananaProvider,
-		Model:          "gemini-3.1-flash-image-preview-16x9-4k",
-		Mode:           ModeTextToImage,
-		Prompt:         "banana",
-		Ratio:          "1:1",
-		Resolution:     "standard",
-		Quality:        "high",
-		Count:          1,
-		Concurrency:    1,
-	})
-	if err != nil {
-		t.Fatalf("Create() error = %v", err)
-	}
-	if created.Provider != config.BananaProvider || created.Model != "gemini-3.1-flash-image-preview-16x9-4k" {
-		t.Fatalf("banana route fields were not stored: %+v", created)
-	}
-	if created.Ratio != "16:9" || created.Resolution != "4k" || created.Size != "3840x2160" || created.Quality != "auto" || created.OutputFormat != "auto" {
-		t.Fatalf("banana model spec was not mapped onto task params: %+v", created)
-	}
-	final := waitForJobStatus(t, env.store, env.token, created.ID, StatusSucceeded, 3*time.Second)
-	if len(final.Results) != 1 || !final.Results[0].OK {
-		t.Fatalf("unexpected final banana result: %+v", final.Results)
 	}
 }
 
@@ -508,17 +816,17 @@ func TestManagerGeneratesGIFWithoutUpstream(t *testing.T) {
 	}
 }
 
-func TestManagerRequiresBananaKeyForBananaProvider(t *testing.T) {
+func TestManagerRejectsBananaProvider(t *testing.T) {
 	env := newManagerTestEnv(t, "http://127.0.0.1:1")
 	_, err := env.manager.Create(env.token, CreateRequest{
-		Provider: config.BananaProvider,
-		Model:    config.DefaultBananaModel,
+		Provider: "banana",
+		Model:    "gemini-3.1-flash-image-preview",
 		Mode:     ModeTextToImage,
 		Prompt:   "banana",
 		Count:    1,
 	})
-	if err == nil || !strings.Contains(err.Error(), "configured") {
-		t.Fatalf("expected banana key error, got %v", err)
+	if err == nil || !strings.Contains(err.Error(), "模型分组无效") {
+		t.Fatalf("expected invalid provider error, got %v", err)
 	}
 }
 

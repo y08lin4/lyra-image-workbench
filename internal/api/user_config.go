@@ -51,12 +51,8 @@ func (h UserConfigHandler) withSystemKeyStatus(cfg spaceconfig.PublicConfig) map
 	payload := map[string]any{
 		"apiKeySet":                cfg.APIKeySet,
 		"apiKeyPreview":            cfg.APIKeyPreview,
-		"bananaApiKeySet":          cfg.BananaAPIKeySet,
-		"bananaApiKeyPreview":      cfg.BananaAPIKeyPreview,
 		"cloudApiKeySet":           cfg.CloudAPIKeySet,
 		"cloudApiKeyPreview":       cfg.CloudAPIKeyPreview,
-		"cloudBananaApiKeySet":     cfg.CloudBananaAPIKeySet,
-		"cloudBananaApiKeyPreview": cfg.CloudBananaAPIKeyPreview,
 		"defaultCount":             cfg.DefaultCount,
 		"defaultConcurrency":       cfg.DefaultConcurrency,
 		"autoUploadPixhost":        cfg.AutoUploadPixhost,
@@ -65,7 +61,6 @@ func (h UserConfigHandler) withSystemKeyStatus(cfg spaceconfig.PublicConfig) map
 	if h.settings != nil {
 		site := h.settings.Public()
 		payload["systemApiKeySet"] = site.SystemAPIKeySet
-		payload["systemBananaApiKeySet"] = site.SystemBananaKeySet
 	}
 	return payload
 }

@@ -36,18 +36,17 @@ func TestConfigAPIDoesNotPersistAPIKeys(t *testing.T) {
 	router := newTestRouter(t)
 	token := createTestSession(t, router)
 	rawKey := "sk-router-secret-1234567890"
-	rawBananaKey := "sk-router-banana-secret-0987654321"
 
-	body := doJSON(t, router, http.MethodPost, "/api/config", token, map[string]string{"apiKey": rawKey, "bananaApiKey": rawBananaKey})
-	if strings.Contains(body, rawKey) || strings.Contains(body, rawBananaKey) {
+	body := doJSON(t, router, http.MethodPost, "/api/config", token, map[string]string{"apiKey": rawKey})
+	if strings.Contains(body, rawKey) {
 		t.Fatalf("POST /api/config leaked raw key: %s", body)
 	}
 	body = doJSON(t, router, http.MethodGet, "/api/config", token, nil)
-	if strings.Contains(body, rawKey) || strings.Contains(body, rawBananaKey) {
+	if strings.Contains(body, rawKey) {
 		t.Fatalf("GET /api/config leaked raw key: %s", body)
 	}
-	if !strings.Contains(body, `"apiKeySet":false`) || !strings.Contains(body, `"bananaApiKeySet":false`) {
-		t.Fatalf("GET /api/config should not report server-side keys: %s", body)
+	if !strings.Contains(body, `"apiKeySet":false`) || strings.Contains(body, "bananaApiKey") {
+		t.Fatalf("GET /api/config should not report server-side banana keys: %s", body)
 	}
 }
 
@@ -78,16 +77,15 @@ func TestUserConfigShowsSystemKeyStatusWithoutPreview(t *testing.T) {
 	env := newTestAPIEnv(t)
 	token := createTestSession(t, env.Router)
 	imageKey := "sk-system-config-preview-hidden-123456"
-	bananaKey := "sk-system-banana-preview-hidden-123456"
-	if _, err := env.Settings.Update(settings.Update{SystemAPIKey: &imageKey, SystemBananaAPIKey: &bananaKey}); err != nil {
-		t.Fatalf("settings.Update() system keys error = %v", err)
+	if _, err := env.Settings.Update(settings.Update{SystemAPIKey: &imageKey}); err != nil {
+		t.Fatalf("settings.Update() system key error = %v", err)
 	}
 
 	body := doJSON(t, env.Router, http.MethodGet, "/api/config", token, nil)
-	if !strings.Contains(body, `"systemApiKeySet":true`) || !strings.Contains(body, `"systemBananaApiKeySet":true`) {
+	if !strings.Contains(body, `"systemApiKeySet":true`) {
 		t.Fatalf("user config missing system key status: %s", body)
 	}
-	if strings.Contains(body, imageKey) || strings.Contains(body, bananaKey) || strings.Contains(body, "systemApiKeyPreview") || strings.Contains(body, "systemBananaApiKeyPreview") {
+	if strings.Contains(body, imageKey) || strings.Contains(body, "systemApiKeyPreview") || strings.Contains(body, "systemBananaApiKey") {
 		t.Fatalf("user config leaked system key preview: %s", body)
 	}
 }

@@ -73,10 +73,11 @@ func TestGenerateCanSkipImageParamsForModelEncodedSpecs(t *testing.T) {
 		if body["model"] != "gemini-3.1-flash-image-preview-16x9-4k" {
 			t.Fatalf("unexpected model: %+v", body)
 		}
-		for _, key := range []string{"size", "quality", "output_format"} {
-			if _, ok := body[key]; ok {
-				t.Fatalf("%s should not be sent for model-encoded specs: %+v", key, body)
-			}
+		if _, ok := body["size"]; ok {
+			t.Fatalf("size should not be sent for model-encoded specs: %+v", body)
+		}
+		if body["quality"] != "high" || body["output_format"] != "webp" {
+			t.Fatalf("quality/output_format should still be sent: %+v", body)
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{"data": []map[string]string{{
 			"b64_json": base64.StdEncoding.EncodeToString([]byte("banana")),
@@ -102,6 +103,60 @@ func TestGenerateCanSkipImageParamsForModelEncodedSpecs(t *testing.T) {
 		t.Fatalf("Generate() error = %v", err)
 	}
 	if string(image.Bytes) != "banana" {
+		t.Fatalf("Generate() image = %+v", image)
+	}
+}
+
+func TestGenerateSkipsImage2SpecsAndFiltersExtraParams(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode request body: %v", err)
+		}
+		if body["model"] != "image-2" || body["prompt"] != "cat" {
+			t.Fatalf("unexpected core request body: %+v", body)
+		}
+		if _, ok := body["size"]; ok {
+			t.Fatalf("size should not be sent for image-2: %+v", body)
+		}
+		if body["quality"] != "high" || body["output_format"] != "webp" {
+			t.Fatalf("quality/output_format should still be sent for image-2: %+v", body)
+		}
+		if body["negative_prompt"] != "blur" || body["seed"].(float64) != 42 {
+			t.Fatalf("extra params were not sent: %+v", body)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": []map[string]string{{
+			"b64_json": base64.StdEncoding.EncodeToString([]byte("image-2")),
+		}}})
+	}))
+	defer server.Close()
+
+	client := NewClient()
+	client.httpClient = server.Client()
+	image, err := client.Generate(context.Background(), Request{
+		Mode:         "text-to-image",
+		BaseURL:      server.URL,
+		APIKey:       "sk-image-2",
+		Model:        "image-2",
+		Prompt:       "cat",
+		Size:         "3840x2160",
+		Quality:      "high",
+		OutputFormat: "webp",
+		ExtraParams: map[string]any{
+			"negative_prompt": "blur",
+			"seed":            42,
+			"model":           "bad-model",
+			"size":            "1x1",
+			"quality":         "low",
+			"output_format":   "jpeg",
+		},
+		SkipImageParams: true,
+		TimeoutSec:      60,
+	})
+	if err != nil {
+		t.Fatalf("Generate() error = %v", err)
+	}
+	if string(image.Bytes) != "image-2" {
 		t.Fatalf("Generate() image = %+v", image)
 	}
 }

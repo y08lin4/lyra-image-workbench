@@ -37,14 +37,25 @@ type Manager struct {
 	activity      activitylog.Recorder
 	ownerForSpace func(string) string
 	queue         chan jobRef
+	workerCount   int
 	mu            sync.Mutex
-	cancels       map[string]context.CancelFunc
+	cancels       map[string]*jobRun
 	secrets       map[string]jobSecret
 }
+
+const (
+	defaultWorkerCount = 2
+	maxWorkerCount     = 16
+	jobWorkerCountEnv  = "LYRA_JOB_WORKERS"
+)
 
 type jobRef struct {
 	SpaceToken string
 	JobID      string
+}
+
+type jobRun struct {
+	cancel context.CancelFunc
 }
 
 type jobSecret struct {
@@ -56,6 +67,7 @@ type RecoverOptions struct {
 }
 
 func NewManager(store *Store, hub *events.Hub, settingsStore *settings.FileStore, spaceConfig *spaceconfig.Store, uploadStore *uploads.Store, outputStore *output.Store, newapiClient *newapi.Client) *Manager {
+	workerCount := configuredWorkerCount()
 	m := &Manager{
 		store:       store,
 		hub:         hub,
@@ -66,11 +78,29 @@ func NewManager(store *Store, hub *events.Hub, settingsStore *settings.FileStore
 		newapi:      newapiClient,
 		pixhost:     pixhost.NewClient(),
 		queue:       make(chan jobRef, 256),
-		cancels:     make(map[string]context.CancelFunc),
+		workerCount: workerCount,
+		cancels:     make(map[string]*jobRun),
 		secrets:     make(map[string]jobSecret),
 	}
-	go m.worker()
+	for i := 0; i < workerCount; i++ {
+		go m.worker()
+	}
 	return m
+}
+
+func configuredWorkerCount() int {
+	value := strings.TrimSpace(os.Getenv(jobWorkerCountEnv))
+	if value == "" {
+		return defaultWorkerCount
+	}
+	count, err := strconv.Atoi(value)
+	if err != nil || count < 1 {
+		return defaultWorkerCount
+	}
+	if count > maxWorkerCount {
+		return maxWorkerCount
+	}
+	return count
 }
 
 func (m *Manager) SetActivityRecorder(recorder activitylog.Recorder, ownerForSpace func(string) string) {
@@ -127,7 +157,8 @@ func (m *Manager) Create(spaceToken string, req CreateRequest) (Job, error) {
 	if err != nil {
 		return Job{}, err
 	}
-	model, err := resolveModel(provider, req.Model)
+	modelInput := modelInputForProvider(req.Provider, req.Model)
+	model, err := resolveModel(provider, modelInput)
 	if err != nil {
 		return Job{}, err
 	}
@@ -155,17 +186,15 @@ func (m *Manager) Create(spaceToken string, req CreateRequest) (Job, error) {
 	}
 	apiKey := ""
 	if req.Mode != ModeGIF {
-		apiKey = runtimeAPIKey(req.RuntimeSecrets, provider)
+		channelProvider := channelProviderForModel(provider, model)
+		apiKey = runtimeAPIKey(req.RuntimeSecrets)
 		if apiKey == "" {
-			apiKey = cloudAPIKey(spaceCfg, provider)
+			apiKey = cloudAPIKey(spaceCfg)
 		}
 		if apiKey == "" {
-			apiKey = settings.SystemAPIKeyForProvider(m.settings.Get(), provider)
+			apiKey = settings.SystemAPIKeyForProvider(m.settings.Get(), channelProvider)
 		}
 		if apiKey == "" {
-			if provider == config.BananaProvider {
-				return Job{}, errors.New("banana API key is not configured; save it locally or upload it to cloud after enabling account protection")
-			}
 			return Job{}, errors.New("codex-key is not configured; save it locally or upload it to cloud after enabling account protection")
 		}
 	}
@@ -186,25 +215,29 @@ func (m *Manager) Create(spaceToken string, req CreateRequest) (Job, error) {
 		}
 	}
 	adminCfg := m.settings.Get()
-	ratio := normalizeRatio(req.Ratio)
 	resolution := normalizeResolution(req.Resolution)
+	ratio := normalizeRatio(req.Ratio)
+	size, err := imageSizeForRequest(req.Size, ratio, resolution)
+	if err != nil {
+		return Job{}, err
+	}
+	if requestedImageSizeIsExplicit(req.Size) {
+		if mappedRatio, mappedResolution, ok := imageSpecFromSize(size); ok {
+			ratio = mappedRatio
+			resolution = mappedResolution
+		} else {
+			ratio = "auto"
+			resolution = "auto"
+		}
+	}
 	quality := normalizeQuality(req.Quality)
 	outputFormat := normalizeOutputFormat(req.OutputFormat)
-	size := imageSize(ratio, resolution)
 	if req.Mode == ModeGIF {
 		ratio = "auto"
 		resolution = "auto"
 		quality = "auto"
 		outputFormat = "gif"
 		size = "自动"
-	}
-	if provider == config.BananaProvider && req.Mode != ModeGIF {
-		spec := bananaModelSpec(model)
-		ratio = spec.Ratio
-		resolution = spec.Resolution
-		quality = "auto"
-		outputFormat = "auto"
-		size = spec.Size
 	}
 	count := clamp(req.Count, 1, 24, 1)
 	if req.Mode == ModeGIF {
@@ -214,6 +247,7 @@ func (m *Manager) Create(spaceToken string, req CreateRequest) (Job, error) {
 	if req.Mode == ModeGIF || req.WaiveCredits {
 		consumedCredits = 0
 	}
+	extraParams := filterExtraParams(req.ExtraParams)
 	job := Job{
 		ID:              id,
 		SpaceToken:      spaceToken,
@@ -228,6 +262,7 @@ func (m *Manager) Create(spaceToken string, req CreateRequest) (Job, error) {
 		Quality:         quality,
 		OutputFormat:    outputFormat,
 		Size:            size,
+		ExtraParams:     extraParams,
 		Count:           count,
 		ConsumedCredits: consumedCredits,
 		Concurrency:     clamp(req.Concurrency, 1, 0, 1),
@@ -251,6 +286,7 @@ func (m *Manager) Create(spaceToken string, req CreateRequest) (Job, error) {
 			"quality":         job.Quality,
 			"format":          job.OutputFormat,
 			"size":            job.Size,
+			"extraParams":     job.ExtraParams,
 			"count":           job.Count,
 			"consumedCredits": job.ConsumedCredits,
 			"concurrency":     job.Concurrency,
@@ -385,8 +421,10 @@ func (m *Manager) Retry(spaceToken string, id string, secrets RuntimeSecrets, wa
 		FramePrompts:   old.FramePrompts,
 		Ratio:          old.Ratio,
 		Resolution:     old.Resolution,
+		Size:           old.Size,
 		Quality:        old.Quality,
 		OutputFormat:   old.OutputFormat,
+		ExtraParams:    old.ExtraParams,
 		Count:          old.Count,
 		Concurrency:    old.Concurrency,
 		UploadIDs:      old.UploadIDs,
@@ -399,9 +437,9 @@ func (m *Manager) Retry(spaceToken string, id string, secrets RuntimeSecrets, wa
 func (m *Manager) Cancel(spaceToken string, id string) (Job, error) {
 	running := false
 	m.mu.Lock()
-	if cancel := m.cancels[id]; cancel != nil {
+	if run := m.cancels[id]; run != nil {
 		running = true
-		cancel()
+		run.cancel()
 	}
 	m.mu.Unlock()
 	job, ok, err := m.store.Update(spaceToken, id, func(j *Job) {
@@ -428,8 +466,8 @@ func (m *Manager) Cancel(spaceToken string, id string) (Job, error) {
 
 func (m *Manager) Delete(spaceToken string, id string) (Job, error) {
 	m.mu.Lock()
-	if cancel := m.cancels[id]; cancel != nil {
-		cancel()
+	if run := m.cancels[id]; run != nil {
+		run.cancel()
 		delete(m.cancels, id)
 	}
 	delete(m.secrets, id)
@@ -477,30 +515,45 @@ func (m *Manager) worker() {
 		m.run(ref.SpaceToken, ref.JobID)
 	}
 }
-
-func (m *Manager) run(spaceToken string, jobID string) {
-	job, ok, err := m.store.Get(spaceToken, jobID)
-	if err != nil || !ok || job.Final() {
+func (m *Manager) finishRun(jobID string, run *jobRun) {
+	run.cancel()
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.cancels[jobID] != run {
 		return
 	}
-	ctx, cancel := context.WithCancel(context.Background())
-	m.mu.Lock()
-	m.cancels[jobID] = cancel
-	m.mu.Unlock()
-	defer func() {
-		cancel()
-		m.mu.Lock()
-		delete(m.cancels, jobID)
-		delete(m.secrets, jobID)
-		m.mu.Unlock()
-	}()
+	delete(m.cancels, jobID)
+	delete(m.secrets, jobID)
+}
 
-	job, _, _ = m.store.Update(spaceToken, jobID, func(j *Job) {
+func (m *Manager) run(spaceToken string, jobID string) {
+	ctx, cancel := context.WithCancel(context.Background())
+	run := &jobRun{cancel: cancel}
+	m.mu.Lock()
+	if m.cancels[jobID] != nil {
+		m.mu.Unlock()
+		cancel()
+		return
+	}
+	m.cancels[jobID] = run
+	m.mu.Unlock()
+
+	claimed := false
+	job, ok, err := m.store.Update(spaceToken, jobID, func(j *Job) {
+		if j.Status != StatusQueued || j.Final() {
+			return
+		}
 		ApplyStatus(j, StatusRunning)
 		ApplyStage(j, StagePreparing)
 		j.Progress = 5
 		j.StartedAt = time.Now()
+		claimed = true
 	})
+	if err != nil || !ok || !claimed {
+		m.finishRun(jobID, run)
+		return
+	}
+	defer m.finishRun(jobID, run)
 	m.publish(jobID, "progress", eventPayload(job))
 	progressDone := make(chan struct{})
 	go m.fakeProgress(spaceToken, jobID, progressDone)
@@ -509,7 +562,10 @@ func (m *Manager) run(spaceToken string, jobID string) {
 	results := m.runImages(ctx, spaceToken, jobID)
 	select {
 	case <-ctx.Done():
-		job, _, _ = m.store.Get(spaceToken, jobID)
+		job, exists, _ := m.store.Get(spaceToken, jobID)
+		if !exists {
+			return
+		}
 		if job.Status == StatusCancelled {
 			m.publish(jobID, "done", eventPayload(job))
 			return
@@ -562,7 +618,14 @@ func (m *Manager) run(spaceToken string, jobID string) {
 func (m *Manager) runImages(ctx context.Context, spaceToken string, jobID string) []Result {
 	job, _, _ := m.store.Get(spaceToken, jobID)
 	results := make([]Result, job.Count)
-	sem := make(chan struct{}, job.Concurrency)
+	concurrency := job.Concurrency
+	if concurrency < 1 {
+		concurrency = 1
+	}
+	if job.Count > 0 && concurrency > job.Count {
+		concurrency = job.Count
+	}
+	sem := make(chan struct{}, concurrency)
 	var wg sync.WaitGroup
 	for i := 0; i < job.Count; i++ {
 		idx := i
@@ -611,25 +674,28 @@ func (m *Manager) generateOne(ctx context.Context, spaceToken string, jobID stri
 	if err != nil {
 		return NewResult(index, StatusFailed, err.Error())
 	}
-	model, err := resolveModel(provider, job.Model)
+	modelInput := modelInputForProvider(job.Provider, job.Model)
+	model, err := resolveModel(provider, modelInput)
 	if err != nil {
 		return NewResult(index, StatusFailed, err.Error())
 	}
+	channelProvider := channelProviderForModel(provider, model)
+	baseURL := settings.SystemBaseURLForProvider(admin, channelProvider)
+	if baseURL == "" {
+		return NewResult(index, StatusFailed, "image channel is disabled or missing base URL")
+	}
 	apiKey := m.jobAPIKey(jobID)
-	skipImageParams := provider == config.BananaProvider
+	skipImageParams := shouldSkipImageParams(model)
 	if apiKey == "" {
-		apiKey = cloudAPIKey(spaceCfg, provider)
+		apiKey = cloudAPIKey(spaceCfg)
 		if apiKey == "" {
-			apiKey = settings.SystemAPIKeyForProvider(admin, provider)
+			apiKey = settings.SystemAPIKeyForProvider(admin, channelProvider)
 		}
 		if apiKey != "" {
 			m.setJobSecret(jobID, apiKey)
 		}
 	}
 	if apiKey == "" {
-		if provider == config.BananaProvider {
-			return NewResult(index, StatusFailed, "banana API key is not configured; save it locally or upload it to cloud after enabling account protection")
-		}
 		return NewResult(index, StatusFailed, "codex-key is not configured; save it locally or upload it to cloud after enabling account protection")
 	}
 	inputs, err := m.inputImagesForJob(spaceToken, job)
@@ -645,8 +711,8 @@ func (m *Manager) generateOne(ctx context.Context, spaceToken string, jobID stri
 	m.publish(jobID, "progress", eventPayload(job))
 	m.appendDebugLog(spaceToken, jobID, index, "info", "upstream_request", "准备向 NewAPI 提交生图请求", map[string]any{
 		"method":          "POST",
-		"url":             upstreamEndpoint(admin.NewAPIBaseURL, job.Mode),
-		"baseUrl":         admin.NewAPIBaseURL,
+		"url":             upstreamEndpoint(baseURL, job.Mode),
+		"baseUrl":         baseURL,
 		"timeoutSec":      admin.TimeoutSec,
 		"provider":        provider,
 		"model":           model,
@@ -659,7 +725,7 @@ func (m *Manager) generateOne(ctx context.Context, spaceToken string, jobID stri
 		"promptLength":    len([]rune(prompt)),
 		"promptPreview":   compactDebugText(prompt, 120),
 	})
-	image, err := m.newapi.Generate(ctx, newapi.Request{Mode: string(job.Mode), BaseURL: admin.NewAPIBaseURL, APIKey: apiKey, Model: model, Prompt: prompt, Size: job.Size, Quality: job.Quality, OutputFormat: job.OutputFormat, SkipImageParams: skipImageParams, TimeoutSec: admin.TimeoutSec, InputImages: inputs})
+	image, err := m.newapi.Generate(ctx, newapi.Request{Mode: string(job.Mode), BaseURL: baseURL, APIKey: apiKey, Model: model, Prompt: prompt, Size: job.Size, Quality: job.Quality, OutputFormat: job.OutputFormat, ExtraParams: job.ExtraParams, SkipImageParams: skipImageParams, TimeoutSec: admin.TimeoutSec, InputImages: inputs})
 	if err != nil {
 		fields := map[string]any{
 			"error":     err.Error(),
@@ -1092,14 +1158,41 @@ func sanitizeDebugFields(fields map[string]any) map[string]any {
 	}
 	out := make(map[string]any, len(fields))
 	for key, value := range fields {
-		lower := strings.ToLower(key)
-		if strings.Contains(lower, "apikey") || strings.Contains(lower, "api_key") || strings.Contains(lower, "token") || strings.Contains(lower, "secret") {
+		if isSensitiveDebugKey(key) {
 			out[key] = "***"
 			continue
 		}
-		out[key] = value
+		out[key] = sanitizeDebugValue(value)
 	}
 	return out
+}
+
+func sanitizeDebugValue(value any) any {
+	switch typed := value.(type) {
+	case map[string]any:
+		out := make(map[string]any, len(typed))
+		for key, item := range typed {
+			if isSensitiveDebugKey(key) {
+				out[key] = "***"
+				continue
+			}
+			out[key] = sanitizeDebugValue(item)
+		}
+		return out
+	case []any:
+		out := make([]any, len(typed))
+		for i, item := range typed {
+			out[i] = sanitizeDebugValue(item)
+		}
+		return out
+	default:
+		return value
+	}
+}
+
+func isSensitiveDebugKey(key string) bool {
+	lower := strings.ToLower(key)
+	return strings.Contains(lower, "apikey") || strings.Contains(lower, "api_key") || strings.Contains(lower, "authorization") || strings.Contains(lower, "token") || strings.Contains(lower, "secret")
 }
 
 func upstreamEndpoint(baseURL string, mode Mode) string {
@@ -1149,15 +1242,16 @@ func debugPayload(job Job, model string, skipImageParams bool) map[string]any {
 		"prompt":          fmt.Sprintf("<已脱敏，长度 %d 字符>", len([]rune(job.Prompt))),
 		"n":               1,
 		"response_format": "b64_json",
+		"output_format":   debugActualOutputFormat(job.OutputFormat),
 	}
-	if !skipImageParams {
-		payload["output_format"] = debugActualOutputFormat(job.OutputFormat)
-		if job.Size != "" && job.Size != "自动" && job.Size != "auto" {
-			payload["size"] = job.Size
-		}
-		if job.Quality != "" {
-			payload["quality"] = debugActualQuality(job.Quality)
-		}
+	if !skipImageParams && job.Size != "" && job.Size != "自动" && job.Size != "auto" {
+		payload["size"] = job.Size
+	}
+	if job.Quality != "" {
+		payload["quality"] = debugActualQuality(job.Quality)
+	}
+	for key, value := range filterExtraParams(job.ExtraParams) {
+		payload[key] = value
 	}
 	return payload
 }
@@ -1205,20 +1299,11 @@ func maskSecret(value string) string {
 	return string(runes[:4]) + "..." + string(runes[len(runes)-4:])
 }
 
-func runtimeAPIKey(secrets RuntimeSecrets, provider string) string {
-	if provider == config.BananaProvider {
-		return strings.TrimSpace(secrets.BananaAPIKey)
-	}
+func runtimeAPIKey(secrets RuntimeSecrets) string {
 	return strings.TrimSpace(secrets.APIKey)
 }
 
-func cloudAPIKey(cfg spaceconfig.Config, provider string) string {
-	if provider == config.BananaProvider {
-		if !cfg.CloudBananaAPIKeyEnabled {
-			return ""
-		}
-		return strings.TrimSpace(cfg.BananaAPIKey)
-	}
+func cloudAPIKey(cfg spaceconfig.Config) string {
 	if !cfg.CloudAPIKeyEnabled {
 		return ""
 	}
@@ -1234,61 +1319,95 @@ func compactDebugText(value string, limit int) string {
 	return string(runes[:limit]) + "..."
 }
 
-type bananaSpec struct {
-	Ratio      string
-	Resolution string
-	Size       string
-}
-
 func resolveProvider(value string) (string, error) {
 	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "", config.DefaultProvider, "image2", "gpt-image-2":
+	case "", config.DefaultProvider, "image2", "gpt-image-2", "image-2-4k":
 		return config.DefaultProvider, nil
-	case config.BananaProvider, "banana-nano", "nano-banana":
-		return config.BananaProvider, nil
 	default:
 		return "", errors.New("模型分组无效")
 	}
 }
 
-func resolveModel(provider string, value string) (string, error) {
-	value = strings.TrimSpace(value)
-	if provider == config.BananaProvider {
-		if value == "" {
-			value = config.DefaultBananaModel
-		}
-		if !config.IsBananaModel(value) {
-			return "", errors.New("Banana 模型 ID 无效")
-		}
-		return value, nil
+func resolveModel(_ string, value string) (string, error) {
+	trimmed := strings.TrimSpace(value)
+	switch strings.ToLower(trimmed) {
+	case "image-2":
+		return "image-2", nil
+	case "image-2-4k":
+		return "image-2-4k", nil
+	case "", config.DefaultModel:
+		return config.DefaultModel, nil
+	default:
+		return trimmed, nil
 	}
-	return config.DefaultModel, nil
+}
+func modelInputForProvider(provider string, model string) string {
+	if strings.EqualFold(strings.TrimSpace(provider), "image-2-4k") && isDefaultModelInput(model) {
+		return "image-2-4k"
+	}
+	return model
 }
 
-func bananaModelSpec(model string) bananaSpec {
-	specs := map[string]bananaSpec{
-		"gemini-3.1-flash-image-preview":         {Ratio: "auto", Resolution: "auto", Size: "自动"},
-		"gemini-3.1-flash-image-preview-2k":      {Ratio: "auto", Resolution: "2k", Size: "自动"},
-		"gemini-3.1-flash-image-preview-4k":      {Ratio: "auto", Resolution: "4k", Size: "自动"},
-		"gemini-3.1-flash-image-preview-16x9-2k": {Ratio: "16:9", Resolution: "2k", Size: imageSize("16:9", "2k")},
-		"gemini-3.1-flash-image-preview-16x9-4k": {Ratio: "16:9", Resolution: "4k", Size: imageSize("16:9", "4k")},
-		"gemini-3.1-flash-image-preview-9x16-2k": {Ratio: "9:16", Resolution: "2k", Size: imageSize("9:16", "2k")},
-		"gemini-3.1-flash-image-preview-9x16-4k": {Ratio: "9:16", Resolution: "4k", Size: imageSize("9:16", "4k")},
-		"gemini-3.1-flash-image-preview-4x3-2k":  {Ratio: "4:3", Resolution: "2k", Size: imageSize("4:3", "2k")},
-		"gemini-3.1-flash-image-preview-4x3-4k":  {Ratio: "4:3", Resolution: "4k", Size: imageSize("4:3", "4k")},
-		"gemini-3.1-flash-image-preview-3x4-2k":  {Ratio: "3:4", Resolution: "2k", Size: imageSize("3:4", "2k")},
-		"gemini-3.1-flash-image-preview-3x4-4k":  {Ratio: "3:4", Resolution: "4k", Size: imageSize("3:4", "4k")},
-		"gemini-3.1-flash-image-preview-3x2-2k":  {Ratio: "3:2", Resolution: "2k", Size: imageSize("3:2", "2k")},
-		"gemini-3.1-flash-image-preview-3x2-4k":  {Ratio: "3:2", Resolution: "4k", Size: imageSize("3:2", "4k")},
-		"gemini-3.1-flash-image-preview-2x3-2k":  {Ratio: "2:3", Resolution: "2k", Size: imageSize("2:3", "2k")},
-		"gemini-3.1-flash-image-preview-2x3-4k":  {Ratio: "2:3", Resolution: "4k", Size: imageSize("2:3", "4k")},
-		"gemini-3.1-flash-image-preview-1x1-2k":  {Ratio: "1:1", Resolution: "2k", Size: imageSize("1:1", "2k")},
-		"gemini-3.1-flash-image-preview-1x1-4k":  {Ratio: "1:1", Resolution: "4k", Size: imageSize("1:1", "4k")},
+func channelProviderForModel(provider string, model string) string {
+	if modelUsesFullImageChannel(model) {
+		return "image-2-4k"
 	}
-	if spec, ok := specs[model]; ok {
-		return spec
+	if strings.TrimSpace(provider) == "" {
+		return config.DefaultProvider
 	}
-	return specs[config.DefaultBananaModel]
+	return provider
+}
+
+func isDefaultModelInput(model string) bool {
+	switch strings.ToLower(strings.TrimSpace(model)) {
+	case "", "image-2", config.DefaultModel:
+		return true
+	default:
+		return false
+	}
+}
+
+func shouldSkipImageParams(model string) bool {
+	return strings.EqualFold(strings.TrimSpace(model), "image-2")
+}
+
+func modelUsesFullImageChannel(model string) bool {
+	return strings.EqualFold(strings.TrimSpace(model), "image-2-4k")
+}
+
+func filterExtraParams(values map[string]any) map[string]any {
+	if len(values) == 0 {
+		return nil
+	}
+	out := make(map[string]any, len(values))
+	for key, value := range values {
+		trimmed := strings.TrimSpace(key)
+		if trimmed == "" || isCoreExtraParamKey(trimmed) {
+			continue
+		}
+		out[trimmed] = value
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func isCoreExtraParamKey(key string) bool {
+	switch canonicalExtraParamKey(key) {
+	case "model", "prompt", "n", "responseformat", "size", "quality", "outputformat", "provider", "mode", "source", "ratio", "resolution", "count", "concurrency", "uploadids", "references", "runtimesecrets", "apikey", "authorization", "extraparams", "extrabody":
+		return true
+	default:
+		return false
+	}
+}
+
+func canonicalExtraParamKey(key string) string {
+	key = strings.ToLower(strings.TrimSpace(key))
+	key = strings.ReplaceAll(key, "_", "")
+	key = strings.ReplaceAll(key, "-", "")
+	key = strings.ReplaceAll(key, ".", "")
+	return key
 }
 
 func validateCreate(req CreateRequest) error {
@@ -1299,7 +1418,7 @@ func validateCreate(req CreateRequest) error {
 	if err != nil {
 		return err
 	}
-	if _, err := resolveModel(provider, req.Model); err != nil {
+	if _, err := resolveModel(provider, modelInputForProvider(req.Provider, req.Model)); err != nil {
 		return err
 	}
 	if req.Mode != ModeTextToImage && req.Mode != ModeImageToImage && req.Mode != ModeGIF {
@@ -1378,6 +1497,70 @@ func normalizeOutputFormat(value string) string {
 	}
 }
 
+func imageSizeForRequest(requestedSize string, ratio string, resolution string) (string, error) {
+	if strings.TrimSpace(requestedSize) == "" {
+		return imageSize(ratio, resolution), nil
+	}
+	size, err := normalizeExplicitImageSize(requestedSize)
+	if err != nil {
+		return "", err
+	}
+	return size, nil
+}
+
+func requestedImageSizeIsExplicit(value string) bool {
+	size, err := normalizeExplicitImageSize(value)
+	return err == nil && size != "" && size != "自动"
+}
+
+func normalizeExplicitImageSize(value string) (string, error) {
+	clean := strings.ToLower(strings.TrimSpace(value))
+	clean = strings.ReplaceAll(clean, "×", "x")
+	clean = strings.Join(strings.Fields(clean), "")
+	if clean == "" || clean == "auto" || clean == "自动" {
+		return "自动", nil
+	}
+	parts := strings.Split(clean, "x")
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		return "", errors.New("自定义尺寸必须使用 WIDTHxHEIGHT，例如 1536x864")
+	}
+	width, err := strconv.Atoi(parts[0])
+	if err != nil {
+		return "", errors.New("自定义尺寸宽度必须是整数")
+	}
+	height, err := strconv.Atoi(parts[1])
+	if err != nil {
+		return "", errors.New("自定义尺寸高度必须是整数")
+	}
+	if width <= 0 || height <= 0 {
+		return "", errors.New("自定义尺寸宽高必须大于 0")
+	}
+	if width%16 != 0 || height%16 != 0 {
+		return "", errors.New("自定义尺寸宽高必须都能被 16 整除")
+	}
+	ratio := float64(width) / float64(height)
+	if ratio < 1.0/3.0 || ratio > 3.0 {
+		return "", errors.New("自定义尺寸比例必须在 1:3 到 3:1 之间")
+	}
+	const maxEdge = 3840
+	const maxPixels = 3840 * 2160
+	if width > maxEdge || height > maxEdge || width*height > maxPixels {
+		return "", errors.New("自定义尺寸最大边不能超过 3840，像素总量不能超过 3840x2160")
+	}
+	return fmt.Sprintf("%dx%d", width, height), nil
+}
+
+func imageSpecFromSize(size string) (string, string, bool) {
+	for resolution, byRatio := range imageSizeTable() {
+		for ratio, value := range byRatio {
+			if value == size {
+				return ratio, resolution, true
+			}
+		}
+	}
+	return "", "", false
+}
+
 func imageSize(ratio string, resolution string) string {
 	if ratio == "auto" {
 		return "自动"
@@ -1385,12 +1568,15 @@ func imageSize(ratio string, resolution string) string {
 	if resolution == "auto" {
 		resolution = "standard"
 	}
-	sizes := map[string]map[string]string{
+	return imageSizeTable()[resolution][ratio]
+}
+
+func imageSizeTable() map[string]map[string]string {
+	return map[string]map[string]string{
 		"standard": {"1:1": "1024x1024", "2:3": "1024x1536", "3:2": "1536x1024", "3:4": "768x1024", "4:3": "1024x768", "9:16": "1008x1792", "16:9": "1792x1008"},
 		"2k":       {"1:1": "2048x2048", "2:3": "1344x2016", "3:2": "2016x1344", "3:4": "1536x2048", "4:3": "2048x1536", "9:16": "1152x2048", "16:9": "2048x1152"},
 		"4k":       {"1:1": "2880x2880", "2:3": "2336x3504", "3:2": "3504x2336", "3:4": "2448x3264", "4:3": "3264x2448", "9:16": "2160x3840", "16:9": "3840x2160"},
 	}
-	return sizes[resolution][ratio]
 }
 
 func clamp(value int, min int, max int, fallback int) int {

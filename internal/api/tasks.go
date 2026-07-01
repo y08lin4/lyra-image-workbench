@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -33,8 +34,8 @@ func NewTaskHandler(manager *jobs.Manager, outputStore *output.Store, spaceConfi
 
 func (h TaskHandler) Create(w http.ResponseWriter, r *http.Request) {
 	defer r.Body.Close()
-	var payload jobs.CreateRequest
-	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+	payload, err := decodeCreateRequest(r.Body)
+	if err != nil {
 		writeError(w, http.StatusBadRequest, "BAD_JSON", "请求体不是有效 JSON")
 		return
 	}
@@ -65,6 +66,133 @@ func (h TaskHandler) Create(w http.ResponseWriter, r *http.Request) {
 		"taskId":          public.ID,
 		"consumedCredits": public.ConsumedCredits,
 	})
+}
+
+func decodeCreateRequest(body io.Reader) (jobs.CreateRequest, error) {
+	var payload struct {
+		jobs.CreateRequest
+		Profile           string         `json:"profile"`
+		ModelProfile      string         `json:"modelProfile"`
+		ModelProfileSnake string         `json:"model_profile"`
+		ChannelID         string         `json:"channel_id"`
+		ExtraParamsSnake  map[string]any `json:"extra_params"`
+		ExtraBody         map[string]any `json:"extra_body"`
+	}
+	if err := json.NewDecoder(body).Decode(&payload); err != nil {
+		return jobs.CreateRequest{}, err
+	}
+	req := normalizeCreateRequestCompatibility(payload.CreateRequest, payload.Profile, payload.ModelProfile, payload.ModelProfileSnake, payload.ChannelID)
+	req.ExtraParams = mergeExtraParamAliases(req.ExtraParams, payload.ExtraParamsSnake, payload.ExtraBody)
+	return req, nil
+}
+
+func mergeExtraParamAliases(values ...map[string]any) map[string]any {
+	var out map[string]any
+	for _, value := range values {
+		if len(value) == 0 {
+			continue
+		}
+		if out == nil {
+			out = make(map[string]any, len(value))
+		}
+		for key, item := range value {
+			trimmed := strings.TrimSpace(key)
+			if trimmed == "" || isCoreAPIExtraParamKey(trimmed) {
+				continue
+			}
+			out[trimmed] = item
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func normalizeCreateRequestCompatibility(req jobs.CreateRequest, profiles ...string) jobs.CreateRequest {
+	profile := firstNonEmpty(profiles...)
+	if isImage2ModelProfile(profile) {
+		req.Model = canonicalImage2Model(profile)
+	}
+	if isImage2LegacyProviderProfile(req.Provider) {
+		if !isImage2ModelProfile(profile) && isDefaultImage2Model(req.Model) {
+			req.Model = canonicalImage2Model(req.Provider)
+		}
+		req.Provider = config.DefaultProvider
+		return req
+	}
+	if provider, ok := openAIImageProvider(req.Provider); ok {
+		req.Provider = provider
+	}
+	return req
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if trimmed := strings.TrimSpace(value); trimmed != "" {
+			return trimmed
+		}
+	}
+	return ""
+}
+
+func isImage2LegacyProviderProfile(value string) bool {
+	return strings.EqualFold(strings.TrimSpace(value), "image-2-4k")
+}
+
+func isImage2ModelProfile(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "image-2", "image-2-4k":
+		return true
+	default:
+		return false
+	}
+}
+
+func canonicalImage2Model(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "image-2-4k":
+		return "image-2-4k"
+	case "image-2":
+		return "image-2"
+	default:
+		return strings.TrimSpace(value)
+	}
+}
+
+func isDefaultImage2Model(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "", "image-2", config.DefaultModel:
+		return true
+	default:
+		return false
+	}
+}
+
+func openAIImageProvider(value string) (string, bool) {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "", config.DefaultProvider, "image2", "gpt-image-2", "image-2-4k", "openai", "openai-compatible", "openai_compatible":
+		return config.DefaultProvider, true
+	default:
+		return "", false
+	}
+}
+
+func isCoreAPIExtraParamKey(key string) bool {
+	switch canonicalAPIExtraParamKey(key) {
+	case "model", "prompt", "n", "responseformat", "size", "quality", "outputformat", "provider", "profile", "modelprofile", "channelid", "mode", "source", "ratio", "resolution", "count", "concurrency", "uploadids", "references", "runtimesecrets", "apikey", "authorization", "extraparams", "extrabody":
+		return true
+	default:
+		return false
+	}
+}
+
+func canonicalAPIExtraParamKey(key string) string {
+	key = strings.ToLower(strings.TrimSpace(key))
+	key = strings.ReplaceAll(key, "_", "")
+	key = strings.ReplaceAll(key, "-", "")
+	key = strings.ReplaceAll(key, ".", "")
+	return key
 }
 
 func (h TaskHandler) List(w http.ResponseWriter, r *http.Request) {
@@ -311,7 +439,7 @@ func requestUsesPersonalUpstreamKey(spaceConfigStore *spaceconfig.Store, spaceTo
 	if req.Mode == jobs.ModeGIF {
 		return true
 	}
-	provider := requestProvider(req.Provider)
+	provider := requestProvider(req.Provider, req.Model)
 	if runtimeAPIKeyForProvider(req.RuntimeSecrets, provider) != "" {
 		return true
 	}
@@ -325,38 +453,27 @@ func requestUsesPersonalUpstreamKey(spaceConfigStore *spaceconfig.Store, spaceTo
 	return cloudAPIKeyForProvider(cfg, provider) != ""
 }
 
-func requestProvider(value string) string {
-	switch strings.ToLower(strings.TrimSpace(value)) {
-	case config.BananaProvider, "banana-nano", "nano-banana":
-		return config.BananaProvider
-	default:
+func requestProvider(providerValue string, modelValue string) string {
+	provider, ok := openAIImageProvider(providerValue)
+	if !ok {
 		return config.DefaultProvider
 	}
+	if strings.EqualFold(strings.TrimSpace(providerValue), "image-2-4k") || strings.EqualFold(strings.TrimSpace(modelValue), "image-2-4k") {
+		return "image-2-4k"
+	}
+	return provider
 }
 
 func requestHasInvalidProvider(value string) bool {
-	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "", config.DefaultProvider, "image2", "gpt-image-2", config.BananaProvider, "banana-nano", "nano-banana":
-		return false
-	default:
-		return true
-	}
+	_, ok := openAIImageProvider(value)
+	return !ok
 }
 
-func runtimeAPIKeyForProvider(secrets jobs.RuntimeSecrets, provider string) string {
-	if provider == config.BananaProvider {
-		return strings.TrimSpace(secrets.BananaAPIKey)
-	}
+func runtimeAPIKeyForProvider(secrets jobs.RuntimeSecrets, _ string) string {
 	return strings.TrimSpace(secrets.APIKey)
 }
 
-func cloudAPIKeyForProvider(cfg spaceconfig.Config, provider string) string {
-	if provider == config.BananaProvider {
-		if cfg.CloudBananaAPIKeyEnabled {
-			return strings.TrimSpace(cfg.BananaAPIKey)
-		}
-		return ""
-	}
+func cloudAPIKeyForProvider(cfg spaceconfig.Config, _ string) string {
 	if cfg.CloudAPIKeyEnabled {
 		return strings.TrimSpace(cfg.APIKey)
 	}
