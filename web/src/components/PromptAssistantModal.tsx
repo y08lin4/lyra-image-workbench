@@ -14,7 +14,7 @@ import {
 } from '../api/promptTools'
 import { deleteReferenceUpload, uploadReferenceImages } from '../api/uploads'
 import type { InspirationIdea, ModelProvider, PromptRecord, PromptSession, ReferenceUpload, Task } from '../types'
-import { BANANA_PROVIDER, DEFAULT_BANANA_MODEL, DEFAULT_IMAGE2_MODEL, providerLabel } from '../lib/models'
+import { DEFAULT_IMAGE2_MODEL, IMAGE2_PROVIDER, providerLabel } from '../lib/models'
 import { PromptResultPanel } from './promptAssistant/PromptResultPanel'
 import {
   categoryOptions,
@@ -45,20 +45,18 @@ type Props = {
   tasks: Task[]
   uploads: ReferenceUpload[]
   provider: ModelProvider
-  bananaModel: string
   onClose: () => void
   embedded?: boolean
   onUsePrompt: (prompt: string, options: { provider: ModelProvider; model: string; ratio?: string }) => void
   onRefreshUploads: () => Promise<void>
 }
 
-export function PromptAssistantModal({ tasks, uploads, provider, bananaModel, onClose, onUsePrompt, onRefreshUploads, embedded = false }: Props) {
+export function PromptAssistantModal({ tasks, uploads, provider, onClose, onUsePrompt, onRefreshUploads, embedded = false }: Props) {
   const [tab, setTab] = useState<Tab>('text')
   const [idea, setIdea] = useState('')
   const [style, setStyle] = useState('auto')
   const [ratio, setRatio] = useState('auto')
-  const [applyProvider, setApplyProvider] = useState<ModelProvider>(provider || 'image-2')
-  const [applyBananaModel, setApplyBananaModel] = useState(bananaModel || DEFAULT_BANANA_MODEL)
+  const [applyProvider, setApplyProvider] = useState<ModelProvider>(IMAGE2_PROVIDER)
   const [sourceType, setSourceType] = useState<'upload' | 'result'>('upload')
   const [uploadId, setUploadId] = useState('')
   const [resultKey, setResultKey] = useState('')
@@ -130,9 +128,8 @@ export function PromptAssistantModal({ tasks, uploads, provider, bananaModel, on
   }, [resultOptions, resultKey])
 
   useEffect(() => {
-    setApplyProvider(provider || 'image-2')
-    setApplyBananaModel(bananaModel || DEFAULT_BANANA_MODEL)
-  }, [provider, bananaModel])
+    setApplyProvider(IMAGE2_PROVIDER)
+  }, [provider])
   useEffect(() => {
     if (tab !== 'image') return
     const handlePaste = (event: ClipboardEvent) => {
@@ -157,8 +154,8 @@ export function PromptAssistantModal({ tasks, uploads, provider, bananaModel, on
 
 
 
-  function selectedModel(nextProvider = applyProvider) {
-    return nextProvider === BANANA_PROVIDER ? applyBananaModel : DEFAULT_IMAGE2_MODEL
+  function selectedModel() {
+    return DEFAULT_IMAGE2_MODEL
   }
 
   function inspirationTarget() {
@@ -816,12 +813,10 @@ export function PromptAssistantModal({ tasks, uploads, provider, bananaModel, on
             activeVersion={visibleActiveVersion}
             activeVersionId={visibleActiveVersionId}
             provider={applyProvider}
-            bananaModel={applyBananaModel}
             refineText={refineText}
             loading={loading}
             onVersionChange={setActiveVersionId}
             onProviderChange={setApplyProvider}
-            onBananaModelChange={setApplyBananaModel}
             onRefineTextChange={setRefineText}
             onQuickRefine={(text) => setRefineText((current) => current ? `${current}，${text}` : text)}
             onRefine={() => void refineActiveSession()}

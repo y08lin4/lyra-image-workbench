@@ -217,8 +217,8 @@ function compactText(value: string, maxLength: number) {
   return text.length > maxLength ? `${text.slice(0, maxLength)}...` : text
 }
 
-function defaultModelLabel(provider?: string) {
-  return provider === 'banana' ? 'gemini-3.1-flash-image-preview' : 'gpt-image-2'
+function defaultModelLabel(_provider?: string) {
+  return 'image-2'
 }
 
 function resolutionLabel(value?: string) {

@@ -3,11 +3,10 @@ import type { KeyboardEvent } from 'react'
 import { formatError } from '../api/client'
 import { getCachedPromptLibrary, listPromptLibrary, refreshPromptLibrary } from '../api/promptLibrary'
 import type { ModelProvider, PromptLibrary, PromptLibraryImage, PromptLibraryItem, PromptLibraryReferenceImage, PromptLibraryUsePromptOptions } from '../types'
-import { BANANA_PROVIDER, DEFAULT_IMAGE2_MODEL, providerLabel } from '../lib/models'
+import { DEFAULT_IMAGE2_MODEL, IMAGE2_PROVIDER, providerLabel } from '../lib/models'
 
 type Props = {
   provider: ModelProvider
-  bananaModel: string
   onUsePrompt: (prompt: string, options: PromptLibraryUsePromptOptions) => void | Promise<void>
 }
 
@@ -18,7 +17,7 @@ function promptLibraryParams(query: string, category: string) {
   return { ...DEFAULT_PROMPT_LIBRARY_PARAMS, q: query.trim(), category }
 }
 
-export function PromptLibraryPage({ provider, bananaModel, onUsePrompt }: Props) {
+export function PromptLibraryPage({ provider, onUsePrompt }: Props) {
   const cachedOnOpen = useMemo(() => getCachedPromptLibrary(DEFAULT_PROMPT_LIBRARY_PARAMS), [])
   const [library, setLibrary] = useState<PromptLibrary | null>(cachedOnOpen)
   const [query, setQuery] = useState('')
@@ -38,7 +37,7 @@ export function PromptLibraryPage({ provider, bananaModel, onUsePrompt }: Props)
   const [selectedReferenceUrl, setSelectedReferenceUrl] = useState('')
   const [generatedCreativePrompt, setGeneratedCreativePrompt] = useState('')
 
-  const selectedModel = useMemo(() => provider === BANANA_PROVIDER ? bananaModel : DEFAULT_IMAGE2_MODEL, [bananaModel, provider])
+  const selectedModel = useMemo(() => DEFAULT_IMAGE2_MODEL, [])
   const creativeOpen = Boolean(activeItem && creativeItemId === activeItem.id)
   const selectedReferenceImage = useMemo(() => {
     if (!activeItem || !selectedReferenceUrl) return null
@@ -390,7 +389,7 @@ export function PromptLibraryPage({ provider, bananaModel, onUsePrompt }: Props)
               <section className="prompt-apply-model" aria-label="当前应用模型">
                 <div className="section-title">
                   <span>应用到当前模型</span>
-                  <small>{providerLabel(provider)} / {selectedModel}</small>
+                  <small>{providerLabel(IMAGE2_PROVIDER)} / {selectedModel}</small>
                 </div>
                 <div className="prompt-library-workflows" aria-label="提示词工作流入口">
                   <button type="button" onClick={() => useWorkflowPrompt(activeItem, 'template')}>模型套模板</button>

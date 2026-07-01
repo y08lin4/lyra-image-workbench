@@ -38,7 +38,6 @@ import {
 import { useTaskEvents } from '../hooks/useTaskEvents'
 import { useSubmittedSquareKeys } from '../hooks/useSubmittedSquareKeys'
 import {
-  DEFAULT_BANANA_MODEL,
   DEFAULT_IMAGE2_MODEL,
   IMAGE2_PROVIDER,
   getImage2ModelOption,
@@ -928,7 +927,6 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
         {activeTab === 'library' ? (
           <PromptLibraryPage
             provider={provider}
-            bananaModel={DEFAULT_BANANA_MODEL}
             onUsePrompt={handleUseLibraryPrompt}
           />
         ) : null}
@@ -936,7 +934,6 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
         {activeTab === 'nodes' ? (
           <NodeWorkflowPage
             provider={provider}
-            bananaModel={DEFAULT_BANANA_MODEL}
             prompt={prompt}
             injectedPrompt={canvasPromptInjection?.prompt}
             injectedPromptRevision={canvasPromptInjection?.revision ?? 0}
@@ -987,7 +984,6 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
               tasks={tasks}
               uploads={uploads}
               provider={provider}
-              bananaModel={DEFAULT_BANANA_MODEL}
               onClose={() => goToTab('nodes')}
               onUsePrompt={handleUseAssistantPrompt}
               onRefreshUploads={refreshUploads}

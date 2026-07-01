@@ -1,6 +1,6 @@
-﻿import { useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import type { Task } from '../types'
-import { BANANA_PROVIDER, getBananaModelOption, providerLabel } from '../lib/models'
+import { providerLabel } from '../lib/models'
 
 type SidebarFilter = 'all' | 'active' | 'succeeded' | 'failed' | 'api' | 'favorite'
 
@@ -189,7 +189,7 @@ function TaskQueueItem({ task, active, favorite, selected, onSelect, onOpenDetai
   const cover = firstImage(task)
   const okCount = task.results.filter((result) => result.ok).length
   const error = firstError(task)
-  const modelLabel = task.provider === BANANA_PROVIDER ? getBananaModelOption(task.model || '').label : task.model || 'gpt-image-2'
+  const modelLabel = task.model || 'image-2'
   const sourceLabel = taskSourceLabel(task.source)
   const sourceIsApi = task.source === 'api'
 

@@ -1,5 +1,5 @@
 import type { InspirationIdea, ModelProvider, PromptLibraryItem } from '../types'
-import { BANANA_PROVIDER, DEFAULT_BANANA_MODEL, DEFAULT_IMAGE2_MODEL, IMAGE2_PROVIDER } from '../lib/models'
+import { DEFAULT_IMAGE2_MODEL, IMAGE2_PROVIDER } from '../lib/models'
 
 export type NodeWorkflowNodeKind =
   | 'input'
@@ -222,8 +222,8 @@ export const defaultNodeWorkflowTemplates = [
       node('reference-model', 'model', '参考生成', 560, 200, {
         label: '图生图参数',
         description: '保留当前生成设置，用节点表达上传引用。',
-        provider: BANANA_PROVIDER,
-        model: DEFAULT_BANANA_MODEL,
+        provider: IMAGE2_PROVIDER,
+        model: DEFAULT_IMAGE2_MODEL,
         ratio: 'auto',
         fields: {
           mode: 'image-to-image',
@@ -281,8 +281,8 @@ export const defaultNodeWorkflowTemplates = [
       node('invoke-model', 'model', '画布生成', 560, 180, {
         label: '参考生成参数',
         description: '把画布操作转为当前生成参数。',
-        provider: BANANA_PROVIDER,
-        model: DEFAULT_BANANA_MODEL,
+        provider: IMAGE2_PROVIDER,
+        model: DEFAULT_IMAGE2_MODEL,
         ratio: 'auto',
         fields: {
           mode: 'image-to-image',
@@ -452,8 +452,8 @@ export function createWorkflowSeedFromInspirationIdea(idea: InspirationIdea, opt
 }
 
 export function createWorkflowSeedFromPromptIdea(idea: PromptWorkflowIdea, options: PromptIdeaWorkflowOptions = {}): NodeWorkflowSeed {
-  const provider = options.provider || idea.provider || IMAGE2_PROVIDER
-  const model = options.model || idea.model || defaultModelForProvider(provider)
+  const provider = IMAGE2_PROVIDER
+  const model = DEFAULT_IMAGE2_MODEL
   const ratio = options.ratio || idea.ratio || 'auto'
   const seedId = `${options.idPrefix || 'prompt-idea'}-${slugifyWorkflowId(idea.id || idea.title)}`
   const prompt = idea.prompt || idea.summary || ''
@@ -483,7 +483,7 @@ export function createWorkflowSeedFromPromptIdea(idea: PromptWorkflowIdea, optio
         },
       }),
       node(`${seedId}-model`, 'model', '模型参数', 600, 120, {
-        label: provider === BANANA_PROVIDER ? 'Banana 生成' : 'Image-2 生成',
+        label: 'Image-2 生成',
         description: '默认参数可由 NodeWorkflowPage 映射到现有前端任务创建逻辑。',
         provider,
         model,
@@ -553,7 +553,7 @@ function cloneFields(fields?: Record<string, NodeWorkflowValue>) {
 }
 
 function defaultModelForProvider(provider: ModelProvider) {
-  return provider === BANANA_PROVIDER ? DEFAULT_BANANA_MODEL : DEFAULT_IMAGE2_MODEL
+  return DEFAULT_IMAGE2_MODEL
 }
 
 function slugifyWorkflowId(value: string) {

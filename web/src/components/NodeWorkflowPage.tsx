@@ -53,12 +53,8 @@ import {
 } from './creativeCanvas/geometry'
 import { aspectRatioValue, canvasImageSizeFromFile, canvasImageSizeFromSrc, extensionLabel, modeLabel } from './creativeCanvas/imageSizing'
 import {
-  BANANA_MODEL_OPTIONS,
-  BANANA_PROVIDER,
-  DEFAULT_BANANA_MODEL,
   DEFAULT_IMAGE2_MODEL,
   IMAGE2_PROVIDER,
-  getBananaModelOption,
   providerLabel,
 } from '../lib/models'
 import {
@@ -94,7 +90,6 @@ export type { CanvasHistoryImage } from './creativeCanvas/types'
 
 export type NodeWorkflowPageProps = {
   provider: ModelProvider
-  bananaModel: string
   prompt?: string
   injectedPrompt?: string
   injectedPromptRevision?: number
@@ -124,7 +119,6 @@ type CanvasPlacementSnapshot = {
 
 export function NodeWorkflowPage({
   provider,
-  bananaModel,
   prompt,
   injectedPrompt,
   injectedPromptRevision = 0,
@@ -146,8 +140,7 @@ export function NodeWorkflowPage({
   const initialDraftPrompt = injectedPromptRevision > 0 && injectedPrompt ? injectedPrompt : initialCanvasDraft.hasStoredDraft ? initialCanvasDraft.prompt : prompt || initialPrompt || ''
   const [mode, setMode] = useState<Mode>(initialCanvasDraft.mode)
   const [draftPrompt, setDraftPrompt] = useState(initialDraftPrompt)
-  const [localProvider, setLocalProvider] = useState<ModelProvider>(initialCanvasDraft.hasStoredDraft ? initialCanvasDraft.provider : provider || IMAGE2_PROVIDER)
-  const [localBananaModel, setLocalBananaModel] = useState(initialCanvasDraft.hasStoredDraft ? initialCanvasDraft.bananaModel : bananaModel || DEFAULT_BANANA_MODEL)
+  const [localProvider, setLocalProvider] = useState<ModelProvider>(IMAGE2_PROVIDER)
   const [ratio, setRatio] = useState(initialCanvasDraft.ratio)
   const [resolution, setResolution] = useState(initialCanvasDraft.resolution)
   const [quality, setQuality] = useState(initialCanvasDraft.quality)
@@ -182,7 +175,6 @@ export function NodeWorkflowPage({
   const draftPromptRef = useRef(draftPrompt)
   const modeRef = useRef<Mode>(mode)
   const localProviderRef = useRef<ModelProvider>(localProvider)
-  const localBananaModelRef = useRef(localBananaModel)
   const ratioRef = useRef(ratio)
   const resolutionRef = useRef(resolution)
   const qualityRef = useRef(quality)
@@ -198,13 +190,8 @@ export function NodeWorkflowPage({
 
   useEffect(() => {
     if (hadStoredCanvasDraftRef.current) return
-    setLocalProvider(provider || IMAGE2_PROVIDER)
+    setLocalProvider(IMAGE2_PROVIDER)
   }, [provider])
-
-  useEffect(() => {
-    if (hadStoredCanvasDraftRef.current) return
-    setLocalBananaModel(bananaModel || DEFAULT_BANANA_MODEL)
-  }, [bananaModel])
 
   useEffect(() => {
     if (!injectedPrompt || injectedPromptRevision <= 0 || appliedPromptInjectionRevisionRef.current === injectedPromptRevision) return
@@ -213,11 +200,8 @@ export function NodeWorkflowPage({
     setDraftPrompt(injectedPrompt)
     setGeneratedPromptOverride('')
 
-    const nextProvider = injectedPromptProvider || provider || IMAGE2_PROVIDER
-    setLocalProvider(nextProvider)
-    if (nextProvider === BANANA_PROVIDER) {
-      setLocalBananaModel(injectedPromptModel || bananaModel || DEFAULT_BANANA_MODEL)
-    } else if (injectedPromptRatio) {
+    setLocalProvider(IMAGE2_PROVIDER)
+    if (injectedPromptRatio) {
       setRatio(injectedPromptRatio)
     }
     onPromptInjectionApplied?.(injectedPromptRevision)
@@ -226,7 +210,7 @@ export function NodeWorkflowPage({
       promptTextareaRef.current?.focus()
       promptTextareaRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
     }, 0)
-  }, [bananaModel, injectedPrompt, injectedPromptModel, injectedPromptProvider, injectedPromptRatio, injectedPromptRevision, onPromptInjectionApplied, provider])
+  }, [injectedPrompt, injectedPromptModel, injectedPromptProvider, injectedPromptRatio, injectedPromptRevision, onPromptInjectionApplied, provider])
 
   useEffect(() => {
     if (!prompt || hadStoredCanvasDraftRef.current) return
@@ -241,8 +225,7 @@ export function NodeWorkflowPage({
         connections,
         prompt: draftPrompt,
         mode,
-        provider: localProvider,
-        bananaModel: localBananaModel,
+        provider: IMAGE2_PROVIDER,
         ratio,
         resolution,
         quality,
@@ -253,7 +236,7 @@ export function NodeWorkflowPage({
       })
     }, 300)
     return () => window.clearTimeout(handle)
-  }, [canvasItems, connections, draftPrompt, mode, localProvider, localBananaModel, ratio, resolution, quality, outputFormat, count, concurrency])
+  }, [canvasItems, connections, draftPrompt, mode, localProvider, ratio, resolution, quality, outputFormat, count, concurrency])
 
   useEffect(() => {
     const saveCurrentDraft = () => {
@@ -263,7 +246,6 @@ export function NodeWorkflowPage({
         prompt: draftPromptRef.current,
         mode: modeRef.current,
         provider: localProviderRef.current,
-        bananaModel: localBananaModelRef.current,
         ratio: ratioRef.current,
         resolution: resolutionRef.current,
         quality: qualityRef.current,
@@ -346,14 +328,13 @@ export function NodeWorkflowPage({
     draftPromptRef.current = draftPrompt
     modeRef.current = mode
     localProviderRef.current = localProvider
-    localBananaModelRef.current = localBananaModel
     ratioRef.current = ratio
     resolutionRef.current = resolution
     qualityRef.current = quality
     outputFormatRef.current = outputFormat
     countRef.current = count
     concurrencyRef.current = concurrency
-  }, [canvasItems, connections, draftPrompt, mode, localProvider, localBananaModel, ratio, resolution, quality, outputFormat, count, concurrency])
+  }, [canvasItems, connections, draftPrompt, mode, localProvider, ratio, resolution, quality, outputFormat, count, concurrency])
 
   useEffect(() => {
     const itemIds = new Set(canvasItems.map((item) => item.id))
@@ -366,7 +347,7 @@ export function NodeWorkflowPage({
 
   useEffect(() => {
     setGeneratedPromptOverride('')
-  }, [canvasItems, connections, mode, ratio, localBananaModel])
+  }, [canvasItems, connections, mode, ratio])
 
   useEffect(() => {
     if (!interaction) return
@@ -429,13 +410,12 @@ export function NodeWorkflowPage({
     return () => window.cancelAnimationFrame(frame)
   }, [editingTextItemId])
 
-  const bananaOption = useMemo(() => getBananaModelOption(localBananaModel), [localBananaModel])
-  const selectedModel = localProvider === BANANA_PROVIDER ? bananaOption.id : DEFAULT_IMAGE2_MODEL
-  const effectiveRatio = localProvider === BANANA_PROVIDER ? bananaOption.ratio : ratio
-  const effectiveResolution = localProvider === BANANA_PROVIDER ? bananaOption.resolution : resolution
-  const effectiveQuality = localProvider === BANANA_PROVIDER ? 'auto' : quality
-  const effectiveOutputFormat = localProvider === BANANA_PROVIDER ? 'auto' : outputFormat
-  const imageSize = localProvider === BANANA_PROVIDER ? bananaOption.size : getImageSize(ratio, resolution)
+  const selectedModel = DEFAULT_IMAGE2_MODEL
+  const effectiveRatio = ratio
+  const effectiveResolution = resolution
+  const effectiveQuality = quality
+  const effectiveOutputFormat = outputFormat
+  const imageSize = getImageSize(ratio, resolution)
   const trimmedPrompt = draftPrompt.trim()
   const selectedItem = useMemo(() => canvasItems.find((item) => item.id === selectedItemId), [canvasItems, selectedItemId])
   const selectedImageItem = useMemo(() => (isCanvasImageItem(selectedItem) ? selectedItem : null), [selectedItem])
@@ -462,7 +442,7 @@ export function NodeWorkflowPage({
   const contextMenuItem = contextMenu?.target === 'item' ? canvasItems.find((item) => item.id === contextMenu.itemId) : null
 
   const taskPayload = useMemo<CreateTaskRequest>(() => ({
-    provider: localProvider,
+    provider: IMAGE2_PROVIDER,
     model: selectedModel,
     mode,
     prompt: trimmedSubmissionPrompt,
@@ -480,7 +460,6 @@ export function NodeWorkflowPage({
     effectiveQuality,
     effectiveRatio,
     effectiveResolution,
-    localProvider,
     mode,
     selectedModel,
     trimmedSubmissionPrompt,
@@ -492,7 +471,7 @@ export function NodeWorkflowPage({
       setMessage('先写一句提示词，或在画布里添加文字块/连线。')
       return
     }
-    onUsePrompt(trimmedSubmissionPrompt, { provider: localProvider, model: selectedModel, ratio: effectiveRatio || undefined })
+    onUsePrompt(trimmedSubmissionPrompt, { provider: IMAGE2_PROVIDER, model: selectedModel, ratio: effectiveRatio || undefined })
     setMessage('已同步到快捷生成页。')
   }
 
@@ -1456,43 +1435,31 @@ export function NodeWorkflowPage({
                 <span>模型</span>
                 <select value={localProvider} onChange={(event) => setLocalProvider(event.target.value as ModelProvider)}>
                   <option value={IMAGE2_PROVIDER}>Image-2</option>
-                  <option value={BANANA_PROVIDER}>Banana</option>
                 </select>
               </label>
 
-              {localProvider === BANANA_PROVIDER ? (
-                <label className="creative-tool-wide">
-                  <span>规格</span>
-                  <select value={localBananaModel} onChange={(event) => setLocalBananaModel(event.target.value)}>
-                    {BANANA_MODEL_OPTIONS.map((option) => <option key={option.id} value={option.id}>{option.label} / {option.size}</option>)}
-                  </select>
-                </label>
-              ) : (
-                <>
-                  <label>
-                    <span>比例</span>
-                    <select value={ratio} onChange={(event) => setRatio(event.target.value)}>
-                      {RATIOS.map((item) => <option key={item} value={item}>{item}</option>)}
-                    </select>
-                  </label>
-                  <label>
-                    <span>清晰度</span>
-                    <select value={resolution} onChange={(event) => setResolution(event.target.value)}>
-                      {RESOLUTION_TIERS.map((item) => <option key={item} value={item}>{getResolutionLabel(item)}</option>)}
-                    </select>
-                  </label>
-                </>
-              )}
+              <label>
+                <span>比例</span>
+                <select value={ratio} onChange={(event) => setRatio(event.target.value)}>
+                  {RATIOS.map((item) => <option key={item} value={item}>{item}</option>)}
+                </select>
+              </label>
+              <label>
+                <span>清晰度</span>
+                <select value={resolution} onChange={(event) => setResolution(event.target.value)}>
+                  {RESOLUTION_TIERS.map((item) => <option key={item} value={item}>{getResolutionLabel(item)}</option>)}
+                </select>
+              </label>
 
               <label>
                 <span>质量</span>
-                <select value={quality} onChange={(event) => setQuality(event.target.value)} disabled={localProvider === BANANA_PROVIDER}>
+                <select value={quality} onChange={(event) => setQuality(event.target.value)}>
                   {QUALITY_LEVELS.map((item) => <option key={item} value={item}>{getQualityLabel(item)}</option>)}
                 </select>
               </label>
               <label>
                 <span>格式</span>
-                <select value={outputFormat} onChange={(event) => setOutputFormat(event.target.value)} disabled={localProvider === BANANA_PROVIDER}>
+                <select value={outputFormat} onChange={(event) => setOutputFormat(event.target.value)}>
                   {OUTPUT_FORMATS.map((item) => <option key={item} value={item}>{getOutputFormatLabel(item)}</option>)}
                 </select>
               </label>

@@ -3,7 +3,7 @@ import type { Task, TaskResult } from '../types'
 import { formatBytes } from '../lib/format'
 import { errorReasonLabel } from '../lib/errorLabels'
 import { ImagePreviewModal } from './ImagePreviewModal'
-import { BANANA_PROVIDER, DEFAULT_IMAGE2_MODEL, getBananaModelOption, providerLabel } from '../lib/models'
+import { DEFAULT_IMAGE2_MODEL, providerLabel } from '../lib/models'
 import { nativeCopyImage, nativeCopyText, nativeSaveImage } from '../lib/nativeBridge'
 
 type SquareSubmitOptions = {
@@ -674,17 +674,10 @@ function uniqueRevisedPrompts(task: Task) {
 }
 
 function taskModelLabel(task: Task) {
-  if ((task.provider || 'image-2') === BANANA_PROVIDER) {
-    const option = getBananaModelOption(task.model || '')
-    return `${providerLabel(BANANA_PROVIDER)} · ${option.label}`
-  }
   return image2ModelLabel(task.model)
 }
 
 function taskModelTag(task: Task) {
-  if ((task.provider || 'image-2') === BANANA_PROVIDER) {
-    return task.model || getBananaModelOption(task.model || '').id
-  }
   return image2ModelLabel(task.model)
 }
 
@@ -728,19 +721,6 @@ function compactUploadId(id: string) {
 }
 
 function taskParameters(task: Task) {
-  const provider = task.provider || 'image-2'
-  if (provider === BANANA_PROVIDER) {
-    const option = getBananaModelOption(task.model || '')
-    return [
-      task.mode === 'gif' ? 'GIF 动图' : task.mode === 'image-to-image' ? '参考图生成' : '文字生成',
-      `模型分组 ${providerLabel(provider)}`,
-      `规格 ${option.label}`,
-      `模型 ID ${option.id}`,
-      option.size !== '自动' ? `尺寸 ${option.size}` : '自动尺寸',
-      `数量 ${task.count || 1}`,
-      `并发 ${task.concurrency || 1}`,
-    ]
-  }
   return [
     task.mode === 'gif' ? 'GIF 动图' : task.mode === 'image-to-image' ? '参考图生成' : '文字生成',
     `模型 ${taskModelLabel(task)}`,

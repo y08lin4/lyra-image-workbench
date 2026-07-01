@@ -1,12 +1,5 @@
 import type { ModelProvider, PromptRecord, PromptSession, PromptVersion } from '../../types'
-import {
-  BANANA_MODEL_OPTIONS,
-  BANANA_PROVIDER,
-  DEFAULT_IMAGE2_MODEL,
-  getBananaModelForRatio,
-  getBananaModelOption,
-  providerLabel,
-} from '../../lib/models'
+import { DEFAULT_IMAGE2_MODEL, IMAGE2_PROVIDER, providerLabel } from '../../lib/models'
 import { kindLabel, observationLabels, quickRefines } from './constants'
 
 type PromptResultPanelProps = {
@@ -15,12 +8,10 @@ type PromptResultPanelProps = {
   activeVersion: PromptVersion | null
   activeVersionId: string
   provider: ModelProvider
-  bananaModel: string
   refineText: string
   loading: boolean
   onVersionChange: (id: string) => void
   onProviderChange: (provider: ModelProvider) => void
-  onBananaModelChange: (model: string) => void
   onRefineTextChange: (value: string) => void
   onQuickRefine: (value: string) => void
   onRefine: () => void
@@ -34,12 +25,10 @@ export function PromptResultPanel({
   activeVersion,
   activeVersionId,
   provider,
-  bananaModel,
   refineText,
   loading,
   onVersionChange,
   onProviderChange,
-  onBananaModelChange,
   onRefineTextChange,
   onQuickRefine,
   onRefine,
@@ -53,12 +42,8 @@ export function PromptResultPanel({
   const title = session ? `${kindLabel(session.kind)} · ${session.title}` : record ? (record.mode === 'image-to-prompt' ? '图片还原提示词' : '提示词优化结果') : '结果预览'
   const elapsedMs = activeVersion?.elapsedMs || record?.elapsedMs || 0
   const promptModel = activeVersion?.model || record?.model || 'gpt-5.5'
-  const preferredBananaResolution = getBananaModelOption(bananaModel).resolution
-  const matchedBananaModel = promptRatio && promptRatio !== 'auto'
-    ? getBananaModelForRatio(promptRatio, preferredBananaResolution === 'auto' ? '2k' : preferredBananaResolution)
-    : getBananaModelOption(bananaModel)
-  const model = provider === BANANA_PROVIDER ? matchedBananaModel.id : DEFAULT_IMAGE2_MODEL
-  const useOptions = { provider, model, ratio: promptRatio || undefined }
+  const model = DEFAULT_IMAGE2_MODEL
+  const useOptions = { provider: IMAGE2_PROVIDER, model, ratio: promptRatio || undefined }
   const recentMessages = session?.messages.slice(-4) || []
 
   if (!prompt) {
@@ -97,23 +82,11 @@ export function PromptResultPanel({
       <section className="prompt-apply-model" aria-label="选择应用模型">
         <div className="section-title">
           <span>应用目标</span>
-          <small>{providerLabel(provider)} · {model}</small>
+          <small>{providerLabel(IMAGE2_PROVIDER)} · {model}</small>
         </div>
         <div className="mode-tabs provider-tabs">
-          <button type="button" className={provider === 'image-2' ? 'active' : ''} onClick={() => onProviderChange('image-2')}>Image-2</button>
-          <button type="button" className={provider === BANANA_PROVIDER ? 'active' : ''} onClick={() => onProviderChange(BANANA_PROVIDER)}>Banana</button>
+          <button type="button" className="active" onClick={() => onProviderChange(IMAGE2_PROVIDER)}>Image-2</button>
         </div>
-        {provider === BANANA_PROVIDER ? (
-          <label>
-            <span>Banana 模型 ID</span>
-            <select value={bananaModel} onChange={(event) => onBananaModelChange(event.target.value)}>
-              {BANANA_MODEL_OPTIONS.map((item) => <option key={item.id} value={item.id}>{item.label} · {item.id}</option>)}
-            </select>
-            {promptRatio && promptRatio !== 'auto' ? (
-              <small>应用时会按还原比例自动匹配：{matchedBananaModel.label} · {matchedBananaModel.size}</small>
-            ) : null}
-          </label>
-        ) : null}
       </section>
 
       <section className="prompt-output-card" aria-label="生成的正向提示词">

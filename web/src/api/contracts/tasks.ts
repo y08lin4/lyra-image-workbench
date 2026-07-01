@@ -1,5 +1,5 @@
 export type Mode = 'text-to-image' | 'image-to-image' | 'gif'
-export type ModelProvider = 'image-2' | 'banana' | (string & {})
+export type ModelProvider = 'image-2' | (string & {})
 export type TaskSource = 'web' | 'api' | (string & {})
 export type TaskStatus = 'queued' | 'running' | 'succeeded' | 'partial_failed' | 'failed' | 'cancelled' | 'interrupted'
 
