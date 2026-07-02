@@ -52,6 +52,7 @@ type record struct {
 	Email              string `json:"email,omitempty"`
 	AvatarURL          string `json:"avatarUrl,omitempty"`
 	IsAdmin            bool   `json:"isAdmin,omitempty"`
+	Disabled           bool   `json:"disabled,omitempty"`
 	CreditsBalance     int    `json:"creditsBalance,omitempty"`
 	ReferralCode       string `json:"referralCode,omitempty"`
 	ReferredByCode     string `json:"referredByCode,omitempty"`
@@ -78,6 +79,7 @@ type PublicUser struct {
 	Email              string `json:"email"`
 	AvatarURL          string `json:"avatarUrl"`
 	IsAdmin            bool   `json:"isAdmin"`
+	Disabled           bool   `json:"disabled"`
 	CreditsBalance     int    `json:"creditsBalance"`
 	ReferralCode       string `json:"referralCode"`
 	ReferredByUsername string `json:"referredByUsername,omitempty"`
@@ -92,6 +94,7 @@ type AdminUser struct {
 	Email              string `json:"email"`
 	AvatarURL          string `json:"avatarUrl"`
 	IsAdmin            bool   `json:"isAdmin"`
+	Disabled           bool   `json:"disabled"`
 	CreditsBalance     int    `json:"creditsBalance"`
 	ReferralCode       string `json:"referralCode"`
 	ReferredByCode     string `json:"referredByCode,omitempty"`
@@ -273,6 +276,9 @@ func (s *Store) Login(identifier string, password string, twoFactorCode string) 
 	if !passwordOK {
 		return Session{}, NewError("USER_LOGIN_INVALID", "用户名或密码错误")
 	}
+	if user.Disabled {
+		return Session{}, NewError("USER_DISABLED", "账号已被管理员停用")
+	}
 	if needsPasswordUpgrade {
 		salt, encodedHash, err := passwordhash.New(password)
 		if err != nil {
@@ -311,7 +317,7 @@ func (s *Store) Current(token string) (Session, bool) {
 		return Session{}, false
 	}
 	index, ok := s.findLocked(session.Username)
-	if !ok {
+	if !ok || s.current.Users[index].Disabled {
 		delete(s.sessions, token)
 		return Session{}, false
 	}
@@ -345,23 +351,36 @@ func (s *Store) Profile(username string) (PublicUser, error) {
 	if !ok {
 		return PublicUser{}, NewError("USER_NOT_FOUND", "用户不存在")
 	}
+	if s.current.Users[index].Disabled {
+		return PublicUser{}, NewError("USER_DISABLED", "账号已被管理员停用")
+	}
 	return publicUserFromRecord(s.current.Users[index]), nil
 }
 
 func (s *Store) FindByStorageToken(storageToken string) (PublicUser, bool) {
+	user, err := s.ProfileByStorageToken(storageToken)
+	return user, err == nil
+}
+
+func (s *Store) ProfileByStorageToken(storageToken string) (PublicUser, error) {
 	storageToken = strings.TrimSpace(storageToken)
 	if storageToken == "" {
-		return PublicUser{}, false
+		return PublicUser{}, NewError("USER_NOT_FOUND", "用户不存在")
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for i := range s.current.Users {
-		if strings.TrimSpace(s.current.Users[i].StorageToken) == storageToken {
-			return publicUserFromRecord(s.current.Users[i]), true
+		if strings.TrimSpace(s.current.Users[i].StorageToken) != storageToken {
+			continue
 		}
+		if s.current.Users[i].Disabled {
+			return PublicUser{}, NewError("USER_DISABLED", "账号已被管理员停用")
+		}
+		return publicUserFromRecord(s.current.Users[i]), nil
 	}
-	return PublicUser{}, false
+	return PublicUser{}, NewError("USER_NOT_FOUND", "用户不存在")
 }
+
 func (s *Store) UpdateProfile(username string, update ProfileUpdate) (PublicUser, error) {
 	normalized, _, err := normalizeUsername(username)
 	if err != nil {
@@ -459,11 +478,39 @@ func (s *Store) SetAdmin(username string, isAdmin bool) (AdminUser, error) {
 	if !ok {
 		return AdminUser{}, NewError("USER_NOT_FOUND", "用户不存在")
 	}
-	if !isAdmin && s.current.Users[index].IsAdmin && s.countAdminsLocked() == 1 {
+	if !isAdmin && s.current.Users[index].IsAdmin && !s.current.Users[index].Disabled && s.countActiveAdminsLocked() == 1 {
 		return AdminUser{}, NewError("USER_LAST_ADMIN_REQUIRED", "至少需要保留一个管理员")
 	}
 	s.current.Users[index].IsAdmin = isAdmin
 	s.current.Users[index].UpdatedAt = time.Now().Format(time.RFC3339)
+	if err := s.saveLocked(); err != nil {
+		return AdminUser{}, err
+	}
+	return adminUserFromRecord(s.current.Users[index]), nil
+}
+
+func (s *Store) SetDisabled(username string, disabled bool) (AdminUser, error) {
+	normalized, _, err := normalizeUsername(username)
+	if err != nil {
+		return AdminUser{}, err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	index, ok := s.findLocked(normalized)
+	if !ok {
+		return AdminUser{}, NewError("USER_NOT_FOUND", "用户不存在")
+	}
+	if disabled && s.current.Users[index].IsAdmin && !s.current.Users[index].Disabled && s.countActiveAdminsLocked() == 1 {
+		return AdminUser{}, NewError("USER_LAST_ADMIN_REQUIRED", "至少需要保留一个管理员")
+	}
+	if s.current.Users[index].Disabled == disabled {
+		return adminUserFromRecord(s.current.Users[index]), nil
+	}
+	s.current.Users[index].Disabled = disabled
+	s.current.Users[index].UpdatedAt = time.Now().Format(time.RFC3339)
+	if disabled {
+		s.deleteSessionsForUsernameLocked(s.current.Users[index].Username)
+	}
 	if err := s.saveLocked(); err != nil {
 		return AdminUser{}, err
 	}
@@ -879,14 +926,23 @@ func (s *Store) generateReferralCodeLocked() (string, error) {
 	return "", NewError("REFERRAL_CODE_GENERATE_FAILED", "生成邀请码失败，请稍后重试")
 }
 
-func (s *Store) countAdminsLocked() int {
+func (s *Store) countActiveAdminsLocked() int {
 	count := 0
 	for _, user := range s.current.Users {
-		if user.IsAdmin {
+		if user.IsAdmin && !user.Disabled {
 			count++
 		}
 	}
 	return count
+}
+
+func (s *Store) deleteSessionsForUsernameLocked(username string) {
+	normalized := normalizeUsernameKey(username)
+	for token, session := range s.sessions {
+		if normalizeUsernameKey(session.Username) == normalized {
+			delete(s.sessions, token)
+		}
+	}
 }
 
 func (s *Store) pruneLocked(now time.Time) {
@@ -928,6 +984,7 @@ func publicUserFromRecord(user record) PublicUser {
 		Email:              user.Email,
 		AvatarURL:          user.AvatarURL,
 		IsAdmin:            user.IsAdmin,
+		Disabled:           user.Disabled,
 		CreditsBalance:     user.CreditsBalance,
 		ReferralCode:       user.ReferralCode,
 		ReferredByUsername: user.ReferredByUsername,
@@ -944,6 +1001,7 @@ func adminUserFromRecord(user record) AdminUser {
 		Email:              user.Email,
 		AvatarURL:          user.AvatarURL,
 		IsAdmin:            user.IsAdmin,
+		Disabled:           user.Disabled,
 		CreditsBalance:     user.CreditsBalance,
 		ReferralCode:       user.ReferralCode,
 		ReferredByCode:     user.ReferredByCode,

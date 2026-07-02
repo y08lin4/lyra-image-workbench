@@ -369,6 +369,9 @@ func writeUserError(w http.ResponseWriter, err error) {
 		if code == "USER_LOGIN_INVALID" || code == "USER_AUTH_REQUIRED" || code == "USER_TOTP_REQUIRED" || code == "USER_TOTP_INVALID" {
 			status = http.StatusUnauthorized
 		}
+		if code == "USER_DISABLED" {
+			status = http.StatusForbidden
+		}
 		if code == "USER_ALREADY_EXISTS" || code == "USER_EMAIL_ALREADY_EXISTS" || code == "USER_CREDITS_SOURCE_CONFLICT" {
 			status = http.StatusConflict
 		}

@@ -79,6 +79,7 @@ func NewRouter(deps Dependencies) http.Handler {
 	mux.HandleFunc("POST /api/admin/users/credits/add", adminUsers.AddCredits)
 	mux.HandleFunc("GET /api/admin/users/{username}/ledger", adminUsers.Ledger)
 	mux.HandleFunc("POST /api/admin/users/{username}/role", adminUsers.SetRole)
+	mux.HandleFunc("POST /api/admin/users/{username}/disabled", adminUsers.SetDisabled)
 	mux.HandleFunc("GET /api/admin/activity", adminActivity.List)
 	mux.HandleFunc("POST /api/users/register", userHandler.Register)
 	mux.HandleFunc("POST /api/users/session", userHandler.Login)

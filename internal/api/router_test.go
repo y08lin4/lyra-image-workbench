@@ -283,6 +283,26 @@ func TestV1ImageTaskCancelMissingReturnsNotFound(t *testing.T) {
 	}
 }
 
+func TestV1BearerRejectsDisabledUser(t *testing.T) {
+	env := newTestAPIEnv(t)
+	token := createNamedUserSession(t, env.Router, "apiDisabled01", "R7!Api#Vault$2026", "")
+	session, ok := env.Users.Current(token)
+	if !ok {
+		t.Fatal("test session missing")
+	}
+	_, secret, err := env.APIKeys.Create("disabled sdk", session.User.Username, session.StorageToken)
+	if err != nil {
+		t.Fatalf("APIKeys.Create() error = %v", err)
+	}
+	if _, err := env.Users.SetDisabled(session.User.Username, true); err != nil {
+		t.Fatalf("SetDisabled() error = %v", err)
+	}
+
+	code, body := doJSONStatus(t, env.Router, http.MethodGet, "/v1/image-tasks/img_missing", "", nil, "Bearer "+secret)
+	if code != http.StatusForbidden || !strings.Contains(body, "USER_DISABLED") {
+		t.Fatalf("disabled bearer should be forbidden, code=%d body=%s", code, body)
+	}
+}
 func TestV1ImageDownloadHidesInternalOutputPathErrors(t *testing.T) {
 	env := newTestAPIEnv(t)
 	token := createTestSession(t, env.Router)
@@ -802,6 +822,44 @@ func TestAdminUsersCanAddCreditsAndReadLedger(t *testing.T) {
 	}
 }
 
+func TestAdminUsersCanDisableAndEnableUser(t *testing.T) {
+	router := newTestRouter(t)
+	password := "R7!Status#Vault$2026"
+	userToken := createNamedUserSession(t, router, "statusUser01", password, "")
+	adminToken := createAdminToken(t, router)
+
+	body := doAdminJSON(t, router, http.MethodPost, "/api/admin/users/statusUser01/disabled", adminToken, map[string]any{"disabled": true})
+	if strings.Contains(body, "storageToken") {
+		t.Fatalf("admin users response leaked storage token: %s", body)
+	}
+	if !strings.Contains(body, `"disabled":true`) {
+		t.Fatalf("disable response missing disabled state: %s", body)
+	}
+
+	code, currentBody := doJSONStatus(t, router, http.MethodGet, "/api/users/session", userToken, nil, "")
+	if code != http.StatusUnauthorized || !strings.Contains(currentBody, "USER_AUTH_REQUIRED") {
+		t.Fatalf("disabled existing session should be rejected, code=%d body=%s", code, currentBody)
+	}
+	code, loginBody := doJSONStatus(t, router, http.MethodPost, "/api/users/session", "", map[string]string{
+		"username": "statusUser01",
+		"password": password,
+	}, "")
+	if code != http.StatusForbidden || !strings.Contains(loginBody, "USER_DISABLED") {
+		t.Fatalf("disabled login should be forbidden, code=%d body=%s", code, loginBody)
+	}
+
+	body = doAdminJSON(t, router, http.MethodPost, "/api/admin/users/statusUser01/disabled", adminToken, map[string]any{"disabled": false})
+	if !strings.Contains(body, `"disabled":false`) {
+		t.Fatalf("enable response missing enabled state: %s", body)
+	}
+	code, loginBody = doJSONStatus(t, router, http.MethodPost, "/api/users/session", "", map[string]string{
+		"username": "statusUser01",
+		"password": password,
+	}, "")
+	if code != http.StatusOK {
+		t.Fatalf("enabled login should succeed, code=%d body=%s", code, loginBody)
+	}
+}
 func TestFullAdminSetupAttributesCreditGrantToAdminUser(t *testing.T) {
 	env := newTestAPIEnv(t)
 	setupPayload := map[string]any{

@@ -34,6 +34,7 @@ const (
 	TypeTopUpOrderCreated Type = "topup_order_created"
 	TypeTopUpPaidSuccess  Type = "topup_paid_success"
 	TypeAdminCreditGrant  Type = "admin_credit_grant"
+	TypeAdminUserStatus   Type = "admin_user_status"
 	TypeTaskFailed        Type = "task_failed"
 	TypeResultFailed      Type = "result_failed"
 	TypeSystem            Type = "system"
@@ -228,7 +229,7 @@ func normalizeType(eventType Type) Type {
 func normalizeFilterType(eventType Type) Type {
 	value := Type(strings.ToLower(strings.TrimSpace(string(eventType))))
 	switch value {
-	case TypeUserRegistration, TypeTopUpOrderCreated, TypeTopUpPaidSuccess, TypeAdminCreditGrant, TypeTaskFailed, TypeResultFailed, TypeSystem:
+	case TypeUserRegistration, TypeTopUpOrderCreated, TypeTopUpPaidSuccess, TypeAdminCreditGrant, TypeAdminUserStatus, TypeTaskFailed, TypeResultFailed, TypeSystem:
 		return value
 	default:
 		return ""

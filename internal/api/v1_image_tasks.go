@@ -325,10 +325,19 @@ func (h V1ImageTaskHandler) authenticate(w http.ResponseWriter, r *http.Request)
 		return v1Scope{}, false
 	}
 	username := strings.TrimSpace(record.Username)
-	if username == "" && h.users != nil {
-		if owner, found := h.users.FindByStorageToken(record.StorageToken); found {
-			username = owner.Username
+	if h.users != nil {
+		var owner users.PublicUser
+		var ownerErr error
+		if username != "" {
+			owner, ownerErr = h.users.Profile(username)
+		} else {
+			owner, ownerErr = h.users.ProfileByStorageToken(record.StorageToken)
 		}
+		if ownerErr != nil {
+			writeUserError(w, ownerErr)
+			return v1Scope{}, false
+		}
+		username = owner.Username
 	}
 	return v1Scope{storageToken: record.StorageToken, username: username, apiKeyID: record.ID}, true
 }

@@ -105,6 +105,61 @@ func (h AdminUsersHandler) SetRole(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "user": user, "users": h.store.ListAdminUsers()})
 }
 
+func (h AdminUsersHandler) SetDisabled(w http.ResponseWriter, r *http.Request) {
+	if !h.requireAdminAccess(w, r) {
+		return
+	}
+	defer r.Body.Close()
+	var payload struct {
+		Username string `json:"username"`
+		Disabled *bool  `json:"disabled"`
+		Enabled  *bool  `json:"enabled"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		writeError(w, http.StatusBadRequest, "BAD_JSON", "请求体不是有效 JSON")
+		return
+	}
+	username := r.PathValue("username")
+	if username == "" {
+		username = payload.Username
+	}
+	var disabled bool
+	if payload.Disabled != nil {
+		disabled = *payload.Disabled
+	} else if payload.Enabled != nil {
+		disabled = !*payload.Enabled
+	} else {
+		writeError(w, http.StatusBadRequest, "USER_STATUS_REQUIRED", "请指定用户启用或停用状态")
+		return
+	}
+	actor := h.adminActorFromRequest(r)
+	user, err := h.store.SetDisabled(username, disabled)
+	if err != nil {
+		writeUserError(w, err)
+		return
+	}
+	status := "enabled"
+	message := "管理员启用用户"
+	if disabled {
+		status = "disabled"
+		message = "管理员停用用户"
+	}
+	recordActivity(h.activity, activitylog.EntryInput{
+		Type:         activitylog.TypeAdminUserStatus,
+		Level:        activitylog.LevelWarning,
+		Actor:        actor,
+		Username:     user.Username,
+		ResourceType: "user",
+		ResourceID:   user.Username,
+		Message:      message,
+		Fields: map[string]any{
+			"target": user.Username,
+			"status": status,
+		},
+	})
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "user": user, "users": h.store.ListAdminUsers()})
+}
+
 func (h AdminUsersHandler) requireAdminAccess(w http.ResponseWriter, r *http.Request) bool {
 	if h.auth == nil || !h.auth.Status().PasswordSet {
 		writeError(w, http.StatusForbidden, "ADMIN_PASSWORD_NOT_SET", "请先初始化站点和 Admin 管理密码")

@@ -60,6 +60,68 @@ func TestRegisterAllowsUppercaseUsername(t *testing.T) {
 		t.Fatal("Register() should reject case-insensitive duplicate username")
 	}
 }
+func TestSetDisabledBlocksLoginCurrentAndStorageToken(t *testing.T) {
+	store := newTestStore(t)
+	session, err := store.Register("Alice_01", "", testPassword, "", "")
+	if err != nil {
+		t.Fatalf("Register() error = %v", err)
+	}
+
+	adminUser, err := store.SetDisabled("alice_01", true)
+	if err != nil {
+		t.Fatalf("SetDisabled(true) error = %v", err)
+	}
+	if !adminUser.Disabled {
+		t.Fatalf("SetDisabled(true) did not mark user disabled: %+v", adminUser)
+	}
+	if _, ok := store.Current(session.Token); ok {
+		t.Fatal("Current() should reject an existing disabled-user session")
+	}
+	_, err = store.Login("alice_01", testPassword, "")
+	assertUserErrorCode(t, err, "USER_DISABLED")
+	if _, ok := store.FindByStorageToken(session.StorageToken); ok {
+		t.Fatal("FindByStorageToken() should hide disabled users")
+	}
+	_, err = store.ProfileByStorageToken(session.StorageToken)
+	assertUserErrorCode(t, err, "USER_DISABLED")
+
+	adminUser, err = store.SetDisabled("Alice_01", false)
+	if err != nil {
+		t.Fatalf("SetDisabled(false) error = %v", err)
+	}
+	if adminUser.Disabled {
+		t.Fatalf("SetDisabled(false) did not enable user: %+v", adminUser)
+	}
+	if _, err := store.Login("alice_01", testPassword, ""); err != nil {
+		t.Fatalf("Login() after enabling user error = %v", err)
+	}
+}
+
+func TestSetDisabledKeepsAtLeastOneActiveAdmin(t *testing.T) {
+	store := newTestStore(t)
+	if _, err := store.Register("Admin_01", "", testPassword, "", ""); err != nil {
+		t.Fatalf("Register(admin) error = %v", err)
+	}
+	if _, err := store.SetAdmin("admin_01", true); err != nil {
+		t.Fatalf("SetAdmin(admin) error = %v", err)
+	}
+	_, err := store.SetDisabled("admin_01", true)
+	assertUserErrorCode(t, err, "USER_LAST_ADMIN_REQUIRED")
+
+	if _, err := store.Register("Admin_02", "", testPassword, "", ""); err != nil {
+		t.Fatalf("Register(second admin) error = %v", err)
+	}
+	if _, err := store.SetAdmin("admin_02", true); err != nil {
+		t.Fatalf("SetAdmin(second admin) error = %v", err)
+	}
+	adminUser, err := store.SetDisabled("admin_01", true)
+	if err != nil {
+		t.Fatalf("SetDisabled(admin with backup) error = %v", err)
+	}
+	if !adminUser.Disabled {
+		t.Fatalf("admin should be disabled when another active admin exists: %+v", adminUser)
+	}
+}
 
 func TestRegisterUserEmailLoginAndProfile(t *testing.T) {
 	store := newTestStore(t)
@@ -325,5 +387,16 @@ func TestLoginUpgradesLegacyPasswordHash(t *testing.T) {
 	store.mu.Unlock()
 	if !strings.HasPrefix(upgraded, passwordhash.Scheme+"$") {
 		t.Fatalf("legacy hash was not upgraded: %s", upgraded)
+	}
+}
+
+func assertUserErrorCode(t *testing.T, err error, code string) {
+	t.Helper()
+	if err == nil {
+		t.Fatalf("expected %s error, got nil", code)
+	}
+	var userErr Error
+	if !AsError(err, &userErr) || userErr.Code != code {
+		t.Fatalf("error code = %v, want %s", err, code)
 	}
 }
