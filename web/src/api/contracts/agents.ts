@@ -116,6 +116,7 @@ export interface AgentParameters {
   model: string
   ratio: string
   resolution: string
+  size?: string
   quality: string
   outputFormat: string
   count: number
@@ -169,6 +170,7 @@ export interface ConfirmAgentRoundRequest {
   model: string
   ratio: string
   resolution: string
+  size?: string
   quality: string
   outputFormat: string
   count: number

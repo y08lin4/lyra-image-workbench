@@ -102,6 +102,7 @@ type Parameters struct {
 	Model        string `json:"model"`
 	Ratio        string `json:"ratio"`
 	Resolution   string `json:"resolution"`
+	Size         string `json:"size,omitempty"`
 	Quality      string `json:"quality"`
 	OutputFormat string `json:"outputFormat"`
 	Count        int    `json:"count"`
@@ -148,6 +149,7 @@ type ConfirmRequest struct {
 	Model          string              `json:"model"`
 	Ratio          string              `json:"ratio"`
 	Resolution     string              `json:"resolution"`
+	Size           string              `json:"size,omitempty"`
 	Quality        string              `json:"quality"`
 	OutputFormat   string              `json:"outputFormat"`
 	Count          int                 `json:"count"`

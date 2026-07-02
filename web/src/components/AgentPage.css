@@ -502,3 +502,110 @@
     animation: none;
   }
 }
+
+.agent-header-actions,
+.agent-session-strip,
+.agent-session-strip-head,
+.agent-session-list,
+.agent-session-item {
+  min-width: 0;
+}
+
+.agent-header-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.agent-session-strip {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+  padding: 10px 12px;
+}
+
+.agent-session-strip-head {
+  display: grid;
+  gap: 2px;
+}
+
+.agent-session-strip-head span {
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.agent-session-strip-head small,
+.agent-session-list p,
+.agent-session-item span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.agent-session-list {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+.agent-session-list p {
+  margin: 0;
+}
+
+.agent-session-item {
+  flex: 0 0 min(260px, 72vw);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px;
+  align-items: stretch;
+}
+
+.agent-session-item > button:first-child {
+  min-width: 0;
+  display: grid;
+  justify-items: start;
+  gap: 2px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-soft);
+  color: var(--text);
+  padding: 8px 10px;
+  text-align: left;
+}
+
+.agent-session-item.is-active > button:first-child {
+  border-color: var(--primary);
+  background: color-mix(in srgb, var(--surface) 82%, var(--primary) 18%);
+}
+
+.agent-session-item strong {
+  max-width: 100%;
+  overflow: hidden;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-session-delete {
+  width: 42px;
+  min-width: 42px;
+  color: var(--error, #b42318) !important;
+}
+
+@media (max-width: 680px) {
+  .agent-session-strip {
+    grid-template-columns: minmax(0, 1fr);
+    border-radius: 10px;
+  }
+
+  .agent-header-actions {
+    justify-content: stretch;
+  }
+}

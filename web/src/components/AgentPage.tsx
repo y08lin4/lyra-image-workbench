@@ -1,5 +1,5 @@
-import { FormEvent, useMemo, useRef, useState } from 'react'
-import { confirmAgentRound, createAgentSession, sendAgentMessage } from '../api/agents'
+import { FormEvent, useEffect, useMemo, useRef, useState } from 'react'
+import { confirmAgentRound, createAgentSession, deleteAgentSession, getAgentSession, listAgentSessions, sendAgentMessage } from '../api/agents'
 import type { AgentPlan, AgentRound, AgentSession, ConfirmAgentRoundResponse } from '../api/contracts/agents'
 import type { ModelProvider, Task } from '../types'
 import { DEFAULT_IMAGE2_MODEL, IMAGE2_PROVIDER } from '../lib/models'
@@ -71,12 +71,20 @@ export function AgentPage({
   })
   const [input, setInput] = useState('')
   const [session, setSession] = useState<AgentSession | null>(null)
+  const [sessions, setSessions] = useState<AgentSession[]>([])
   const [activeRound, setActiveRound] = useState<AgentRound | null>(null)
   const [loading, setLoading] = useState(false)
   const [confirming, setConfirming] = useState(false)
+  const [sessionsLoading, setSessionsLoading] = useState(false)
+  const [openingSessionId, setOpeningSessionId] = useState('')
+  const [deletingSessionId, setDeletingSessionId] = useState('')
   const [status, setStatus] = useState('')
   const [error, setError] = useState('')
   const composerRef = useRef<HTMLTextAreaElement | null>(null)
+
+  useEffect(() => {
+    void refreshSessions()
+  }, [])
 
   const userInputs = useMemo(() => messages.filter((item) => item.role === 'user').map((item) => item.content), [messages])
   const activePlan = activeRound?.plan || latestPlan(session)
@@ -111,6 +119,7 @@ export function AgentPage({
         skipQuestions: true,
       })
       setSession(response.session)
+      setSessions((current) => upsertSession(current, response.session))
       if (response.round) {
         setActiveRound(response.round)
         setMessages((current) => [...current, roundToMessage(response.round)])
@@ -136,13 +145,17 @@ export function AgentPage({
         model: params.model || model,
         ratio: params.ratio || ratio,
         resolution: params.resolution || 'standard',
+        size: sizeFromRound(activeRound),
         quality: params.quality || 'auto',
         outputFormat: params.outputFormat || 'png',
         count: params.count || 1,
         concurrency: params.concurrency || 1,
         uploadIds: uploadIDsFromPlan(plan),
       })
-      if (response.session) setSession(response.session)
+      if (response.session) {
+        setSession(response.session)
+        setSessions((current) => upsertSession(current, response.session as AgentSession))
+      }
       if (response.round) setActiveRound(response.round)
       const callbackPayload = response as AgentTaskBackflowPayload
       onTaskConfirmed?.(callbackPayload)
@@ -186,6 +199,55 @@ export function AgentPage({
     setError('')
   }
 
+  async function refreshSessions() {
+    setSessionsLoading(true)
+    try {
+      const nextSessions = await listAgentSessions({ limit: 12 })
+      setSessions(nextSessions)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '读取 Agent 会话失败')
+    } finally {
+      setSessionsLoading(false)
+    }
+  }
+
+  async function openSession(sessionId: string) {
+    if (!sessionId || openingSessionId || deletingSessionId) return
+    setOpeningSessionId(sessionId)
+    setStatus('')
+    setError('')
+    try {
+      const nextSession = await getAgentSession(sessionId)
+      setSession(nextSession)
+      setActiveRound(latestRound(nextSession))
+      setMessages(sessionToMessages(nextSession))
+      setSessions((current) => upsertSession(current, nextSession))
+      setStatus('已打开历史会话。')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '打开 Agent 会话失败')
+    } finally {
+      setOpeningSessionId('')
+    }
+  }
+
+  async function removeSession(sessionId: string) {
+    if (!sessionId || deletingSessionId) return
+    const target = sessions.find((item) => item.id === sessionId)
+    if (!window.confirm(`确认删除会话：${target?.title || sessionId}？`)) return
+    setDeletingSessionId(sessionId)
+    setStatus('')
+    setError('')
+    try {
+      await deleteAgentSession(sessionId)
+      setSessions((current) => current.filter((item) => item.id !== sessionId))
+      if (session?.id === sessionId) resetChat()
+      setStatus('会话已删除。')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '删除 Agent 会话失败')
+    } finally {
+      setDeletingSessionId('')
+    }
+  }
   return (
     <section className="agent-page" aria-label="Agent 创作模块">
       <header className="agent-header">
@@ -193,8 +255,39 @@ export function AgentPage({
           <p className="eyebrow">Agent Studio</p>
           <h1>Agent 创作</h1>
         </div>
-        <button type="button" onClick={resetChat}>新对话</button>
+        <div className="agent-header-actions">
+          <button type="button" onClick={() => void refreshSessions()} disabled={sessionsLoading}>{sessionsLoading ? '刷新中...' : '刷新会话'}</button>
+          <button type="button" onClick={resetChat}>新对话</button>
+        </div>
       </header>
+
+      <section className="agent-session-strip" aria-label="最近 Agent 会话">
+        <div className="agent-session-strip-head">
+          <span>最近会话</span>
+          <small>{sessionsLoading ? '加载中' : `${sessions.length} 条`}</small>
+        </div>
+        <div className="agent-session-list">
+          {sessions.length ? sessions.map((item) => (
+            <article key={item.id} className={`agent-session-item ${session?.id === item.id ? 'is-active' : ''}`}>
+              <button type="button" onClick={() => void openSession(item.id)} disabled={openingSessionId === item.id || deletingSessionId === item.id}>
+                <strong>{item.title || '未命名会话'}</strong>
+                <span>{sessionMeta(item)}</span>
+              </button>
+              <button
+                type="button"
+                className="agent-session-delete"
+                aria-label={`删除会话 ${item.title || item.id}`}
+                onClick={() => void removeSession(item.id)}
+                disabled={deletingSessionId === item.id}
+              >
+                {deletingSessionId === item.id ? '...' : '删'}
+              </button>
+            </article>
+          )) : (
+            <p>{sessionsLoading ? '正在加载最近会话。' : '暂无历史会话。'}</p>
+          )}
+        </div>
+      </section>
 
       <div className="agent-layout">
         <main className="agent-thread" aria-live="polite">
@@ -345,6 +438,38 @@ ${prompt}`, 'prompt', round.plan)
   return makeMessage('assistant', round.error || 'Agent 已处理。')
 }
 
+function sessionToMessages(session: AgentSession) {
+  const hydrated = [...openingMessages]
+  for (const round of session.rounds || []) {
+    const userContent = round.userMessage?.content?.trim()
+    if (userContent) hydrated.push(makeMessage('user', userContent, 'note'))
+    hydrated.push(roundToMessage(round))
+  }
+  return hydrated
+}
+
+function latestRound(session: AgentSession | null) {
+  if (!session?.rounds.length) return null
+  return session.rounds[session.rounds.length - 1] || null
+}
+
+function upsertSession(sessions: AgentSession[], nextSession: AgentSession) {
+  const filtered = sessions.filter((item) => item.id !== nextSession.id)
+  return [nextSession, ...filtered].sort((a, b) => Date.parse(b.updatedAt || b.createdAt) - Date.parse(a.updatedAt || a.createdAt))
+}
+
+function sessionMeta(session: AgentSession) {
+  const count = session.rounds?.length || 0
+  const date = formatSessionDate(session.updatedAt || session.createdAt)
+  return `${count} 轮 · ${date}`
+}
+
+function formatSessionDate(value: string) {
+  const time = Date.parse(value)
+  if (!Number.isFinite(time)) return '时间未知'
+  return new Intl.DateTimeFormat('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }).format(new Date(time))
+}
+
 function latestPlan(session: AgentSession | null) {
   if (!session?.rounds.length) return null
   for (let i = session.rounds.length - 1; i >= 0; i -= 1) {
@@ -370,6 +495,24 @@ function uploadIDsFromPlan(plan: AgentPlan) {
     ids.push(id)
   }
   return ids
+}
+
+function sizeFromRound(round: AgentRound) {
+  const planSize = sizeString(round.plan?.parameters.size)
+  if (planSize) return planSize
+  const fields = round as AgentRound & {
+    draft?: { size?: unknown; parameters?: { size?: unknown } }
+    task?: { size?: unknown; parameters?: { size?: unknown } }
+  }
+  return sizeString(fields.draft?.size)
+    || sizeString(fields.draft?.parameters?.size)
+    || sizeString(fields.task?.size)
+    || sizeString(fields.task?.parameters?.size)
+    || undefined
+}
+
+function sizeString(value: unknown) {
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined
 }
 
 function titleFromText(text: string) {
