@@ -14,6 +14,8 @@ import type {
   AdminUsersResponse,
   GrantCreditsResponse,
   GrantUserCreditsRequest,
+  SetAdminUserDisabledRequest,
+  SetAdminUserDisabledResponse,
   SetAdminUserRoleRequest,
   SetAdminUserRoleResponse,
 } from './contracts/admin'
@@ -24,6 +26,7 @@ export type {
   AdminConfigPatch,
   AdminEmailConfigPatch,
   GrantCreditsResponse,
+  SetAdminUserDisabledResponse,
   SetAdminUserRoleResponse,
 } from './contracts/admin'
 
@@ -161,6 +164,15 @@ export async function listAdminUserLedger(username: string) {
 export async function setAdminUserRole(username: string, role: string | boolean) {
   const body: SetAdminUserRoleRequest = typeof role === 'boolean' ? { isAdmin: role } : { role }
   const data = await requestJson<SetAdminUserRoleResponse>(`/api/admin/users/${encodeURIComponent(username)}/role`, {
+    method: 'POST',
+    headers: adminHeaders(),
+    body: JSON.stringify(body),
+  }, '')
+  return data
+}
+export async function setAdminUserDisabled(username: string, disabled: boolean) {
+  const body: SetAdminUserDisabledRequest = { disabled }
+  const data = await requestJson<SetAdminUserDisabledResponse>(`/api/admin/users/${encodeURIComponent(username)}/disabled`, {
     method: 'POST',
     headers: adminHeaders(),
     body: JSON.stringify(body),

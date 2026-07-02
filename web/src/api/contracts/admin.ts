@@ -45,6 +45,8 @@ export interface AdminImageChannelConfig {
   type: string
   name: string
   baseURL: string
+  key?: string
+  clearKey?: boolean
   keySet?: boolean
   keyPreview?: string
   enabled: boolean
@@ -191,3 +193,5 @@ export type GrantCreditsResponse = {
 
 export type SetAdminUserRoleRequest = { isAdmin: boolean } | { role: string }
 export type SetAdminUserRoleResponse = { ok: boolean; user?: AdminUser; users?: AdminUser[] }
+export type SetAdminUserDisabledRequest = { disabled: boolean } | { enabled: boolean }
+export type SetAdminUserDisabledResponse = { ok: boolean; user?: AdminUser; users?: AdminUser[] }

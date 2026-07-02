@@ -15,6 +15,7 @@ import { PromptAssistantModal } from './PromptAssistantModal'
 import { PromptLibraryPage } from './PromptLibraryPage'
 import { NodeWorkflowPage, type CanvasHistoryImage } from './NodeWorkflowPage'
 import { PromptSquarePanel } from './PromptSquarePanel'
+import { ModelSquarePage } from './ModelSquarePage'
 import { ProfilePage } from './ProfilePage'
 import { TopUpPage } from './TopUpPage'
 import { ApiDocsPage } from './ApiDocsPage'
@@ -1032,6 +1033,12 @@ export function WorkbenchPage({ theme, onToggleTheme }: { theme: ThemeMode; onTo
         {activeTab === 'square' ? (
           <section className="workflow-page prompt-square-page">
             <PromptSquarePanel onUsePrompt={handleUseSquarePrompt} />
+          </section>
+        ) : null}
+
+        {activeTab === 'modelSquare' ? (
+          <section className="workflow-page model-square-workflow-page">
+            <ModelSquarePage />
           </section>
         ) : null}
 

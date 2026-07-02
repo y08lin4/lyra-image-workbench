@@ -423,6 +423,39 @@ func TestFileStoreImageChannelsUpdateNormalizesAndBackfillsLegacyFields(t *testi
 	assertImageChannel(t, image4K, DefaultImage4KChannelName, updated.NewAPIBaseURL, channelKey, true, DefaultImage4KResolution)
 }
 
+func TestFileStoreImageChannelsUpdateCanClearChannelKey(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.local.json")
+	store, err := NewFileStore(path, RuntimeConfig{
+		NewAPIBaseURL: config.DefaultNewAPIBaseURL,
+		SystemAPIKey:  "sk-existing-channel-key",
+		TimeoutSec:    config.DefaultTimeoutSec,
+		Model:         config.DefaultModel,
+	})
+	if err != nil {
+		t.Fatalf("NewFileStore() error = %v", err)
+	}
+
+	updated, err := store.Update(Update{ImageChannels: []ImageChannelConfig{
+		{
+			Type:     DefaultImageChannelType,
+			Name:     config.DefaultProvider,
+			BaseURL:  config.DefaultNewAPIBaseURL,
+			ClearKey: true,
+			Enabled:  true,
+			Models:   defaultImageChannelModels(config.DefaultProvider),
+		},
+	}})
+	if err != nil {
+		t.Fatalf("Update(clear channel key) error = %v", err)
+	}
+	image2, ok := imageChannelByName(updated.ImageChannels, config.DefaultProvider)
+	if !ok {
+		t.Fatalf("image-2 channel missing: %+v", updated.ImageChannels)
+	}
+	if image2.Key != "" || updated.SystemAPIKey != "" {
+		t.Fatalf("channel key should be cleared and reflected to legacy field: config=%+v channel=%+v", updated, image2)
+	}
+}
 func assertImageChannel(t *testing.T, channel ImageChannelConfig, name string, baseURL string, key string, ratioSelectable bool, defaultResolution string) {
 	t.Helper()
 	if channel.Type != DefaultImageChannelType || channel.Name != name || channel.BaseURL != baseURL || channel.Key != key || !channel.Enabled {

@@ -1,9 +1,10 @@
-export type AdminTab = 'overview' | 'activity' | 'system' | 'billing' | 'email' | 'users' | 'ledger'
+export type AdminTab = 'overview' | 'activity' | 'system' | 'channels' | 'billing' | 'email' | 'users' | 'ledger'
 
 export const ADMIN_TABS: Array<{ id: AdminTab; label: string; description: string }> = [
   { id: 'overview', label: '总览', description: '状态与关键指标' },
   { id: 'activity', label: '活动日志', description: '注册、充值、错误' },
   { id: 'system', label: '系统配置', description: '站点与上游' },
+  { id: 'channels', label: '图片渠道', description: '模型与密钥' },
   { id: 'billing', label: '额度支付', description: '次数与易支付' },
   { id: 'email', label: '邮件', description: 'SMTP 发件' },
   { id: 'users', label: '用户管理', description: '余额与角色' },

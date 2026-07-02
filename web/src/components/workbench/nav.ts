@@ -1,4 +1,4 @@
-export type WorkbenchTab = 'generate' | 'gif' | 'assistant' | 'agent' | 'nodes' | 'library' | 'square' | 'result' | 'profile' | 'topup' | 'apiDocs' | 'settings' | 'admin'
+export type WorkbenchTab = 'generate' | 'gif' | 'assistant' | 'agent' | 'nodes' | 'library' | 'square' | 'modelSquare' | 'result' | 'profile' | 'topup' | 'apiDocs' | 'settings' | 'admin'
 export type WorkbenchNavId = WorkbenchTab
 export type WorkbenchMobileNavId = WorkbenchNavId | 'more'
 export type WorkbenchTabItem = { id: WorkbenchNavId; label: string; hint: string; badge?: string; tone?: 'normal' | 'danger' | 'active' | 'admin' }
@@ -25,6 +25,7 @@ const workflowTabs: WorkbenchTabItem[] = [
   { id: 'assistant', label: '提示词助手', hint: '润色' },
   { id: 'library', label: '提示词库', hint: '灵感' },
   { id: 'square', label: '广场', hint: '社区' },
+  { id: 'modelSquare', label: '模型广场', hint: '候选' },
   { id: 'result', label: '结果', hint: '历史' },
   { id: 'profile', label: '我的', hint: '账号' },
   { id: 'topup', label: '充值', hint: '次数' },
@@ -34,7 +35,7 @@ const workflowTabs: WorkbenchTabItem[] = [
 
 const desktopNavGroupDefinitions: WorkbenchNavGroupDefinition[] = [
   { title: '创作', ids: ['nodes', 'agent', 'assistant', 'generate', 'gif'] },
-  { title: '素材', ids: ['result', 'library', 'square'] },
+  { title: '素材', ids: ['result', 'library', 'square', 'modelSquare'] },
   { title: '管理', ids: ['profile', 'topup', 'apiDocs', 'settings', 'admin'] },
 ]
 
@@ -47,6 +48,7 @@ export const workbenchNavIconById: Record<WorkbenchNavId, string> = {
   result: '▤',
   library: '▥',
   square: '☆',
+  modelSquare: '◇',
   profile: '◎',
   topup: '¥',
   apiDocs: '{}',
@@ -55,7 +57,7 @@ export const workbenchNavIconById: Record<WorkbenchNavId, string> = {
 }
 
 const mobilePrimaryTabIds: WorkbenchTab[] = ['nodes', 'result', 'square', 'profile']
-const mobileMoreTabIds: WorkbenchNavId[] = ['gif', 'agent', 'generate', 'assistant', 'library', 'topup', 'apiDocs', 'settings', 'admin']
+const mobileMoreTabIds: WorkbenchNavId[] = ['gif', 'agent', 'generate', 'assistant', 'library', 'modelSquare', 'topup', 'apiDocs', 'settings', 'admin']
 
 export function buildWorkbenchTabItems({
   currentKeyReady,
@@ -72,6 +74,7 @@ export function buildWorkbenchTabItems({
     if (tab.id === 'assistant') return { ...tab, hint: '润色' }
     if (tab.id === 'library') return { ...tab, hint: '收藏', tone: 'normal' }
     if (tab.id === 'square') return { ...tab, hint: '社区' }
+    if (tab.id === 'modelSquare') return { ...tab, hint: '待启用' }
     if (tab.id === 'result') {
       return {
         ...tab,

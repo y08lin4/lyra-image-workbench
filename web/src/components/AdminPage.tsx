@@ -13,15 +13,19 @@ import {
   saveAdminBillingConfig,
   saveAdminConfig,
   saveAdminEmailConfig,
+  setAdminUserDisabled,
   setAdminUserRole,
   setupAdminSite,
+  updateAdminConfig,
 } from '../api/admin'
 import type { AdminActivityEvent, AdminAuthStatus, AdminConfig, AdminUser, CreditLedgerEntry } from '../types'
+import type { AdminImageChannelConfig } from '../api/contracts/admin'
 import { ThemeToggle, type ThemeMode } from './ThemeToggle'
 import { GitHubLink } from './GitHubLink'
 import { AdminTabs, ADMIN_TABS, type AdminTab } from './admin/AdminTabs'
 import { ActivityTab } from './admin/ActivityTab'
 import { BillingTab } from './admin/BillingTab'
+import { ChannelsTab, type AdminImageChannelDraft } from './admin/ChannelsTab'
 import { EmailTab } from './admin/EmailTab'
 import { LedgerTab } from './admin/LedgerTab'
 import { OverviewTab } from './admin/OverviewTab'
@@ -76,6 +80,8 @@ export function AdminPage({ theme, onToggleTheme, embedded = false }: AdminPageP
   const [smtpSecure, setSmtpSecure] = useState(false)
   const [clearSmtpPassword, setClearSmtpPassword] = useState(false)
   const [savingEmail, setSavingEmail] = useState(false)
+  const [imageChannels, setImageChannels] = useState<AdminImageChannelDraft[]>([])
+  const [savingChannels, setSavingChannels] = useState(false)
   const [password, setPassword] = useState('')
   const [setupToken, setSetupToken] = useState('')
   const [message, setMessage] = useState('')
@@ -96,6 +102,7 @@ export function AdminPage({ theme, onToggleTheme, embedded = false }: AdminPageP
   const [grantReason, setGrantReason] = useState('')
   const [grantSubmitting, setGrantSubmitting] = useState(false)
   const [roleBusyUser, setRoleBusyUser] = useState('')
+  const [disabledBusyUser, setDisabledBusyUser] = useState('')
 
   useEffect(() => {
     void boot()
@@ -140,6 +147,7 @@ export function AdminPage({ theme, onToggleTheme, embedded = false }: AdminPageP
       setTimeoutSec(cfg.timeoutSec)
       applyBillingConfig(cfg)
       applyEmailConfig(cfg)
+      applyImageChannels(cfg)
       setMode('config')
       await loadUsers()
     } catch (err) {
@@ -216,6 +224,7 @@ export function AdminPage({ theme, onToggleTheme, embedded = false }: AdminPageP
           setTimeoutSec(next.config.timeoutSec)
           applyBillingConfig(next.config)
           applyEmailConfig(next.config)
+          applyImageChannels(next.config)
         }
         setMessage('站点初始化完成')
       } else {
@@ -246,6 +255,7 @@ export function AdminPage({ theme, onToggleTheme, embedded = false }: AdminPageP
       setDiagnosticsEnabled(Boolean(cfg.debugEnabled))
       applyBillingConfig(cfg)
       applyEmailConfig(cfg)
+      applyImageChannels(cfg)
       setMessage('管理配置已保存')
     } catch (err) {
       setError(err instanceof Error ? err.message : '保存失败')
@@ -280,6 +290,23 @@ export function AdminPage({ theme, onToggleTheme, embedded = false }: AdminPageP
     }
   }
 
+
+  async function submitImageChannels() {
+    setSavingChannels(true)
+    setError('')
+    setMessage('')
+    try {
+      const cfg = await updateAdminConfig({ imageChannels: imageChannelPayloadOf(imageChannels) })
+      setConfig(cfg)
+      applyImageChannels(cfg)
+      setMessage('图片渠道配置已保存')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '图片渠道配置保存失败')
+    } finally {
+      setSavingChannels(false)
+    }
+  }
+
   async function submitEmailConfig() {
     setSavingEmail(true)
     setError('')
@@ -304,6 +331,11 @@ export function AdminPage({ theme, onToggleTheme, embedded = false }: AdminPageP
       setSavingEmail(false)
     }
   }
+
+  function applyImageChannels(cfg: AdminConfig) {
+    setImageChannels(imageChannelDraftsOf(cfg))
+  }
+
   function applyBillingConfig(cfg: AdminConfig) {
     const billing = billingConfigOf(cfg)
     setEpayEnabled(Boolean(billing.epayEnabled))
@@ -446,8 +478,27 @@ export function AdminPage({ theme, onToggleTheme, embedded = false }: AdminPageP
     }
   }
 
+  async function toggleUserDisabled(user: AdminUser) {
+    setError('')
+    setMessage('')
+    const nextDisabled = !user.disabled
+    const actionText = nextDisabled ? '禁用用户' : '启用用户'
+    if (!window.confirm(`确认${actionText}：${user.username}？`)) {
+      return
+    }
+    setDisabledBusyUser(user.username)
+    try {
+      const result = await setAdminUserDisabled(user.username, nextDisabled)
+      await refreshUsersFromResponse(result.user, result.users)
+      setMessage(`已${nextDisabled ? '禁用' : '启用'}用户：${user.username}`)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : `${actionText}失败`)
+    } finally {
+      setDisabledBusyUser('')
+    }
+  }
   const filteredUsers = useMemo(() => filterAdminUsers(users, userQuery), [users, userQuery])
-  const adminCount = useMemo(() => users.filter((user) => user.isAdmin).length, [users])
+  const adminCount = useMemo(() => users.filter((user) => user.isAdmin && !user.disabled).length, [users])
   const billingConfig = billingConfigOf(config)
   const emailConfig = emailConfigOf(config)
   const activeTabMeta = ADMIN_TABS.find((tab) => tab.id === activeTab) ?? ADMIN_TABS[0]
@@ -612,6 +663,15 @@ export function AdminPage({ theme, onToggleTheme, embedded = false }: AdminPageP
           />
         ) : null}
 
+
+        {activeTab === 'channels' ? (
+          <ChannelsTab
+            channels={imageChannels}
+            saving={savingChannels}
+            onChange={setImageChannels}
+            onSave={() => void submitImageChannels()}
+          />
+        ) : null}
         {activeTab === 'billing' ? (
           <BillingTab
             billingConfig={billingConfig}
@@ -679,6 +739,7 @@ export function AdminPage({ theme, onToggleTheme, embedded = false }: AdminPageP
             grantReason={grantReason}
             grantSubmitting={grantSubmitting}
             roleBusyUser={roleBusyUser}
+            disabledBusyUser={disabledBusyUser}
             onUserQueryChange={setUserQuery}
             onRefreshUsers={() => void loadUsers()}
             onGrantUsernameChange={setGrantUsername}
@@ -687,6 +748,7 @@ export function AdminPage({ theme, onToggleTheme, embedded = false }: AdminPageP
             onSubmitGrantCredits={() => void submitGrantCredits()}
             onLoadLedger={(username) => void loadLedger(username)}
             onToggleAdminRole={(user) => void toggleAdminRole(user)}
+            onToggleUserDisabled={(user) => void toggleUserDisabled(user)}
           />
         ) : null}
 
@@ -708,6 +770,54 @@ export function AdminPage({ theme, onToggleTheme, embedded = false }: AdminPageP
       </section>
     </Shell>
   )
+}
+
+
+function imageChannelDraftsOf(config: AdminConfig | null): AdminImageChannelDraft[] {
+  return (config?.imageChannels || []).map((channel) => ({
+    type: channel.type || 'openai-compatible',
+    name: channel.name || '',
+    baseURL: channel.baseURL || '',
+    keySet: Boolean(channel.keySet),
+    keyPreview: channel.keyPreview || '',
+    key: '',
+    clearKey: false,
+    enabled: Boolean(channel.enabled),
+    models: (channel.models || []).map((model) => ({
+      id: model.id || '',
+      label: model.label || model.id || '',
+      enabled: Boolean(model.enabled),
+      price: model.price ?? 1,
+      ratioSelectable: Boolean(model.ratioSelectable),
+      defaultResolution: model.defaultResolution || 'auto',
+    })),
+  }))
+}
+
+function imageChannelPayloadOf(channels: AdminImageChannelDraft[]): AdminImageChannelConfig[] {
+  return channels.map((channel) => {
+    const key = channel.key.trim()
+    const payload: AdminImageChannelConfig = {
+      type: channel.type.trim(),
+      name: channel.name.trim(),
+      baseURL: channel.baseURL.trim(),
+      enabled: channel.enabled,
+      models: channel.models.map((model) => ({
+        id: model.id.trim(),
+        label: model.label.trim() || model.id.trim(),
+        enabled: model.enabled,
+        price: numericOrDefault(model.price, 1),
+        ratioSelectable: model.ratioSelectable,
+        defaultResolution: model.defaultResolution.trim() || 'auto',
+      })),
+    }
+    if (channel.clearKey) {
+      payload.clearKey = true
+    } else if (key) {
+      payload.key = key
+    }
+    return payload
+  })
 }
 
 function AdminBrand({ title }: { title: string }) {

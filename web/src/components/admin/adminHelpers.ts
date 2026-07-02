@@ -41,6 +41,7 @@ export function filterAdminUsers(users: AdminUser[], query: string) {
     user.displayName,
     user.email,
     user.role,
+    user.disabled ? 'disabled 停用 禁用 已停用' : 'enabled 正常 启用',
     user.isAdmin ? 'admin 管理员' : 'user 普通用户',
   ].join(' ').toLowerCase().includes(keyword))
 }

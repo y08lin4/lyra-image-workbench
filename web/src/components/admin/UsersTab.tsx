@@ -13,6 +13,7 @@ type UsersTabProps = {
   grantReason: string
   grantSubmitting: boolean
   roleBusyUser: string
+  disabledBusyUser: string
   onUserQueryChange: (value: string) => void
   onRefreshUsers: () => void
   onGrantUsernameChange: (value: string) => void
@@ -21,6 +22,7 @@ type UsersTabProps = {
   onSubmitGrantCredits: () => void
   onLoadLedger: (username: string) => void
   onToggleAdminRole: (user: AdminUser) => void
+  onToggleUserDisabled: (user: AdminUser) => void
 }
 
 export function UsersTab({
@@ -35,6 +37,7 @@ export function UsersTab({
   grantReason,
   grantSubmitting,
   roleBusyUser,
+  disabledBusyUser,
   onUserQueryChange,
   onRefreshUsers,
   onGrantUsernameChange,
@@ -43,13 +46,14 @@ export function UsersTab({
   onSubmitGrantCredits,
   onLoadLedger,
   onToggleAdminRole,
+  onToggleUserDisabled,
 }: UsersTabProps) {
   return (
     <section className="admin-tab-panel admin-users-section admin-users-panel" id="admin-panel-users" role="tabpanel" aria-labelledby="admin-tab-users">
       <div className="admin-section-heading admin-users-heading">
         <div>
           <h2 id="admin-users-title">用户管理</h2>
-          <p className="muted">查看余额、加次数流水和管理员角色。当前展示 {filteredUsers.length} / {users.length} 个用户。</p>
+          <p className="muted">查看余额、加次数流水、账号状态和管理员角色。当前展示 {filteredUsers.length} / {users.length} 个用户。</p>
         </div>
         <div className="admin-users-tools">
           <label className="admin-user-search">
@@ -94,6 +98,7 @@ export function UsersTab({
               <th>用户</th>
               <th>邮箱</th>
               <th>余额</th>
+              <th>状态</th>
               <th>管理员</th>
               <th>注册时间</th>
               <th>操作</th>
@@ -101,9 +106,9 @@ export function UsersTab({
           </thead>
           <tbody>
             {usersLoading && users.length === 0 ? (
-              <tr><td colSpan={6}>正在读取用户...</td></tr>
+              <tr><td colSpan={7}>正在读取用户...</td></tr>
             ) : filteredUsers.length === 0 ? (
-              <tr><td colSpan={6}>{users.length ? '没有匹配用户' : '暂无用户数据'}</td></tr>
+              <tr><td colSpan={7}>{users.length ? '没有匹配用户' : '暂无用户数据'}</td></tr>
             ) : filteredUsers.map((user) => (
               <tr key={user.username}>
                 <td>
@@ -112,12 +117,14 @@ export function UsersTab({
                 </td>
                 <td>{user.email || '-'}</td>
                 <td className="numeric-cell">{formatCredits(user.creditsBalance)}</td>
+                <td><span className={user.disabled ? 'admin-role-badge admin-user-status-disabled' : 'admin-role-badge admin-role-badge-on'}>{user.disabled ? '已停用' : '正常'}</span></td>
                 <td><span className={user.isAdmin ? 'admin-role-badge admin-role-badge-on' : 'admin-role-badge'}>{user.isAdmin ? '管理员' : '普通用户'}</span></td>
                 <td>{formatDateTime(user.createdAt)}</td>
                 <td>
                   <div className="admin-row-actions">
                     <button type="button" onClick={() => onLoadLedger(user.username)} disabled={ledgerLoading && selectedLedgerUser === user.username}>流水</button>
-                    <button type="button" onClick={() => onToggleAdminRole(user)} disabled={roleBusyUser === user.username}>{roleBusyUser === user.username ? '处理中...' : user.isAdmin ? '取消管理员' : '设为管理员'}</button>
+                    <button type="button" onClick={() => onToggleUserDisabled(user)} disabled={disabledBusyUser === user.username}>{disabledBusyUser === user.username ? '处理中...' : user.disabled ? '启用' : '停用'}</button>
+                    <button type="button" onClick={() => onToggleAdminRole(user)} disabled={roleBusyUser === user.username || Boolean(user.disabled)}>{roleBusyUser === user.username ? '处理中...' : user.isAdmin ? '取消管理员' : '设为管理员'}</button>
                   </div>
                 </td>
               </tr>

@@ -7815,6 +7815,12 @@ button:not(.primary) { background: var(--surface-soft); color: #1e3a8a; border: 
   color: var(--success-text, #166534);
 }
 
+.admin-user-status-disabled {
+  border-color: var(--danger-border, #fecaca);
+  background: var(--danger-bg, #fef2f2);
+  color: var(--danger-text, #991b1b);
+}
+
 .admin-row-actions {
   display: flex;
   flex-wrap: wrap;

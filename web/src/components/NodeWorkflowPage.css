@@ -1288,3 +1288,58 @@ main.creative-canvas-page .creative-resize-handle {
     flex-wrap: wrap;
   }
 }
+
+main.creative-canvas-page .creative-cloud-actions {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+main.creative-canvas-page .creative-cloud-actions span {
+  max-width: 220px;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+main.creative-canvas-page .creative-cloud-actions select,
+main.creative-canvas-page .creative-cloud-actions button {
+  min-height: 32px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 850;
+}
+
+main.creative-canvas-page .creative-cloud-actions select {
+  max-width: 190px;
+}
+
+main.creative-canvas-page .creative-cloud-actions button.primary {
+  border-color: var(--primary);
+  background: var(--primary);
+  color: var(--primary-contrast, #fff);
+}
+
+@media (max-width: 760px) {
+  main.creative-canvas-page .creative-cloud-actions {
+    width: 100%;
+    justify-content: stretch;
+  }
+
+  main.creative-canvas-page .creative-cloud-actions span,
+  main.creative-canvas-page .creative-cloud-actions select,
+  main.creative-canvas-page .creative-cloud-actions button {
+    max-width: none;
+    flex: 1 1 136px;
+  }
+}

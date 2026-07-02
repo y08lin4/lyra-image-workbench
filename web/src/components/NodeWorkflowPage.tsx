@@ -10,6 +10,15 @@ import type {
 import type { CreateTaskRequest, Mode, ModelProvider, ReferenceUpload, Task } from '../types'
 import { formatError } from '../api/client'
 import { getReferenceUploadBlob } from '../api/uploads'
+import {
+  createCanvasProject,
+  createCanvasSnapshot,
+  getCanvasProject,
+  listCanvasProjects,
+  updateCanvasProject,
+  type CanvasProject,
+} from '../api/canvas'
+import { ImageSpecPicker } from './ImageSpecPicker'
 import { buildCanvasPromptDraft, generateCanvasPromptFromCanvas, optimizeCanvasTextPrompt } from './creativeCanvas/promptOptimization'
 import type { CanvasConnection, CanvasContextMenu, CanvasHistoryImage, CanvasInteraction, CanvasItem, ReferenceRole } from './creativeCanvas/types'
 import { REFERENCE_ROLES } from './creativeCanvas/types'
@@ -53,19 +62,20 @@ import {
 } from './creativeCanvas/geometry'
 import { aspectRatioValue, canvasImageSizeFromFile, canvasImageSizeFromSrc, extensionLabel, modeLabel } from './creativeCanvas/imageSizing'
 import {
-  DEFAULT_IMAGE2_MODEL,
+  IMAGE2_MODEL_OPTIONS,
   IMAGE2_PROVIDER,
+  getImage2ModelOption,
+  image2ModelAllowsRatio,
+  image2ModelSubmissionSpec,
+  normalizeImage2Model,
   providerLabel,
 } from '../lib/models'
 import {
   OUTPUT_FORMATS,
   QUALITY_LEVELS,
-  RATIOS,
-  RESOLUTION_TIERS,
   getImageSize,
   getOutputFormatLabel,
   getQualityLabel,
-  getResolutionLabel,
 } from '../lib/ratios'
 import {
   DEFAULT_CONNECTION_LABEL,
@@ -75,6 +85,12 @@ import {
   normalizeConnectionLabel,
 } from './creativeCanvas/connectionPrompt'
 import { loadCreativeCanvasDraft, saveCreativeCanvasDraft } from './creativeCanvas/persistence'
+import {
+  buildCanvasProjectPayload,
+  buildCanvasProjectUpdate,
+  buildCanvasSnapshotPayload,
+  restoreCreativeCanvasProject,
+} from './creativeCanvas/cloudPersistence'
 import type { CanvasStageMetrics } from './creativeCanvas/geometry'
 import { buildCanvasPreviewState, isHistoryPreviewSelected } from './creativeCanvas/preview'
 import { canvasConnectionClassName, canvasConnectionLabelClassName, isEditableTarget } from './creativeCanvas/interaction'
@@ -141,6 +157,8 @@ export function NodeWorkflowPage({
   const [mode, setMode] = useState<Mode>(initialCanvasDraft.mode)
   const [draftPrompt, setDraftPrompt] = useState(initialDraftPrompt)
   const [localProvider, setLocalProvider] = useState<ModelProvider>(IMAGE2_PROVIDER)
+  const [imageModel, setImageModel] = useState(normalizeImage2Model(initialCanvasDraft.imageModel))
+  const [imageSize, setImageSize] = useState(initialCanvasDraft.imageSize)
   const [ratio, setRatio] = useState(initialCanvasDraft.ratio)
   const [resolution, setResolution] = useState(initialCanvasDraft.resolution)
   const [quality, setQuality] = useState(initialCanvasDraft.quality)
@@ -166,6 +184,11 @@ export function NodeWorkflowPage({
   const [deletingUploadId, setDeletingUploadId] = useState<string | null>(null)
   const [editingTextItemId, setEditingTextItemId] = useState<string | null>(null)
   const [optimizingTextItemId, setOptimizingTextItemId] = useState<string | null>(null)
+  const [cloudProjects, setCloudProjects] = useState<CanvasProject[]>([])
+  const [activeCloudProject, setActiveCloudProject] = useState<CanvasProject | null>(null)
+  const [isLoadingCloudProjects, setIsLoadingCloudProjects] = useState(false)
+  const [isSavingCloudCanvas, setIsSavingCloudCanvas] = useState(false)
+  const [isOpeningCloudProject, setIsOpeningCloudProject] = useState(false)
 
   const stageRef = useRef<HTMLElement | null>(null)
   const promptTextareaRef = useRef<HTMLTextAreaElement | null>(null)
@@ -175,6 +198,8 @@ export function NodeWorkflowPage({
   const draftPromptRef = useRef(draftPrompt)
   const modeRef = useRef<Mode>(mode)
   const localProviderRef = useRef<ModelProvider>(localProvider)
+  const imageModelRef = useRef(imageModel)
+  const imageSizeRef = useRef(imageSize)
   const ratioRef = useRef(ratio)
   const resolutionRef = useRef(resolution)
   const qualityRef = useRef(quality)
@@ -201,6 +226,9 @@ export function NodeWorkflowPage({
     setGeneratedPromptOverride('')
 
     setLocalProvider(IMAGE2_PROVIDER)
+    if (injectedPromptModel) {
+      setImageModel(normalizeImage2Model(injectedPromptModel))
+    }
     if (injectedPromptRatio) {
       setRatio(injectedPromptRatio)
     }
@@ -226,6 +254,8 @@ export function NodeWorkflowPage({
         prompt: draftPrompt,
         mode,
         provider: IMAGE2_PROVIDER,
+        imageModel,
+        imageSize,
         ratio,
         resolution,
         quality,
@@ -236,7 +266,7 @@ export function NodeWorkflowPage({
       })
     }, 300)
     return () => window.clearTimeout(handle)
-  }, [canvasItems, connections, draftPrompt, mode, localProvider, ratio, resolution, quality, outputFormat, count, concurrency])
+  }, [canvasItems, connections, draftPrompt, mode, localProvider, imageModel, imageSize, ratio, resolution, quality, outputFormat, count, concurrency])
 
   useEffect(() => {
     const saveCurrentDraft = () => {
@@ -246,6 +276,8 @@ export function NodeWorkflowPage({
         prompt: draftPromptRef.current,
         mode: modeRef.current,
         provider: localProviderRef.current,
+        imageModel: imageModelRef.current,
+        imageSize: imageSizeRef.current,
         ratio: ratioRef.current,
         resolution: resolutionRef.current,
         quality: qualityRef.current,
@@ -328,13 +360,15 @@ export function NodeWorkflowPage({
     draftPromptRef.current = draftPrompt
     modeRef.current = mode
     localProviderRef.current = localProvider
+    imageModelRef.current = imageModel
+    imageSizeRef.current = imageSize
     ratioRef.current = ratio
     resolutionRef.current = resolution
     qualityRef.current = quality
     outputFormatRef.current = outputFormat
     countRef.current = count
     concurrencyRef.current = concurrency
-  }, [canvasItems, connections, draftPrompt, mode, localProvider, ratio, resolution, quality, outputFormat, count, concurrency])
+  }, [canvasItems, connections, draftPrompt, mode, localProvider, imageModel, imageSize, ratio, resolution, quality, outputFormat, count, concurrency])
 
   useEffect(() => {
     const itemIds = new Set(canvasItems.map((item) => item.id))
@@ -347,7 +381,7 @@ export function NodeWorkflowPage({
 
   useEffect(() => {
     setGeneratedPromptOverride('')
-  }, [canvasItems, connections, mode, ratio])
+  }, [canvasItems, connections, mode, imageModel, imageSize, ratio])
 
   useEffect(() => {
     if (!interaction) return
@@ -410,12 +444,16 @@ export function NodeWorkflowPage({
     return () => window.cancelAnimationFrame(frame)
   }, [editingTextItemId])
 
-  const selectedModel = DEFAULT_IMAGE2_MODEL
-  const effectiveRatio = ratio
-  const effectiveResolution = resolution
+  const imageModelOption = getImage2ModelOption(imageModel)
+  const ratioSelectable = image2ModelAllowsRatio(imageModel)
+  const submissionSpec = image2ModelSubmissionSpec(imageModel, ratio, resolution, imageSize)
+  const selectedModel = submissionSpec.model
+  const effectiveRatio = submissionSpec.ratio
+  const effectiveResolution = submissionSpec.resolution
+  const effectiveSize = submissionSpec.size
   const effectiveQuality = quality
   const effectiveOutputFormat = outputFormat
-  const imageSize = getImageSize(ratio, resolution)
+  const displayImageSize = effectiveSize || (ratioSelectable ? getImageSize(effectiveRatio, effectiveResolution) : '自动尺寸')
   const trimmedPrompt = draftPrompt.trim()
   const selectedItem = useMemo(() => canvasItems.find((item) => item.id === selectedItemId), [canvasItems, selectedItemId])
   const selectedImageItem = useMemo(() => (isCanvasImageItem(selectedItem) ? selectedItem : null), [selectedItem])
@@ -448,6 +486,7 @@ export function NodeWorkflowPage({
     prompt: trimmedSubmissionPrompt,
     ratio: effectiveRatio,
     resolution: effectiveResolution,
+    size: effectiveSize,
     quality: effectiveQuality,
     outputFormat: effectiveOutputFormat,
     count,
@@ -460,12 +499,139 @@ export function NodeWorkflowPage({
     effectiveQuality,
     effectiveRatio,
     effectiveResolution,
+    effectiveSize,
     mode,
     selectedModel,
     trimmedSubmissionPrompt,
     taskUploadIds,
   ])
 
+  const cloudStatusText = activeCloudProject ? `云端：${activeCloudProject.title}` : '云端：未绑定'
+
+  useEffect(() => {
+    void refreshCloudProjects({ silent: true })
+  }, [])
+
+  function currentCloudCanvasState() {
+    return {
+      items: canvasItemsRef.current,
+      connections: connectionsRef.current,
+      prompt: draftPromptRef.current.trim() || trimmedSubmissionPrompt,
+      mode: modeRef.current,
+      provider: IMAGE2_PROVIDER,
+      imageModel: imageModelRef.current,
+      ratio: ratioRef.current,
+      resolution: resolutionRef.current,
+      quality: qualityRef.current,
+      outputFormat: outputFormatRef.current,
+      count: countRef.current,
+      concurrency: concurrencyRef.current,
+    }
+  }
+
+  async function refreshCloudProjects(options: { silent?: boolean } = {}) {
+    setIsLoadingCloudProjects(true)
+    try {
+      const response = await listCanvasProjects({ limit: 8 })
+      setCloudProjects(response.projects)
+    } catch (error) {
+      if (!options.silent) setMessage(formatError(error, '加载云端画布失败，本地草稿仍可用。'))
+    } finally {
+      setIsLoadingCloudProjects(false)
+    }
+  }
+
+  async function createNewCloudCanvas() {
+    if (isSavingCloudCanvas) return
+    setIsSavingCloudCanvas(true)
+    try {
+      const emptyState = {
+        ...currentCloudCanvasState(),
+        items: [],
+        connections: [],
+        prompt: '',
+        mode: 'text-to-image' as Mode,
+      }
+      const project = await createCanvasProject(buildCanvasProjectPayload(emptyState))
+      setActiveCloudProject(project)
+      setCanvasItems([])
+      setConnections([])
+      setDraftPrompt('')
+      setGeneratedPromptOverride('')
+      setSelectedItemId(null)
+      setSelectedConnectionId(null)
+      setSelectedHistoryImage(null)
+      setMode('text-to-image')
+      await refreshCloudProjects({ silent: true })
+      setMessage('已新建云端画布，本地草稿会继续自动保存。')
+    } catch (error) {
+      setMessage(formatError(error, '新建云端画布失败，本地创作不受影响。'))
+    } finally {
+      setIsSavingCloudCanvas(false)
+    }
+  }
+
+  async function saveCloudCanvasSnapshot() {
+    if (isSavingCloudCanvas) return
+    setIsSavingCloudCanvas(true)
+    try {
+      const state = currentCloudCanvasState()
+      const project = activeCloudProject
+        ? await updateCanvasProject(activeCloudProject.id, buildCanvasProjectUpdate(activeCloudProject, state))
+        : await createCanvasProject(buildCanvasProjectPayload(state))
+      await createCanvasSnapshot(project.id, {
+        ...buildCanvasSnapshotPayload(state),
+        revision: project.revision,
+      })
+      const refreshedProject = await getCanvasProject(project.id)
+      setActiveCloudProject(refreshedProject)
+      await refreshCloudProjects({ silent: true })
+      setMessage('已保存到云端快照；本地草稿也会继续保留。')
+    } catch (error) {
+      setMessage(formatError(error, '云端保存失败，本地草稿已保留。'))
+    } finally {
+      setIsSavingCloudCanvas(false)
+    }
+  }
+
+  async function openCloudProject(projectId: string) {
+    if (!projectId || isOpeningCloudProject) return
+    setIsOpeningCloudProject(true)
+    try {
+      const project = await getCanvasProject(projectId)
+      const restored = restoreCreativeCanvasProject(project)
+      const restoredItems = await Promise.all((restored.items || []).map(async (item) => {
+        if (!isCanvasImageItem(item) || !item.uploadId) return item
+        const preview = await resolveUploadPreviewUrl(item.uploadId)
+        return { ...item, localPreviewUrl: preview.localPreviewUrl }
+      }))
+      setCanvasItems(restoredItems)
+      setConnections(restored.connections || [])
+      setDraftPrompt(restored.prompt || '')
+      setGeneratedPromptOverride('')
+      setSelectedItemId(null)
+      setSelectedConnectionId(null)
+      setSelectedHistoryImage(null)
+      setConnectionDraftFrom(null)
+      setEditingTextItemId(null)
+      setEditingConnectionId(null)
+      if (restored.mode) setMode(restored.mode)
+      if (restored.imageModel) setImageModel(normalizeImage2Model(restored.imageModel))
+      if (restored.ratio) setRatio(restored.ratio)
+      if (restored.resolution) setResolution(restored.resolution)
+      if (restored.quality) setQuality(restored.quality)
+      if (restored.outputFormat) setOutputFormat(restored.outputFormat)
+      if (restored.count) setCount(restored.count)
+      if (restored.concurrency) setConcurrency(restored.concurrency)
+      setActiveCloudProject(project)
+      hadStoredCanvasDraftRef.current = true
+      setMessage('已打开云端画布，当前内容会继续写入本地草稿。')
+    } catch (error) {
+      setMessage(formatError(error, '打开云端画布失败，本地草稿未改变。'))
+    } finally {
+      setIsOpeningCloudProject(false)
+    }
+  }
   function useCanvasPrompt() {
     if (!hasCanvasPromptContent || !trimmedSubmissionPrompt) {
       setMessage('先写一句提示词，或在画布里添加文字块/连线。')
@@ -1079,7 +1245,23 @@ export function NodeWorkflowPage({
         <div className="creative-canvas-title">
           <span>主入口</span>
           <h2>创作画布</h2>
-          <p>{providerLabel(localProvider)} / {imageSize} / {modeLabel(mode)} / {referenceCanvasItems.length || taskUploadIds.length} 张参考</p>
+          <p>{providerLabel(localProvider)} / {imageModelOption.label} / {displayImageSize} / {modeLabel(mode)} / {referenceCanvasItems.length || taskUploadIds.length} 张参考</p>
+        </div>
+        <div className="creative-cloud-actions" aria-label="云端画布">
+          <span title={cloudStatusText}>{cloudStatusText}</span>
+          <select
+            value={activeCloudProject?.id || ''}
+            onChange={(event) => void openCloudProject(event.target.value)}
+            disabled={isOpeningCloudProject || isLoadingCloudProjects}
+            aria-label="打开云端画布"
+          >
+            <option value="">{isLoadingCloudProjects ? '加载中' : '选择云端画布'}</option>
+            {cloudProjects.map((project) => (
+              <option key={project.id} value={project.id}>{project.title || '未命名画布'}</option>
+            ))}
+          </select>
+          <button type="button" onClick={() => void createNewCloudCanvas()} disabled={isSavingCloudCanvas}>新建</button>
+          <button type="button" className="primary" onClick={() => void saveCloudCanvasSnapshot()} disabled={isSavingCloudCanvas}>{isSavingCloudCanvas ? '保存中' : '保存云端'}</button>
         </div>
       </header>
 
@@ -1433,23 +1615,25 @@ export function NodeWorkflowPage({
             <div className="creative-composer-tools" aria-label="生成参数">
               <label>
                 <span>模型</span>
-                <select value={localProvider} onChange={(event) => setLocalProvider(event.target.value as ModelProvider)}>
-                  <option value={IMAGE2_PROVIDER}>Image-2</option>
+                <select value={imageModelOption.id} onChange={(event) => setImageModel(normalizeImage2Model(event.target.value))}>
+                  {IMAGE2_MODEL_OPTIONS.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
                 </select>
               </label>
 
-              <label>
-                <span>比例</span>
-                <select value={ratio} onChange={(event) => setRatio(event.target.value)}>
-                  {RATIOS.map((item) => <option key={item} value={item}>{item}</option>)}
-                </select>
-              </label>
-              <label>
-                <span>清晰度</span>
-                <select value={resolution} onChange={(event) => setResolution(event.target.value)}>
-                  {RESOLUTION_TIERS.map((item) => <option key={item} value={item}>{getResolutionLabel(item)}</option>)}
-                </select>
-              </label>
+              {ratioSelectable ? (
+                <ImageSpecPicker
+                  ratio={ratio}
+                  resolution={resolution}
+                  size={imageSize}
+                  allowAutoRatio={imageModelOption.defaultRatio === 'auto'}
+                  customSizeEnabled
+                  onRatioChange={setRatio}
+                  onResolutionChange={setResolution}
+                  onSizeChange={setImageSize}
+                />
+              ) : (
+                <AutoImageSpecNotice hint={imageModelOption.hint} />
+              )}
 
               <label>
                 <span>质量</span>
@@ -1510,5 +1694,19 @@ export function NodeWorkflowPage({
         </div>
       ) : null}
     </main>
+  )
+}
+
+function AutoImageSpecNotice({ hint }: { hint: string }) {
+  const detail = hint ? `比例、尺寸和分辨率由模型自动决定；${hint}` : '比例、尺寸和分辨率由模型自动决定。'
+
+  return (
+    <div className="size-auto-notice" aria-label="自动画幅说明">
+      <span>
+        <strong>自动画幅</strong>
+        <small>{detail}</small>
+      </span>
+      <b>自动</b>
+    </div>
   )
 }

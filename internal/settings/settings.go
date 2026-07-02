@@ -107,12 +107,13 @@ type PublicEmailConfig struct {
 }
 
 type ImageChannelConfig struct {
-	Type    string                    `json:"type"`
-	Name    string                    `json:"name"`
-	BaseURL string                    `json:"baseURL"`
-	Key     string                    `json:"key,omitempty"`
-	Enabled bool                      `json:"enabled"`
-	Models  []ImageChannelModelConfig `json:"models"`
+	Type     string                    `json:"type"`
+	Name     string                    `json:"name"`
+	BaseURL  string                    `json:"baseURL"`
+	Key      string                    `json:"key,omitempty"`
+	ClearKey bool                      `json:"clearKey,omitempty"`
+	Enabled  bool                      `json:"enabled"`
+	Models   []ImageChannelModelConfig `json:"models"`
 }
 
 type PublicImageChannelConfig struct {
@@ -728,7 +729,7 @@ func normalizeImageChannel(channel ImageChannelConfig, legacyBaseURL string, leg
 		return ImageChannelConfig{}, err
 	}
 	key := strings.TrimSpace(channel.Key)
-	if key == "" && isDefaultImageChannelName(name) {
+	if key == "" && !channel.ClearKey && isDefaultImageChannelName(name) {
 		key = strings.TrimSpace(legacyKey)
 	}
 	models, err := normalizeImageChannelModels(name, channel.Models)
@@ -870,6 +871,10 @@ func mergeImageChannelsForUpdate(existing []ImageChannelConfig, incoming []Image
 	}
 	merged := append([]ImageChannelConfig(nil), incoming...)
 	for i := range merged {
+		if merged[i].ClearKey {
+			merged[i].Key = ""
+			continue
+		}
 		if strings.TrimSpace(merged[i].Key) != "" {
 			continue
 		}

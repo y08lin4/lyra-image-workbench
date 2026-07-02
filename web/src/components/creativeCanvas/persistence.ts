@@ -14,6 +14,8 @@ export type CreativeCanvasDraft = {
   prompt: string
   mode: Mode
   provider: ModelProvider
+  imageModel: string
+  imageSize: string
   ratio: string
   resolution: string
   quality: string
@@ -34,6 +36,8 @@ const EMPTY_DRAFT: CreativeCanvasDraft = {
   prompt: '',
   mode: 'text-to-image',
   provider: DEFAULT_PROVIDER,
+  imageModel: 'image-2',
+  imageSize: '',
   ratio: '1:1',
   resolution: 'standard',
   quality: 'high',
@@ -65,6 +69,8 @@ export function loadCreativeCanvasDraft(): CreativeCanvasDraft {
       prompt: typeof parsed.prompt === 'string' ? parsed.prompt : '',
       mode: parsed.mode === 'image-to-image' ? 'image-to-image' : 'text-to-image',
       provider: sanitizeProvider(parsed.provider),
+      imageModel: sanitizeImageModel(parsed.imageModel),
+      imageSize: sanitizeString(parsed.imageSize),
       ratio: sanitizeOneOf(parsed.ratio, RATIO_VALUES, '1:1'),
       resolution: sanitizeOneOf(parsed.resolution, RESOLUTION_VALUES, 'standard'),
       quality: sanitizeOneOf(parsed.quality, QUALITY_VALUES, 'high'),
@@ -95,6 +101,8 @@ export function saveCreativeCanvasDraft(draft: CreativeCanvasDraft) {
     prompt: draft.prompt,
     mode: draft.mode,
     provider: sanitizeProvider(draft.provider),
+    imageModel: sanitizeImageModel(draft.imageModel),
+    imageSize: sanitizeString(draft.imageSize),
     ratio: draft.ratio,
     resolution: draft.resolution,
     quality: draft.quality,
@@ -208,4 +216,9 @@ function sanitizeNumber(value: unknown, fallback: number) {
 
 function sanitizeOptionalNumber(value: unknown) {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined
+}
+
+function sanitizeImageModel(value: unknown) {
+  const next = sanitizeString(value)
+  return next === 'image-2-4k' ? 'image-2-4k' : 'image-2'
 }
